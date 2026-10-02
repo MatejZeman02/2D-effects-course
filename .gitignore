@@ -8,13 +8,11 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
 develop-eggs/
 dist/
 downloads/
 eggs/
 .eggs/
-lib/
 lib64/
 parts/
 sdist/
@@ -216,3 +214,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# This course: build/ holds the generators and lib/ the Sara client, so both are kept.
+# The Krita template's NumPy is unpacked at build time and its zips go to releases.
+krita/pga_filter/vendor/
+krita/dist/
+build/.wheels/
+krita/tests/smoke.log
+krita/tests/dialog.png

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Service
+ServiceTypes=Krita/PythonPlugin
+X-KDE-Library=pga_filter
+X-Python-2-Compatible=false
+X-Krita-Manual=Manual.html
+Name=PGA filter
+Comment=Runs the effect in effect.py (PARAMS and apply) on the selected layer

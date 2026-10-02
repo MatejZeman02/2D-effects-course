@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>PGA filter</title></head>
+<body>
+<h2>PGA filter</h2>
+<p>Runs the effect in <code>effect.py</code> on the selected layer. An effect is two things from the notebook:
+<code>PARAMS</code>, the list of parameters, and a NumPy function <code>apply(img, ...)</code>. The plugin builds
+a control for each parameter, shows a live preview, and writes the effect into the layer when you press Apply.</p>
+
+<h3>Installing</h3>
+<ol>
+<li>In Krita, choose <b>Tools &gt; Scripts &gt; Import Python Plugin from File</b> and pick the zip for your system
+(<code>pga_filter-windows.zip</code> or <code>pga_filter-linux.zip</code>).</li>
+<li>Restart Krita, then tick PGA filter in <b>Settings &gt; Configure Krita &gt; Python Plugin Manager</b>.</li>
+<li>Restart Krita again. The filter is in <b>Tools &gt; Scripts</b>, under the name in <code>TITLE</code>.</li>
+</ol>
+
+<h3>Editing the effect</h3>
+<p>Open the folder through <b>Settings &gt; Manage Resources &gt; Open Resource Folder</b>, then
+<code>pykrita/pga_filter/effect.py</code>. Paste <code>PARAMS</code> and <code>apply</code> from the notebook
+unchanged. The plugin reads the file again every time the filter opens, so Krita needs no restart after an edit.</p>
+<p><code>img</code> is a float32 array of shape (height, width, 4), channels RGBA from 0 to 1. <code>apply</code>
+returns an array of the same shape.</p>
+
+<table border="1" cellpadding="4" cellspacing="0">
+<tr><th>In PARAMS</th><th>Control</th><th>apply gets</th></tr>
+<tr><td><code>(1.0, 0.0, 1.0)</code></td><td>slider: default, minimum, maximum</td><td>a float</td></tr>
+<tr><td><code>(16.0, 2.0, 64.0, 0.5)</code></td><td>slider with a step</td><td>a float</td></tr>
+<tr><td><code>(4, 1, 8)</code></td><td>slider in whole numbers</td><td>an int</td></tr>
+<tr><td><code>"#ff8c32"</code>, <code>"#ff8c32cc"</code></td><td>colour picker, the second form with alpha</td><td>three or four numbers from 0 to 1</td></tr>
+<tr><td><code>["Multiply", "Screen"]</code></td><td>drop-down list, the first is the default</td><td>the chosen label</td></tr>
+<tr><td><code>False</code></td><td>checkbox</td><td>a bool</td></tr>
+<tr><td><code>[[0, 1, 0], [1, -4, 1], [0, 1, 0]]</code></td><td>square grid of numbers</td><td>an (n, n) float32 array</td></tr>
+</table>
+<p>A colour arrives as the numbers the picker shows, with no conversion to linear light.</p>
+
+<h3>What the filter changes</h3>
+<ul>
+<li>Only a paint layer in the RGB colour model, at 8 or 16 bit integer or 16 or 32 bit float depth. A float layer
+may hold values above 1, and in a linear profile its numbers are linear light.</li>
+<li>Only the selection, or the whole canvas when nothing is selected. A soft selection blends the result with the
+original layer smoothly.</li>
+<li>The result replaces the layer with a copy under the same name. Writing pixels from Python makes no undo step in
+Krita, but adding and removing a layer do, so <b>Ctrl+Z twice</b> brings the original layer back.</li>
+</ul>
+
+<h3>Preview</h3>
+<p>"Whole region, scaled down" shows everything, "Centre at full size" a crop from the centre without scaling. An
+effect that reads neighbours, a blur for example, looks stronger in the scaled preview, because its radius in
+pixels covers more of the picture. An error in <code>apply</code> is printed in red under the preview, and Apply
+stays disabled until it is fixed.</p>
+
+<h3>A second filter beside this one</h3>
+<p>Copy the <code>pga_filter</code> folder and the <code>pga_filter.desktop</code> file under a new name, say
+<code>my_filter</code>, and in the <code>.desktop</code> file set <code>X-KDE-Library</code> to that name and
+<code>Name</code> to the name the Python Plugin Manager shows. The menu entry is named after <code>TITLE</code>.</p>
+
+<h3>When something fails</h3>
+<ul>
+<li><b>Krita could not find NumPy</b>: the zip is for another system, or Krita has a Python other than 3.13. The
+message names the Python version Krita has.</li>
+<li><b>Layer ... is a grouplayer</b> and similar: select a paint layer in the Layers docker.</li>
+<li><b>PARAMS</b>: the message names the parameter and lists every value form allowed.</li>
+</ul>
+</body>
+</html>
