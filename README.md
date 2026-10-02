@@ -33,6 +33,34 @@ English.
 3. Start Sára with its agent door (`sara-with-door.cmd` on Windows,
    `./sara.x86_64 -- --agent-door` on Linux) and open lesson 0.
 
+## Highlighting gmacs cells
+
+A notebook cell whose first line is `%%gmacs` holds a Sára kernel. The
+extension in `lib/` colours such a cell as gmacs, and every other cell stays
+Python. There is no language to pick: the cell switches as soon as you type
+`%%gmacs` on its first line, and switches back when you delete it.
+
+`pip install -r requirements.txt` already installs the extension. To add it to
+a JupyterLab you have already set up, install the wheel with the `pip` of the
+environment that runs JupyterLab, from the root of this repository:
+
+```bash
+pip install lib/jupyterlab_gmacs_syntax-0.1.1-py3-none-any.whl
+```
+
+Then stop JupyterLab, start it again and reload the browser tab. Check that it
+is on with:
+
+```bash
+jupyter labextension list
+```
+
+which lists `jupyterlab-gmacs-syntax` as enabled. It works in JupyterLab 4 and
+Jupyter Notebook 7, and needs no Node and no rebuild. VS Code's notebooks and
+the classic Notebook 6 do not load JupyterLab extensions, so they show gmacs
+cells as plain text. The colouring is cosmetic: the `%%gmacs` cells run either
+way.
+
 ## The Krita plugin
 
 Download `pga_filter-windows.zip` or `pga_filter-linux.zip` from the
