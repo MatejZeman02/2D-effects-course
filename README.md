@@ -45,7 +45,7 @@ a JupyterLab you have already set up, install the wheel with the `pip` of the
 environment that runs JupyterLab, from the root of this repository:
 
 ```bash
-pip install lib/jupyterlab_gmacs_syntax-0.1.1-py3-none-any.whl
+pip install lib/jupyterlab_gmacs_syntax-0.1.2-py3-none-any.whl
 ```
 
 Then stop JupyterLab, start it again and reload the browser tab. Check that it
