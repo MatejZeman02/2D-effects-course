@@ -14,7 +14,7 @@ English.
 | Path | What it holds |
 |---|---|
 | `lesson_NN_*.ipynb` | the lessons, one notebook each |
-| `lib/` | the Python client for Sára (`sara.py`, `sara_notebook.py`) and the JupyterLab extension that highlights `%%gmacs` cells |
+| `lib/` | the Python client for Sára (`sara.py`, `sara_notebook.py`) and the JupyterLab and VS Code extensions that highlight `%%gmacs` cells |
 | `imgs/<n>/` | the pictures and test images of lesson `n` |
 | `krita/` | the Krita plugin template `pga_filter`, its manual and its tests |
 | `build/` | the scripts that generate the notebooks, their pictures and the plugin zips |
@@ -36,8 +36,8 @@ English.
 ## Highlighting gmacs cells
 
 A notebook cell whose first line is `%%gmacs` holds a Sára kernel. The
-extension in `lib/` colours such a cell as gmacs, and every other cell stays
-Python. There is no language to pick: the cell switches as soon as you type
+extensions in `lib/` colour such a cell as gmacs in JupyterLab and in VS Code,
+and every other cell stays Python. There is no language to pick: the cell switches as soon as you type
 `%%gmacs` on its first line, and switches back when you delete it.
 
 `pip install -r requirements.txt` already installs the extension. To add it to
@@ -56,10 +56,18 @@ jupyter labextension list
 ```
 
 which lists `jupyterlab-gmacs-syntax` as enabled. It works in JupyterLab 4 and
-Jupyter Notebook 7, and needs no Node and no rebuild. VS Code's notebooks and
-the classic Notebook 6 do not load JupyterLab extensions, so they show gmacs
-cells as plain text. The colouring is cosmetic: the `%%gmacs` cells run either
-way.
+Jupyter Notebook 7, and needs no Node and no rebuild.
+
+VS Code does not load JupyterLab extensions, so it has its own. Install it
+once, then run **Developer: Reload Window**:
+
+```bash
+code --install-extension lib/gmacs-syntax-1.2.0.vsix
+```
+
+VS Code installs **Godot Tools** alongside it, whose shader grammar colours the
+GLSL inside a kernel. The classic Notebook 6 colours gmacs cells as Python. The
+colouring is cosmetic: the `%%gmacs` cells run either way.
 
 ## The Krita plugin
 
