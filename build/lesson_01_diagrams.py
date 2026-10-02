@@ -158,7 +158,7 @@ for name, at, colour in stops:
                                    arrowstyle="-|>", mutation_scale=14, linewidth=1.8, color=GREY))
     bottom.text(at, -0.25, name, ha="center", va="top", fontsize=11, family="monospace",
                 transform=bottom.transAxes)
-bottom.text(0.25, 1.12, "barva z přechodu, míchaná v OKLab", ha="center", va="bottom", fontsize=12,
+bottom.text(0.25, 1.12, "barva z přechodu, míchaná v OKLabu", ha="center", va="bottom", fontsize=12,
             transform=bottom.transAxes)
 save(fig, "gradient_map.png")
 
@@ -185,21 +185,59 @@ mat.set_title("práh = (B + 0.5) / 16", fontsize=12)
 
 ramp = np.tile(np.linspace(0, 1, 128), (16, 1))
 ry, rx = np.mgrid[0:16, 0:128]
-rng = np.random.default_rng(1)
 rows = [("zaokrouhlení, práh 0.5 všude", np.floor(ramp + 0.5)),
-        ("Bayer 4 × 4", np.floor(ramp + (BAYER[ry % 4, rx % 4] + 0.5) / 16)),
-        ("náhodný práh", np.floor(ramp + rng.random(ramp.shape)))]
+        ("Bayer 4 × 4", np.floor(ramp + (BAYER[ry % 4, rx % 4] + 0.5) / 16))]
 for k, (label, img) in enumerate(rows):
-    ax = fig.add_axes([0.33, 0.68 - k * 0.29, 0.64, 0.2])
+    ax = fig.add_axes([0.33, 0.62 - k * 0.4, 0.64, 0.24])
     ax.imshow(np.clip(img, 0, 1), cmap="gray", vmin=0, vmax=1, interpolation="nearest", aspect="auto")
     ax.set_xticks([])
     ax.set_yticks([])
     ax.set_title(label, fontsize=11, loc="left")
-fig.text(0.33, 0.02, "přechod od černé po bílou, převedený na dvě úrovně", fontsize=10, color=GREY)
+fig.text(0.33, 0.1, "přechod od černé po bílou, převedený na dvě úrovně", fontsize=10, color=GREY)
 save(fig, "bayer.png")
 
 
-# 5. Why Floyd-Steinberg runs pixel after pixel -----------------------------------
+# 5. Other thresholds: white noise and interleaved gradient noise ------------------
+def fract(x):
+    return x - np.floor(x)
+
+
+def hash21(x, y):
+    """sa_hash21 from Sara's noise library, white noise from 0 to 1."""
+    q = fract(np.stack([x, y, x], axis=-1).astype(np.float32) * np.float32(0.1031))
+    q += (q * (q[..., [1, 2, 0]] + np.float32(33.33))).sum(axis=-1, keepdims=True)
+    return fract((q[..., 0] + q[..., 1]) * q[..., 2])
+
+
+def ign(x, y):
+    """Interleaved gradient noise, Jimenez 2014."""
+    return fract(52.9829189 * fract(0.06711056 * x + 0.00583715 * y))
+
+
+S = 128
+gy, gx = np.mgrid[0:S, 0:S]
+thresholds = [("práh 0.5", np.full((S, S), 0.5)),
+              ("Bayer 4 × 4", (BAYER[gy % 4, gx % 4] + 0.5) / 16),
+              ("bílý šum", hash21(gx, gy)),
+              ("IGN", ign(gx, gy))]
+# A soft glow on black, the case where banding shows worst.
+glow = 0.5 * np.exp(-3.2 * (np.hypot(gx - S / 2 + 0.5, gy - S / 2 + 0.5) / (S / 2)) ** 2)
+levels = 7
+fig, axes = plt.subplots(2, 4, figsize=(11, 5.9), gridspec_kw={"hspace": 0.08, "wspace": 0.05})
+for col, (label, d) in enumerate(thresholds):
+    axes[0, col].imshow(d[:24, :24], cmap="gray", vmin=0, vmax=1, interpolation="nearest")
+    axes[1, col].imshow(np.floor(glow * levels + d) / levels, cmap="gray", vmin=0, vmax=1,
+                        interpolation="nearest")
+    axes[0, col].set_title(label, fontsize=12)
+    for ax in axes[:, col]:
+        ax.set_xticks([])
+        ax.set_yticks([])
+axes[0, 0].set_ylabel("práh d\n24 × 24 pixelů", fontsize=11)
+axes[1, 0].set_ylabel("záře na tmavém pozadí\nna osmi úrovních", fontsize=11)
+save(fig, "noise.png")
+
+
+# 6. Why Floyd-Steinberg runs pixel after pixel -----------------------------------
 fig, ax = plt.subplots(figsize=(8, 3.6))
 ax.set_xlim(-0.6, 7.6)
 ax.set_ylim(4.1, -1.0)
