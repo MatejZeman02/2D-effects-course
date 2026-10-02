@@ -421,9 +421,9 @@ Obojí řeší barevný prostor **OKLab**:
 | $a$ | osa zelená ↔ červená |
 | $b$ | osa modrá ↔ žlutá |
 
-Šedá má $a = b = 0$. Převod do šedi tedy převede barvu do OKLab, vynuluje $a$ a $b$, ponechá $L$ a převede barvu zpět. Pro `amount` mezi 0 a 1 se $a$ a $b$ jen zmenší.
+Šedá má $a = b = 0$. Převod do šedi tedy převede barvu do OKLabu, vynuluje $a$ a $b$, ponechá $L$ a převede barvu zpět. Pro `amount` mezi 0 a 1 se $a$ a $b$ jen zmenší.
 
-Převod do OKLab má čtyři kroky:
+Převod do OKLabu má čtyři kroky:
 
 $$\text{sRGB} \xrightarrow{\text{dekódování}} \text{lineární RGB} \xrightarrow{M_1} \text{LMS} \xrightarrow{\sqrt[3]{\cdot}} \text{L'M'S'} \xrightarrow{M_2} \text{OKLab}$$
 
@@ -437,11 +437,11 @@ Zpět se jde stejnými kroky pozpátku. Odkud se vzaly matice a jak OKLab navazu
 
 ### 🎯 Úkol 3: šedá podle OKLab
 
-Buňka převede barvu do OKLab a hned zpět, takže zatím vrací původní obrázek. Doplňte řádek s `TODO`, aby se $a$ a $b$ zmenšily podle `amount` a $L$ zůstalo.
+Buňka převede barvu do OKLabu a hned zpět, takže zatím vrací původní obrázek. Doplňte řádek s `TODO`, aby se $a$ a $b$ zmenšily podle `amount` a $L$ zůstalo.
 
 <details><summary>💡 Nápověda</summary>
 
-1. Řádky s `import` načtou knihovny Sáry: `linear_srgb_color_space` (dekódování a kódování sRGB) a `oklab_color_space` (převody mezi lineárním RGB a OKLab).
+1. Řádky s `import` načtou knihovny Sáry: `linear_srgb_color_space` (dekódování a kódování sRGB) a `oklab_color_space` (převody mezi lineárním RGB a OKLabem).
 2. Ve vektoru `lab` je $L$ složka `lab.x`, $a$ a $b$ jsou `lab.yz`. Swizzle funguje i pro zápis.
 </details>
 
@@ -774,7 +774,7 @@ def oklab_to_linear(lab):
 md(r"""
 ### 🎯 Úkol 5: šedá podle OKLab v NumPy
 
-Jako v úkolu 3 buňka převede barvy do OKLab a zpět a zatím vrací původní obrázek. Doplňte řádek s `TODO`.
+Jako v úkolu 3 buňka převede barvy do OKLabu a zpět a zatím vrací původní obrázek. Doplňte řádek s `TODO`.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -815,7 +815,7 @@ sara.check("Grey OKLab", apply_grey_oklab(pixels, amount=1.0))
 md(r"""
 ### Rychlost: NumPy a GPU
 
-Převod do OKLab dá procesoru víc práce než inverze:
+Převod do OKLabu dá procesoru víc práce než inverze:
 """)
 
 code("""
@@ -911,7 +911,7 @@ def apply(img, amount):
 
 ### 🎯 Úkol 6: šedá podle OKLab v Kritě
 
-Vložte do `effect.py` OKLab verzi z úkolu 5 a vyzkoušejte ji na fotce.
+Vložte do `effect.py` verzi s OKLabem z úkolu 5 a vyzkoušejte ji na fotce.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -950,12 +950,12 @@ md(r"""
 - Cyklus přes pixely v Pythonu je pomalý. NumPy počítá s celým polem najednou, GPU dává každému pixelu vlastní vlákno.
 - Kernel v buňce `%%gmacs` je funkce `pixel(ivec2 at) -> vec4`. `src(at)` čte zdrojovou vrstvu, `uniform` s `hint_range` je posuvník. Jeho výkon popisuje čas GPU z `sara.bench`.
 - **gmacs je dialekt GLSL** s odsazením místo závorek. Zbytek kernelu kolem vaší funkce doplní Sára.
-- Průměr kanálů není dobrá šedá. Hodnoty v sRGB je potřeba dekódovat a světlost $L$ z OKLab odpovídá tomu, jak světlost vnímá oko.
+- Průměr kanálů není dobrá šedá. Hodnoty v sRGB je potřeba dekódovat a světlost $L$ z OKLabu odpovídá tomu, jak světlost vnímá oko.
 - Efekt pro Kritu je **`PARAMS` a `apply(img, ...)`** v NumPy, šablona `pga_filter` ho spustí beze změny.
 
 ### Co jsme vynechali
 
-- **Barevné prostory podrobně**: odkud pocházejí matice OKLab, CIE L\*a\*b\*, proč sRGB kóduje právě takto. To probere lekce o barevných prostorech.
+- **Barevné prostory podrobně**: odkud pocházejí matice OKLabu, CIE L\*a\*b\*, proč sRGB kóduje právě takto. To probere lekce o barevných prostorech.
 - **Sousední pixely.** Dnešní efekty byly bodové operace, výsledek pixelu závisel jen na něm samém. Rozostření, hrany a sdílená paměť skupiny přijdou později.
 - **Hodnoty nad 1.** Sára nic neořezává, takže kanál může být větší než 1 a inverze z něj udělá záporné číslo. K tomu se vrátíme u HDR.
 - **Jak šablona čte pixely z Krity.** Podrobnosti jsou v okomentovaném `pga_filter/pixels.py`.
@@ -963,7 +963,7 @@ md(r"""
 ### Bonusové úkoly
 
 1. **Pruhy.** Funkce `pixel` dostává pozici `at`, efekt tedy může záviset na tom, kde pixel leží. Upravte buňku níže tak, aby invertovala jen každý druhý svislý pruh. Pak zkuste pruhy úhlopříčně, stačí místo `at.x` použít jiný výraz z `at.x` a `at.y`.
-2. **Práh.** Kernel, který obrázek převede jen na černou a bílou podle světlosti $L$ z OKLab a posuvníku `level`. Hodí se funkce `step(edge, x)` z GLSL, která vrací 0 pro `x < edge`, jinak 1.
+2. **Práh.** Kernel, který obrázek převede jen na černou a bílou podle světlosti $L$ z OKLabu a posuvníku `level`. Hodí se funkce `step(edge, x)` z GLSL, která vrací 0 pro `x < edge`, jinak 1.
 3. **Prohození kanálů.** Co udělá `vec4(c.brg, c.a)`? A `c.gbr`? Odhadněte výsledek a teprve pak ho spusťte.
 
 <details><summary>💡 Nápověda k pruhům</summary>
@@ -999,7 +999,7 @@ md(r"""
 ### Nápady na semestrální práci
 
 - Plugin s několika bodovými efekty v jednom okně (inverze, šedá, práh, prohození kanálů). Mezi efekty se přepíná rozbalovacím seznamem, v `PARAMS` je to seznam textů jako `["Invert", "Grey", "Threshold"]`.
-- **Duotone**: obrázek převedený na přechod mezi dvěma barvami podle světlosti $L$. Obě barvy si uživatel vybere, v `PARAMS` jsou to dvě barvy jako `"#1a2b6d"`. Přechod je v OKLab rovnoměrnější než v sRGB, víc v lekci o barevných prostorech.
+- **Duotone**: obrázek převedený na přechod mezi dvěma barvami podle světlosti $L$. Obě barvy si uživatel vybere, v `PARAMS` jsou to dvě barvy jako `"#1a2b6d"`. Přechod je v OKLabu rovnoměrnější než v sRGB, víc v lekci o barevných prostorech.
 """)
 
 # --- Appendix: the API --------------------------------------------------------
