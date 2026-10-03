@@ -1,12 +1,13 @@
 """The client a student copies: reach the Sara on the screen and its layers.
 
     import sara
-    doc, layer, a = sara.init()        # the Sara already open, the layer selected in it, its canvas
+    doc, layer, a = sara.init()        # a new sRGB document in the Sara open, its layer, its canvas
+    doc, layer, a = sara.init(attach=True)  # or the document already open, the layer selected in it
     doc = sara.connect()               # or just the document, never a new Sara
     layer = doc.layer("Background")    # or doc.layer(0), the lowest, or doc.layer() the selected
     a = layer.read()                   # float32, shape (h, w, 4), the whole canvas, document space
     layer.write(a * 0.5, name="darker")
-    chart = doc.import_image("img/color_chart.png")  # a layer called color_chart
+    chart = doc.import_image("img/color_chart.png")  # a layer called color_chart, which live reads next
     doc.undo_step("fourier magnitude") # names the next write's history step
     layer.show()                       # a cell ending in this shows it, 512 px on the GPU
     layer.show(max_size=None)          # the same at full size
@@ -85,12 +86,19 @@ def connect(path: str | Path | None = None) -> Document:
     return Document(Door(Path(path) if path is not None else door_file()))
 
 
-def init(path: str | Path | None = None) -> tuple[Document, Layer, np.ndarray]:
+def init(path: str | Path | None = None, *, attach: bool = False) -> tuple[Document, Layer, np.ndarray]:
     """What a lesson opens with: connect, and answer the document, the layer selected in Sara and
-    its pixels, the whole canvas as `(h, w, 4)`. Inside IPython `%%gmacs` is registered on that document."""
+    its pixels, the whole canvas as `(h, w, 4)`. Inside IPython `%%gmacs` is registered on that document.
+    The document is a new sRGB one at the size File > New offers, which **replaces the one open in
+    Sara**, so `layer.read()` hands back the numbers a picture holds and not Sara's own Oklab ones.
+    `attach=True` keeps the document already open and answers its selected layer instead.
+    That layer is the document's `home`, which `live`, `check` and `bench` read when given no source,
+    until `import_image` moves it to the picture it opens."""
     document = connect(path)
     try:
         _register_magic(document)
+        if not attach:
+            _open_srgb_document(document)
         layer = document.layer()
         document.home = layer
         return document, layer, layer.read()
@@ -98,6 +106,14 @@ def init(path: str | Path | None = None) -> tuple[Document, Layer, np.ndarray]:
         # The door serves one client at a time, so a call that failed hangs up for the next.
         document.close()
         raise
+
+
+def _open_srgb_document(document: Document) -> None:
+    """Replaces the document open in Sara with a new sRGB one at File > New's size, which the `document`
+    step's verdict says it made, a canvas it found nowhere to put it in being a verdict as well."""
+    said = document.door.verdict({"document": "srgb", "size": "default"})
+    if not isinstance(said, str) or not said.startswith("srgb, a new "):
+        raise SaraError(f"{VERDICT}document {said}")
 
 
 def live(apply: Callable[..., np.ndarray], params: dict, source: Layer | str | int | None = None, target: str | None = None) -> None:
@@ -110,7 +126,8 @@ def live(apply: Callable[..., np.ndarray], params: dict, source: Layer | str | i
 def layer_of(source: Layer | str | int | None) -> Layer:
     """*source* as a Layer, a Layer as it is. A name or an index is on the document `init()` connected,
     the one `%%gmacs` runs on, connected and handed to the notebook when there is none since the door
-    serves one client, and None is the layer `init()` read or the one selected in Sara."""
+    serves one client, and None is the document's `home`, the layer `init()` read or the picture
+    `import_image` opened since, or the one selected in Sara when there is neither."""
     if isinstance(source, Layer):
         return source
     import sara_notebook
@@ -280,10 +297,12 @@ class Document:
     def __init__(self, door: Door) -> None:
         self.door = door
         self._step_name: str | None = None
-        # The layer `init()` read, which `live` runs on when it is given no source.
+        # The layer `init()` read or `import_image` opened last, which `live` runs on when it is given no source.
         self.home: Layer | None = None
         # The last `kernel` step that wrote each layer, by its name, written by `kernel` alone.
         self.kernels: dict[str, dict] = {}
+        # The layers whose last kernel read the layer it wrote, which a rerun changes each time.
+        self.in_place: set[str] = set()
 
     def layer(self, key: str | int | None = None) -> Layer:
         """A layer by its name, or by its index from the bottom of the stack, 0 the lowest, or the
@@ -326,11 +345,14 @@ class Document:
     def import_image(self, path: str | Path) -> Layer:
         """Opens the picture at *path* as a layer named after the file, decoded into the document's
         space, and answers it. The path is resolved against this working directory, because Sara
-        runs in its own, and a layer of that name gives way to it, so a rerun leaves one."""
+        runs in its own, and a layer of that name gives way to it, so a rerun leaves one. The picture
+        becomes the document's `home`, so `live`, `check` and `bench` given no source read it, as a lesson
+        that opens a chart after `init()` means. A layer selected in Sara afterwards does not move it."""
         said = self.door.verdict({"import": os.path.abspath(os.path.expanduser(str(path)))})
         if not isinstance(said, dict) or "layer" not in said:
             raise SaraError(f"{VERDICT}import {said}")
-        return Layer(self, str(said["layer"]))
+        self.home = Layer(self, str(said["layer"]))
+        return self.home
 
     def undo_step(self, name: str) -> None:
         """Names the history step the next write records."""
@@ -343,7 +365,8 @@ class Document:
 
     def kernel(self, step: dict) -> dict:
         """Runs the `kernel` step and answers its verdict, `round_trip_ms` beside the app's `gpu_ms`:
-        the wall time of the request, the dispatch and the answer. Kept under the layer it wrote."""
+        the wall time of the request, the dispatch and the answer. Kept under the layer it wrote, without
+        the keys that say how a rerun is recorded, which the rerun's own sender chooses."""
         began = time.perf_counter()
         said = self.door.verdict({"kernel": step})
         round_trip_ms = (time.perf_counter() - began) * 1000.0
@@ -351,7 +374,9 @@ class Document:
             raise SaraError(f"{VERDICT}kernel {said}")
         said["round_trip_ms"] = round_trip_ms
         if "into" in said:
-            self.kernels[said["into"]] = dict(step, into=said["into"])
+            kept = {key: value for key, value in step.items() if key not in ("history", "step")}
+            self.kernels[said["into"]] = dict(kept, into=said["into"])
+            (self.in_place.add if said.get("in_place") else self.in_place.discard)(said["into"])
         return said
 
     def undo(self, steps: int = 1) -> None:
@@ -517,14 +542,21 @@ def _ms(value: float) -> str:
 
 def bench(layer: Layer | str | int, runs: int = 20) -> Timing:
     """Reruns the kernel that last wrote *layer*, a Layer or its name or index, with its values, *runs*
-    times, a request each so each has its round trip, prints the medians of both times and answers them."""
+    times, a request each so each has its round trip, prints the medians of both times and answers them.
+    The reruns write what the kernel wrote already, so they leave no undo step. A kernel that read the
+    layer it wrote changes it each time, and its reruns are one step called "Bench <name>"."""
     layer = layer_of(layer)
     # A kernel is kept under the name it wrote, so an index is looked up in the stack.
     name = layer.key if isinstance(layer.key, str) else layer._entry()["name"]
     step = layer.document.kernels.get(name)
     if step is None:
         raise SaraError(f"no kernel has written {name!r} since connect(), run its cell and name its layer")
-    said = [layer.document.kernel(step) for _ in range(max(1, int(runs)))]
+    in_place = name in layer.document.in_place
+    said = []
+    for n in range(max(1, int(runs))):
+        # An in-place rerun records once, the first, and the step undoes and redoes all of them.
+        record = dict(step, step=f"Bench {step['name']}") if in_place and n == 0 else dict(step, history=False)
+        said.append(layer.document.kernel(record))
     gpu = [s["gpu_ms"] for s in said if s.get("gpu_ms") is not None]
     medians = Timing(statistics.median(gpu) if gpu else None, statistics.median(s["round_trip_ms"] for s in said))
     print(f"{medians.line(said[-1].get('gpu_unknown', ''))} (median of {len(said)})")

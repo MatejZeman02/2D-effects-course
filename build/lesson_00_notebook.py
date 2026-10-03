@@ -82,7 +82,10 @@ Notebook se Sárou komunikuje přes místní spojení (*agent door*). Ve výchoz
 | Linux | v terminálu `./sara.x86_64 -- --agent-door` |
 | Sára už běží | v menu **Help → Connect an agent** |
 
-V Sáře vytvořte nový dokument ve výchozí velikosti (1920 × 1080) a spusťte buňku níže. `sara.init()` se připojí k Sáře, zaregistruje příkaz `%%gmacs` (sekce 4) a vrátí tři hodnoty: dokument `doc`, vrstvu vybranou v Sáře `layer` a její obsah jako pole čísel `pixels`.
+Spusťte buňku níže. `sara.init()` se připojí k Sáře, otevře v ní nový dokument v sRGB ve výchozí velikosti (1920 × 1080), zaregistruje příkaz `%%gmacs` (sekce 4) a vrátí tři hodnoty: dokument `doc`, vrstvu vybranou v Sáře `layer` a její obsah jako pole čísel `pixels`.
+
+> **⚠️ Pozor**
+> Nový dokument nahradí ten, který máte v Sáře otevřený. Rozdělanou práci si nejdřív uložte.
 """)
 
 code("""
@@ -216,7 +219,7 @@ Pixely vrstvy leží v paměti grafické karty, pole NumPy v paměti Pythonu. P�
 Při `layer.read()` Sára zkopíruje vrstvu z GPU do RAM, uloží ji jako `.npy` a odpoví cestou k souboru, který Python načte funkcí `np.load`. Zápis (`layer.write()`, `doc.new_layer()`) jde opačně přes `np.save` a v Sáře je jedním krokem historie.
 
 > **ℹ️ Poznámka**
-> Pole obsahuje přesně ta čísla, která Sára ukládá. Nic se neořezává, hodnoty mohou být i větší než 1 nebo záporné. Barvy jsou ve výchozím dokumentu kódované v **sRGB** jako v běžném obrázku, co to znamená, ukáže sekce 5.
+> Pole obsahuje přesně ta čísla, která Sára ukládá. Nic se neořezává, hodnoty mohou být i větší než 1 nebo záporné. Barvy jsou v dokumentu od `sara.init()` kódované v **sRGB** jako v běžném obrázku, co to znamená, ukáže sekce 5.
 
 Na plátně 1920 × 1080 je jeden přenos $1920 \cdot 1080 \cdot 4 \text{ kanály} \cdot 4 \text{ B} \approx 33 \text{ MB}$, náhledy pod buňkami jsou proto zmenšené. Kolik přenos trvá na vašem počítači, změří tato buňka. Pomocnou vrstvu „Transfer test“ na konci smaže.
 """)
