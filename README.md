@@ -14,7 +14,7 @@ English.
 | Path | What it holds |
 |---|---|
 | `lesson_NN_*.ipynb` | the lessons, one notebook each |
-| `lib/` | the Python client for Sára (`sara.py`, `sara_notebook.py`) and the JupyterLab and VS Code extensions that highlight `%%gmacs` cells |
+| `lib/` | the Python client for Sára (`sara.py`, `sara_notebook.py`) and the JupyterLab extension that highlights `%%gmacs` cells |
 | `imgs/<n>/` | the pictures and test images of lesson `n` |
 | `krita/` | the Krita plugin template `pga_filter`, its manual and its tests |
 | `build/` | the scripts that generate the notebooks, their pictures and the plugin zips |
@@ -35,10 +35,11 @@ English.
 
 ## Highlighting gmacs cells
 
-A notebook cell whose first line is `%%gmacs` holds a Sára kernel. The
-extensions in `lib/` colour such a cell as gmacs in JupyterLab and in VS Code,
-and every other cell stays Python. There is no language to pick: the cell switches as soon as you type
-`%%gmacs` on its first line, and switches back when you delete it.
+A notebook cell whose first line is `%%gmacs` holds a Sára kernel. Two
+extensions colour such a cell as gmacs, one for JupyterLab in `lib/` and one
+for VS Code, and every other cell stays Python. There is no language to pick:
+the cell switches as soon as you type `%%gmacs` on its first line, and
+switches back when you delete it.
 
 `pip install -r requirements.txt` already installs the extension. To add it to
 a JupyterLab you have already set up, install the wheel with the `pip` of the
@@ -58,11 +59,14 @@ jupyter labextension list
 which lists `jupyterlab-gmacs-syntax` as enabled. It works in JupyterLab 4 and
 Jupyter Notebook 7, and needs no Node and no rebuild.
 
-VS Code does not load JupyterLab extensions, so it has its own. Install it
-once, then run **Developer: Reload Window**:
+VS Code does not load JupyterLab extensions, so it has its own. Download
+`gmacs-syntax-<version>.vsix` from its
+[releases page](https://github.com/MatejZeman02/gmacs-acompute-syntax-highlighting-vs-code-extension/releases/latest),
+install it once with the version you downloaded, then run **Developer: Reload
+Window**:
 
 ```bash
-code --install-extension lib/gmacs-syntax-1.2.0.vsix
+code --install-extension gmacs-syntax-1.2.0.vsix
 ```
 
 VS Code installs **Godot Tools** alongside it, whose shader grammar colours the
