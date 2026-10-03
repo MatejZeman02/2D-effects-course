@@ -14,7 +14,7 @@ English.
 | Path | What it holds |
 |---|---|
 | `lesson_NN_*.ipynb` | the lessons, one notebook each |
-| `lib/` | the Python client for Sára (`sara.py`, `sara_notebook.py`) and the JupyterLab extension that highlights `%%gmacs` cells |
+| `lib/` | the Python client for Sára (`sara.py`, `sara_notebook.py`, `sara_live.py`, `sara_params.py`) and the JupyterLab extension that highlights `%%gmacs` cells |
 | `imgs/<n>/` | the pictures and test images of lesson `n` |
 | `krita/` | the Krita plugin template `pga_filter`, its manual and its tests |
 | `build/` | the scripts that generate the notebooks, their pictures and the plugin zips |
