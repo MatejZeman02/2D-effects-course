@@ -67,6 +67,11 @@ GitHub Copilot read this file directly.
   to 1, sRGB encoded.
 - Every function of the client has a docstring, `help(sara.live)` or
   `help(doc.new_layer)`. Read `lib/sara.py` rather than guess an API.
+- In VS Code an `ipywidgets.Output` can show a red box, "Failed to load model
+  class 'OutputModel'", instead of its content, the picture of a `%%gmacs`
+  cell or of `sara.live` included until the next update of `lib/`. That is VS
+  Code's renderer, not the student's code. Suggest JupyterLab, and avoid
+  `ipywidgets.Output` in code you write for the student.
 
 ## Using Sára's door yourself
 

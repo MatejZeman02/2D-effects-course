@@ -34,6 +34,15 @@ English.
 3. Start Sára with its agent door (`sara-with-door.cmd` on Windows,
    `./sara.x86_64 -- --agent-door` on Linux) and open lesson 0.
 
+> [!WARNING]
+> In VS Code, a widget built on `ipywidgets.Output` can show a red box,
+> "Failed to load model class 'OutputModel' from module
+> '@jupyter-widgets/output'", in place of its content. The picture under a
+> `%%gmacs` cell and under `sara.live` is such a widget until the next update
+> of `lib/`, so in VS Code their sliders appear but the picture does not. Open
+> the lessons in JupyterLab until then. An `ipywidgets.Output` of your own can
+> show the same box in VS Code, and JupyterLab shows it fine.
+
 ## Highlighting gmacs cells
 
 A notebook cell whose first line is `%%gmacs` holds a Sára kernel. Two
