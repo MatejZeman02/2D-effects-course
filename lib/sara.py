@@ -331,15 +331,21 @@ class Document:
         return Layer(self, active["i"] if shared else active["name"])
 
     def new_layer(
-        self, name: str, array: np.ndarray | None = None, rect: list[int] | None = None, step: str | None = None
+        self,
+        name: str,
+        array: np.ndarray | None = None,
+        rect: list[int] | None = None,
+        step: str | None = None,
+        history: bool = True,
     ) -> Layer:
         """Adds a layer called *name* above the active one and answers it, holding *array* at *rect*
         when one is given, the add and the pixels then being one undo step called *step*. A layer
-        already called *name* is the one answered and written, so running a cell again leaves one."""
+        already called *name* is the one answered and written, so running a cell again leaves one,
+        and *history* False writes it as `Layer.write` says."""
         if array is None:
             said = self.door.verdict({"layer": {"add": name}})
             return Layer(self, str(said.get("layer", name)) if isinstance(said, dict) else name)
-        said = _write(self, {"new_layer": name}, array, rect, step)
+        said = _write(self, {"new_layer": name}, array, rect, step, history)
         return Layer(self, said.get("layer", name))
 
     def import_image(self, path: str | Path) -> Layer:
@@ -405,8 +411,12 @@ class Document:
         self.close()
 
 
-def _write(document: Document, target: dict, array: np.ndarray, rect: list[int] | None, name: str | None) -> dict:
-    """The `write_pixels` step for *target*, `layer` or `new_layer`, and what it answered."""
+def _write(
+    document: Document, target: dict, array: np.ndarray, rect: list[int] | None, name: str | None, history: bool = True
+) -> dict:
+    """The `write_pixels` step for *target*, `layer` or `new_layer`, and what it answered. Sent with a
+    `settle` of 0, since the step prints its verdict before it returns and a slider's drag cannot spare
+    the two frames the door waits by default."""
     pixels = np.asarray(array, dtype=np.float32)
     if pixels.ndim == 2:
         pixels = np.repeat(pixels[..., None], 3, axis=2)
@@ -423,11 +433,13 @@ def _write(document: Document, target: dict, array: np.ndarray, rect: list[int] 
     try:
         np.save(path, np.ascontiguousarray(pixels))
         step = dict(target, rect=rect, file=path)
-        pending = document.take_step_name()
+        if not history:
+            step["history"] = False
+        pending = document.take_step_name() if history else None
         chosen = name or pending
         if chosen:
             step["name"] = chosen
-        said = document.door.verdict({"write_pixels": step})
+        said = document.door.verdict({"write_pixels": step, "settle": 0})
     finally:
         Path(path).unlink(missing_ok=True)
     return said if isinstance(said, dict) else {"said": said}
@@ -451,9 +463,13 @@ class Layer:
             raise SaraError(f"{VERDICT}read_pixels {said}")
         return np.load(said["path"])
 
-    def write(self, array: np.ndarray, rect: list[int] | None = None, name: str | None = None) -> dict:
-        """Writes *array* at *rect*, the array's size at the origin when none is given, as one undo step."""
-        return _write(self.document, {"layer": self.key}, array, rect, name)
+    def write(self, array: np.ndarray, rect: list[int] | None = None, name: str | None = None, history: bool = True) -> dict:
+        """Writes *array* at *rect*, the array's size at the origin when none is given, as one undo step.
+
+        With *history* False the write records no step and Sara keeps what it overwrote, so the next
+        write with history on records every write since as its one step, the way a slider's drag and
+        its let go are one undo. A step recorded, undone or redone in between lets that go."""
+        return _write(self.document, {"layer": self.key}, array, rect, name, history)
 
     def show(self, rect: list[int] | None = None, max_size: int | None = 512) -> Picture:
         """*rect* of the layer, the whole canvas when none is given, in eight bits for the screen, at most
