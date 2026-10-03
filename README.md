@@ -18,6 +18,7 @@ English.
 | `imgs/<n>/` | the pictures and test images of lesson `n` |
 | `krita/` | the Krita plugin template `pga_filter`, its manual and its tests |
 | `build/` | the scripts that generate the notebooks, their pictures and the plugin zips |
+| `AGENTS.md` | instructions for AI coding assistants, which `CLAUDE.md` and `GEMINI.md` import |
 
 ## Getting started
 
