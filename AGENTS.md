@@ -26,9 +26,11 @@ GitHub Copilot read this file directly.
 ## Commits and attribution
 
 - Never add a `Co-Authored-By` trailer, a "Generated with" line or any other AI
-  attribution to a commit message, a pull request or a file. The work is the
-  student's.
-- Commit and push only when the student asks.
+  attribution to a commit message, a pull request or a file.
+- Students cannot push to this public repository, only to a fork or a new
+  repository of their own, which may later hold their semester project. Before
+  you push, check that the remote is no longer
+  https://github.com/MatejZeman02/2D-effects-course.
 - `.claude/settings.json` turns Claude Code's attribution off in this
   repository.
 
@@ -59,12 +61,75 @@ GitHub Copilot read this file directly.
   in a Sára that is already running.
 - `sara.init()` replaces the document open in Sára with a new sRGB one. Warn
   the student first if they may have unsaved work there.
-- You cannot see Sára's canvas. Ask the student, or read what `layer.show()`
-  and `doc.show()` display in the notebook.
+- You cannot see Sára's window, but you can look at its picture through the
+  door, as the next section shows.
 - An image is a NumPy `float32` array of shape (height, width, 4), RGBA from 0
   to 1, sRGB encoded.
 - Every function of the client has a docstring, `help(sara.live)` or
   `help(doc.new_layer)`. Read `lib/sara.py` rather than guess an API.
+
+## Using Sára's door yourself
+
+The door is not only the notebook's. You can attach to the same Sára from a
+shell, list its layers, read their pixels, save the picture as a PNG to look
+at and check that a kernel compiles, all through the client in `lib/sara.py`.
+
+- Sára must be running with its door open, as above. **Help > Connect an
+  agent** also copies a message for an agent, which the student may paste into
+  the conversation. It describes the door's raw HTTP, but use `lib/sara.py`,
+  which speaks it for you and finds the door by itself.
+- Run Python from the repository's root with `lib` on the path. Attach with
+  `sara.connect()`, which leaves the open document as it is, and never with
+  `sara.init()`, which replaces it.
+- **The door serves one client at a time.** While the notebook's kernel holds
+  it, your connection is closed unanswered and `sara.connect()` raises a
+  `SaraError`. Ask the student to run `doc.close()` in the notebook, or to
+  restart its kernel, before you attach. Sára also lets go of a client that
+  has been idle for ten minutes. Hang up as soon as you are done, which the
+  `with` block does, and the notebook's next call attaches again by itself.
+- Read freely, but ask before you write. A write, a new layer, an imported
+  picture or a kernel run changes the student's picture, each as one undo step
+  they can take back in Sára.
+
+Reading the document and looking at it:
+
+```python
+import sys
+import tempfile
+from pathlib import Path
+
+sys.path.insert(0, "lib")
+import sara
+
+with sara.connect() as doc:
+    for entry in doc.layers():                    # the stack, bottom first
+        print(entry["i"], entry["name"], entry["visible"])
+    a = doc.layer("Background").read()            # float32 (h, w, 4), sRGB
+    print(a.shape, a[..., :3].mean(axis=(0, 1)))
+    look = Path(tempfile.gettempdir()) / "sara-look.png"
+    look.write_bytes(doc.show().data)             # the whole picture, 512 px on the long side
+```
+
+Then open that PNG with your own image reading to see what the student sees.
+`doc.layer("Dithered").show().data` is one layer instead of the whole picture.
+
+Checking that a kernel compiles, which touches no layer:
+
+```python
+source = """uniform float levels: hint_range(2, 16) = 4.0
+
+def pixel(ivec2 at) -> vec4:
+    return floor(src(at) * levels + 0.5) / levels
+"""
+with sara.connect() as doc:
+    said = doc.kernel({"source": source, "name": "pixels", "run": False})
+    print(said["params"])                         # the uniforms Sára found
+```
+
+The source is the cell's body without its `%%gmacs` line. `name` is `pixels`
+for the short pixel form, or the name on the `kernel` line of a whole kernel.
+A kernel that does not compile raises a `SaraError` carrying the compiler's
+message and the line it points at.
 
 ## gmacs kernels
 
@@ -92,9 +157,29 @@ Python's block syntax. It reads the layer "Source" and writes the layer
   - `uniform vec3 c: source_color = vec3(1.0, 0.5, 0.2)` is a colour picker
     handing the kernel sRGB numbers
   - `uniform bool b = false` is a checkbox
-- Sára's libraries are imported by name, `import linear_srgb_color_space`,
-  `import oklab_color_space` or `import noise`. Use only the library functions
-  a lesson introduces and never invent others.
+- Sára's libraries are imported by name, one per line, right under the
+  `%%gmacs` line and above the `uniform` lines. An import pastes the whole
+  library into the kernel, so there is no `from ... import`, and a name the
+  library defines cannot be declared again.
+
+### Common gmacs imports
+
+| Import | What it gives a kernel |
+|---|---|
+| `linear_srgb_color_space` | `srgb_to_linear_srgb(c)` decodes sRGB into linear light, `linear_srgb_to_srgb(c)` encodes it back, `gamma(c, g)` raises each channel to a power |
+| `oklab_color_space` | `linear_srgb_to_oklab(c)` and `oklab_to_linear_srgb(c)`, between linear RGB and Oklab, whose `.x` is the perceived lightness |
+| `noise` | `sa_hash21(p)` one number from 0 to 1 per point, `sa_hash22(p)` two of them, `sa_value_noise(p)` smooth noise, `sa_value_fbm(p)` three octaves of it, `sa_voronoi(p)` the distance to the nearest of scattered points, all from 0 to 1 |
+| `erf` | `sa_erf(x)`, the Gauss error function GLSL lacks, for a Gaussian falloff |
+| `positive_channels` | `sa_positive_channels(c)` pulls a colour with a negative channel towards grey until none is negative, before a `pow` or a product |
+
+- Every `c` is a `vec3`. Oklab is reached through linear RGB, so sRGB to
+  Oklab is `linear_srgb_to_oklab(srgb_to_linear_srgb(c.rgb))` and back is
+  `linear_srgb_to_srgb(oklab_to_linear_srgb(lab))`.
+- The noise functions take a `vec2` measured in cells. `sa_hash21(vec2(at))`
+  is white noise, a new number every pixel, and `sa_value_noise(vec2(at) / 32.0)`
+  changes smoothly over about 32 pixels.
+- The libraries live in Sára's own repository, not in this one. Use only the
+  functions this table and the lessons name, and never invent others.
 
 ## NumPy and the Krita plugin
 
