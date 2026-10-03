@@ -65,9 +65,55 @@ md(r"""
 | Sára | rozbalený zip z kurzu (Windows nebo Linux) |
 | Python, JupyterLab, NumPy, ipywidgets, Matplotlib a zvýraznění syntaxe gmacs | `pip install -r requirements.txt` ve složce s notebookem, před spuštěním JupyterLab |
 | Krita 6 | [krita.org](https://krita.org/) |
-| plugin `pga_filter` | `pga_filter-windows.zip` nebo `pga_filter-linux.zip` ze zipu kurzu |
+| plugin `pga_filter` | `pga_filter-windows.zip` nebo `pga_filter-linux.zip` ze stránky [Releases](https://github.com/MatejZeman02/2D-effects-course/releases/latest) tohoto repozitáře |
 
 Vedle notebooku nechte složku `lib` se soubory `sara.py`, `sara_notebook.py`, `sara_live.py` a `sara_params.py`, které notebook načítá, a s balíčkem pro zvýraznění gmacs, a složku `imgs` s obrázky.
+""")
+
+# --- Functions -----------------------------------------------------------------
+md(r"""
+### Funkce v této lekci
+
+Přehled toho, co lekce používá, s odkazem na sekci, kde se funkce objeví poprvé. Úplný přehled metod `doc` a `layer` je v příloze na konci.
+
+**Sára v Pythonu**
+
+| Volání | Co dělá | Sekce |
+|---|---|---|
+| `sara.init()` | připojí notebook k Sáře, otevře dokument v sRGB a vrátí `doc, layer, pixels` | 1 |
+| `doc.import_image("cesta.png")` | otevře obrázek jako vrstvu pojmenovanou podle souboru | 1 |
+| `layer.read()`, `layer.show()` | pixely vrstvy jako pole, zmenšený náhled vrstvy | 1 |
+| `doc.new_layer("jméno", pole)` | nová vrstva z pole | 2 |
+| `sara.bench("vrstva")` | změří čas kernelu, který vrstvu naposledy zapsal | 4 |
+| `sara.live(apply, PARAMS, target="...")` | posuvníky pro NumPy funkci, výsledek zapisuje do vrstvy `target` | 7 |
+| `sara.check("vrstva", pole)` | porovná vrstvu s polem a vypíše největší rozdíl | 7 |
+
+**Kernel v buňce `%%gmacs`**
+
+| Zápis | Co dělá | Sekce |
+|---|---|---|
+| `uniform float x: hint_range(0, 1) = 1.0` | parametr kernelu s posuvníkem | 4 |
+| `src(at)` | barva zdrojové vrstvy v pixelu `at` | 4 |
+| `vec3`, `vec4`, `c.rgb`, `c.a` | vektory a jejich složky, jako v GLSL | 4 |
+| `mix(a, b, t)` | lineární přechod z `a` do `b` podle `t` od 0 do 1 | 4 |
+| `srgb_to_linear_srgb`, `linear_srgb_to_srgb` | dekódování a kódování sRGB, knihovna `linear_srgb_color_space` | 5 |
+| `linear_srgb_to_oklab`, `oklab_to_linear_srgb` | převody mezi lineárním RGB a OKLabem, knihovna `oklab_color_space` | 5 |
+| `dot(a, b)` | skalární součin dvou vektorů | 6 |
+
+**NumPy**
+
+| Volání | Co dělá | Sekce |
+|---|---|---|
+| `pixels[y, x]`, `img[..., :3]` | jeden pixel, barevné kanály všech pixelů | 2 |
+| `pixels.min()`, `pixels.max()` | nejmenší a největší hodnota v poli | 2 |
+| `np.mgrid[0:h, 0:w]` | souřadnice y a x každého pixelu | 2 |
+| `np.zeros((h, w, 4), dtype=np.float32)` | pole nul daného tvaru | 2 |
+| `img.copy()` | kopie pole, původní obrázek zůstane beze změny | 3 |
+| `rgb.mean(axis=-1)` | průměr přes poslední osu, tady přes kanály R, G a B | 7 |
+| `np.stack([y, y, y], axis=-1)` | složí tři pole tvaru (výška, šířka) do jednoho tvaru (výška, šířka, 3) | 7 |
+| `np.where(podmínka, a, b)` | po prvcích vybere `a`, kde podmínka platí, jinak `b` | 7 |
+| `rgb @ M.T` | vynásobí maticí $M$ barvu každého pixelu | 7 |
+| `np.cbrt(x)` | třetí odmocnina po prvcích, i ze záporných čísel | 7 |
 """)
 
 # --- 1. Sara ------------------------------------------------------------------

@@ -256,6 +256,42 @@ balls.show()
 """)
 
 md(r"""
+### Nové funkce v této lekci
+
+Funkce z úvodní lekce shrnuje její příloha. Sloupec Sekce říká, kde se funkce objeví poprvé.
+
+**Kernel v buňce `%%gmacs`**
+
+| Zápis | Co dělá | Sekce |
+|---|---|---|
+| `uniform vec3 c: source_color = vec3(1.0, 0.5, 0.2)` | výběr barvy, kernel dostane čísla v sRGB | 1 |
+| `uniform int i: hint_enum("A", "B") = 0` | rozbalovací seznam, kernel dostane pořadí volby od 0 | 1 |
+| `uniform int n: hint_range(2, 16) = 4` | posuvník po celých číslech | 3 |
+| `const float A[16] = float[16](...)` | pole konstant, jako v GLSL | 3 |
+| `floor(x)`, `fract(x)`, `clamp(x, 0.0, 1.0)` | zaokrouhlení dolů, desetinná část, omezení do intervalu | 3 |
+| `at.x % 4` | zbytek po dělení celých čísel | 3 |
+| `sa_hash21(vec2 p)` | bílý šum, číslo od 0 do 1 z pozice, knihovna `noise` | 3 |
+
+**Sára v Pythonu**
+
+| Volání | Co dělá | Sekce |
+|---|---|---|
+| `sara.live(apply, PARAMS, source="balls", target="...")` | `source` vybere vrstvu, ze které NumPy funkce čte | 4 |
+| `"#1b1035"` a `["A", "B"]` v `PARAMS` | výběr barvy, `apply` dostane trojici čísel od 0 do 1 v sRGB, a rozbalovací seznam, `apply` dostane text volby | 4 |
+| `sara.check("vrstva", pole, tolerance=0.01)` | vypíše i podíl pixelů, které se liší víc než o `tolerance` | 4 |
+
+**NumPy**
+
+| Volání | Co dělá | Sekce |
+|---|---|---|
+| `np.interp(t, xp, fp)` | po částech lineární funkce: v bodech `xp` má hodnoty `fp`, mezi nimi interpoluje | 4 |
+| `np.floor(x)`, `np.clip(x, 0, 1)` | totéž co `floor` a `clamp` v kernelu, po prvcích | 4 |
+| `BAYER[yy % 4, xx % 4]` | indexování polem indexů: každému pixelu vybere prvek matice 4 × 4 | 4 |
+| `stops[:, k]` | sloupec `k` matice | 4 |
+| `np.asarray(x, dtype=np.float32)` | seznam nebo pole převede na pole `float32` | 4 |
+""")
+
+md(r"""
 ## Cíl lekce
 
 Buňka níže spustí hotový efekt na vrstvě `balls`. Její kód je schovaný, protože ho během lekce napíšete sami. Vyzkoušejte barvy, posuvník `steps` a seznam `dither`.
@@ -633,28 +669,8 @@ md(r"""
 md(r"""
 ### Nápady na semestrální práci
 
-- Gradient map s předvolbami palet. Rozbalovací seznam v `PARAMS` jako `["Sunset", "Ocean", "Game Boy"]` vybere sadu barev, výběry barvy ji doladí.
+- Gradientní mapa s předvolbami palet. Rozbalovací seznam v `PARAMS` jako `["Sunset", "Ocean", "Game Boy"]` vybere sadu barev, výběry barvy ji doladí.
 - Retro filtr s pevnou paletou, třeba čtyřmi zelenými odstíny Game Boye, a s ditheringem. Matice prahů může být parametr, v `PARAMS` jako `[[0, 2], [3, 1]]` se z ní stane mřížka čísel k úpravě.
-""")
-
-# --- Appendix: the API --------------------------------------------------------
-md(r"""
-## Příloha: přehled funkcí
-
-Nové v této lekci. Ostatní funkce popisuje příloha úvodní lekce.
-
-| Volání nebo zápis | Co dělá |
-|---|---|
-| `sara.live(apply, PARAMS, source="balls", target="...")` | ovládací prvky pro NumPy funkci, čte vrstvu `source` a zapisuje do vrstvy `target` |
-| `sara.check("vrstva", pole, tolerance=0.01)` | největší rozdíl mezi vrstvou a polem a podíl pixelů, které se liší víc než o `tolerance` |
-| `uniform vec3 c: source_color = vec3(1.0, 0.5, 0.2)` | výběr barvy, kernel dostane čísla v sRGB |
-| `uniform int i: hint_enum("A", "B") = 0` | rozbalovací seznam, kernel dostane pořadí volby od 0 |
-| `uniform int n: hint_range(2, 16) = 4` | posuvník po celých číslech |
-| `const float A[16] = float[16](...)` | pole konstant, jako v GLSL |
-| `fract(x)`, `dot(a, b)` | desetinná část čísla a skalární součin, jako v GLSL |
-| `srgb_to_linear_srgb`, `linear_srgb_to_srgb` | dekódování a kódování sRGB, knihovna `linear_srgb_color_space` |
-| `linear_srgb_to_oklab`, `oklab_to_linear_srgb` | převody mezi lineárním RGB a OKLabem, knihovna `oklab_color_space` |
-| `sa_hash21(vec2 p)` | bílý šum, číslo od 0 do 1 z pozice, knihovna `noise` |
 """)
 
 

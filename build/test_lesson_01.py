@@ -52,7 +52,7 @@ def test_the_dither_labels_agree():
 
 
 def test_the_check_cell_uses_the_defaults(defaults):
-    check = [c for c in nb.cells if "sara.check(" in "".join(c["source"])][0]
+    check = [c for c in nb.cells if c["cell_type"] == "code" and "sara.check(" in "".join(c["source"])][0]
     space = {}
     exec("".join(check["source"]).split("sara.check")[0], space)
     for name, value in defaults.items():
