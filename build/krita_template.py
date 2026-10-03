@@ -73,17 +73,28 @@ def pack(system: str) -> Path:
     DIST.mkdir(exist_ok=True)
     out = DIST / f"pga_filter-{system}.zip"
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        folders: set[Path] = set()
+
+        def add(path: Path) -> None:
+            # Krita's importer finds the plugin only through an explicit
+            # "pga_filter/" entry, so every folder gets one before its files.
+            rel = path.relative_to(KRITA)
+            for folder in reversed(rel.parents[:-1]):
+                if folder not in folders:
+                    folders.add(folder)
+                    z.write(KRITA / folder, folder.as_posix() + "/")
+            z.write(path, rel.as_posix())
+
         z.write(DESKTOP, DESKTOP.name)
         for path in sorted(PLUGIN.rglob("*")):
-            rel = path.relative_to(KRITA)
             parts = path.relative_to(PLUGIN).parts
             if path.is_dir() or parts[0] in SKIP or "__pycache__" in parts:
                 continue
-            z.write(path, rel.as_posix())
+            add(path)
         vendor = PLUGIN / "vendor" / system
         for path in sorted(vendor.rglob("*")):
             if path.is_file() and "__pycache__" not in path.parts:
-                z.write(path, path.relative_to(KRITA).as_posix())
+                add(path)
     return out
 
 
