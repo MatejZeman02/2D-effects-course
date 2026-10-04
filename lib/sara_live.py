@@ -136,7 +136,7 @@ class Live:
         self.controls = {param.name: Control(param) for param in params}
         self.values: dict[str, Any] = {param.name: param.initial() for param in params}
         self.status = ipywidgets.Label()
-        self.output = ipywidgets.Output()
+        self.picture = ipywidgets.Image(format="png")
         self.debounce = sara_notebook.Debounce(self.rerun)
         # The wait for the let go, restarted by every write of a drag, and the last picture such a write sent,
         # which the let go sends again with history on. None when no write since the last step is unrecorded.
@@ -145,7 +145,7 @@ class Live:
         for name, control in self.controls.items():
             for widget in control.inputs():
                 widget.observe(lambda change, name=name: self.moved(name, change), names="value")
-        self.box = ipywidgets.VBox([*[control.box for control in self.controls.values()], self.status, self.output])
+        self.box = ipywidgets.VBox([*[control.box for control in self.controls.values()], self.status, self.picture])
 
     def run(self, values: dict[str, Any], history: bool = True) -> sara.Layer:
         """Calls `apply` on a copy of the picture and a copy of each grid, writes its answer to the target layer,
@@ -208,10 +208,9 @@ class Live:
             self.armed = None
 
     def show(self, layer: sara.Layer) -> None:
-        """Draws the written layer under the widgets, replacing the last, in `show()`'s small form."""
-        with self.output:
-            self.output.clear_output(wait=True)
-            display(layer.show())
+        """Draws the written layer under the widgets, replacing the last, in `show()`'s small form, as the PNG
+        of an `Image` widget, which VS Code draws where it fails on an `Output` (L8 of plan 33)."""
+        self.picture.value = layer.show().data
 
 
 # The last call's controls, which a script or a test reads the widgets of.

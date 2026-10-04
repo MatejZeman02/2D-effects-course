@@ -14,7 +14,7 @@
     sara.bench(doc.layer("cells"))     # the GPU time and round trip of the kernel that wrote it
     sara.live(apply, PARAMS)           # a NumPy function with sliders, see sara_live.py
     doc.layers()                       # the stack bottom first, a dict a layer
-    copy = layer.duplicate()           # the copy is a Layer and is selected
+    copy = layer.duplicate()           # the copy is a Layer and is selected, duplicate("Ink blurred") names it
     copy.opacity = 0.5                 # copy.visible too, both leave the selection alone
     copy.delete()                      # one undo step, and layer.select() picks a layer
     sara.check(layer, mine)            # how far the layer is from an array, printed and answered
@@ -505,9 +505,10 @@ class Layer:
         if self._act(activate=name)["active"] != name:
             raise SaraError(f"Sara did not select {name}")
 
-    def duplicate(self) -> Layer:
-        """Copies the layer above itself as one undo step and answers the copy, which Sara selects."""
-        for line in self._act(duplicate=True)["done"]:
+    def duplicate(self, name: str | None = None) -> Layer:
+        """Copies the layer above itself as one undo step and answers the copy, which Sara selects, called
+        *name* in the same step when given. A copy is a new layer, so a name the stack holds raises."""
+        for line in self._act(duplicate=True if name is None else str(name))["done"]:
             if line.startswith(DUPLICATED) and line != DUPLICATED + "nothing":
                 return Layer(self.document, line[len(DUPLICATED) :])
         raise SaraError(f"Sara did not duplicate {self.key}")

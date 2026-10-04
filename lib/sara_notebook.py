@@ -31,7 +31,12 @@ named after the kernel is when the line names none, and the values of the
 parameters. A word `<image>=<layer>` names a layer for each further readonly
 image the kernel declares, as `%%gmacs Background src1=Sky -> Mixed` for a
 kernel with `image src1: readonly`, and the kernel reads it under that name, a
-number being the layer's index as for the first two. The body is the kernel, sent as source to the app's `kernel` step,
+number being the layer's index as for the first two. A word `rect=<x>,<y>,<w>,<h>`
+runs the kernel over that rectangle and `rect=canvas` over the whole canvas,
+whatever the read layer holds. With neither it runs over the chunks the read
+layer holds, and over the whole canvas when that layer holds none, so a cell
+that makes a texture from `at` alone works over the empty layer `sara.init()`
+answers. The body is the kernel, sent as source to the app's `kernel` step,
 and the cell shows the written layer with `show()`. Every scalar parameter the
 compiled kernel answers becomes a slider, its range from the
 `hint_range(<min>, <max>[, <step>])` on its line in the params block or on its
@@ -61,6 +66,7 @@ neither IPython nor `ipywidgets`, and this one needs both.
 from __future__ import annotations
 
 import functools
+import html
 import math
 import re
 import shlex
@@ -131,13 +137,15 @@ class CellLine:
 
     A word `<image>=<layer>` whose name is one of *images*, the further readonly
     images the kernel declares beside `src`, names a layer the kernel reads
-    under that name, and the `kernel` step gets it in `inputs`."""
+    under that name, and the `kernel` step gets it in `inputs`. `rect=` takes
+    four whole numbers, `x,y,w,h`, or the word `canvas`, which the step reads
+    as the whole canvas."""
 
     def __init__(self, line: str, images: set[str] | frozenset[str] = frozenset()) -> None:
         self.layer: str | int | None = None
         self.into: str | int | None = None
         self.values: dict[str, float | bool] = {}
-        self.rect: list[int] | None = None
+        self.rect: list[int] | str | None = None
         self.inputs: dict[str, str | int] = {}
         layers: list[str | int] = []
         for word in shlex.split(line):
@@ -149,7 +157,7 @@ class CellLine:
             elif key in images:
                 self.inputs[key] = int(value) if value.isdigit() else value
             elif key == "rect":
-                self.rect = [int(v) for v in value.split(",")]
+                self.rect = _rect(value)
             elif value in ("true", "false"):
                 self.values[key] = value == "true"
             else:
@@ -161,6 +169,20 @@ class CellLine:
             raise ValueError(f"a %%gmacs line names a layer to read and one to write, not {layers}")
         self.layer = layers[0] if layers else None
         self.into = layers[1] if len(layers) > 1 else None
+
+
+def _rect(value: str) -> list[int] | str:
+    """The `rect=` word's value as the `kernel` step takes it, four whole numbers or `canvas`."""
+    if value == "canvas":
+        return value
+    parts = value.split(",")
+    try:
+        numbers = [int(part) for part in parts]
+    except ValueError:
+        numbers = []
+    if len(numbers) != 4:
+        raise ValueError(f"rect={value} is neither x,y,w,h in whole numbers nor canvas")
+    return numbers
 
 
 def images(source: str) -> set[str]:
@@ -316,7 +338,8 @@ class Cell:
         self.name = kernel_name(source)
         self.into = self.line.into
         self.values: dict[str, Any] = dict(self.line.values)
-        self.output = ipywidgets.Output()
+        # An `Image` and no `Output`: VS Code's Jupyter 2025.9.1 cannot load that widget's module (L8 of plan 33).
+        self.picture = ipywidgets.Image(format="png")
         self.timing = ipywidgets.Label()
         self.sliders: dict[str, ipywidgets.Widget] = {}
         self.grids: dict[str, ipywidgets.GridBox] = {}
@@ -393,7 +416,7 @@ class Cell:
                 slider = ipywidgets.FloatSlider(value=float(value), min=low, max=high, step=fine, description=name)
             self._add(name, slider)
         shown = [self.sliders.get(p["name"]) or self.colours.get(p["name"]) for p in params]
-        return ipywidgets.VBox([*[w for w in shown if w is not None], self.timing, self.output])
+        return ipywidgets.VBox([*[w for w in shown if w is not None], self.timing, self.picture])
 
     def _colour(self, name: str, kind: str, default: Any) -> ipywidgets.Widget:
         """The picker of a tagged colour, with an alpha slider beside it for a `vec4`.
@@ -465,17 +488,20 @@ class Cell:
         self._debounce(self.values, at_once=change["name"] not in change["owner"]._property_lock)
 
     def rerun(self, values: dict) -> None:
+        """The debounce's call: a refused step is said in the line under the sliders, where the next move tries again."""
         self.values = dict(values)
-        self.show(self.run())
+        try:
+            self.show(self.run())
+        except sara.SaraError as error:
+            self.timing.value = str(error)
 
     def show(self, said: dict) -> None:
         """Draws the written layer in the cell's picture, replacing the last.
 
         `show()`'s small form, made in Sara on the GPU, so a slider move reads back a few
-        hundred KB rather than the layer in float32."""
-        with self.output:
-            self.output.clear_output(wait=True)
-            display(self.document.layer(said.get("into", self.into)).show())
+        hundred KB rather than the layer in float32. The PNG is the `Image` widget's value, which is
+        one widget of `@jupyter-widgets/controls` where an `Output` fails in VS Code."""
+        self.picture.value = self.document.layer(said.get("into", self.into)).show().data
 
 
 @magics_class
@@ -493,7 +519,9 @@ class GmacsMagics(Magics):
         try:
             said = run.run()
         except sara.SaraError as error:
-            print(error)
+            # A widget of the controls module and no `print`, so every message a cell makes is one line
+            # of widgets that VS Code draws (L8 of plan 33). Nothing was built yet, so it has no timing line to go to.
+            display(ipywidgets.HTML(f'<pre style="white-space: pre-wrap">{html.escape(str(error))}</pre>'))
             return None
         widget = run.build(said.get("params", []))
         run.show(said)
