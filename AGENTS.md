@@ -57,7 +57,7 @@ GitHub Copilot read this file directly.
   out in the course, not from this repository.
 - A notebook talks to a running Sára over a local connection, its agent door.
   Start Sára with `sara-with-door.cmd` on Windows or
-  `./sara.x86_64 -- --agent-door` on Linux, or pick **Help > Connect an agent**
+  `./sara.x86_64 -- --agent-door` on Linux, or pick **Modules > Connect an agent**
   in a Sára that is already running.
 - `sara.init()` replaces the document open in Sára with a new sRGB one. Warn
   the student first if they may have unsaved work there.
@@ -79,7 +79,7 @@ The door is not only the notebook's. You can attach to the same Sára from a
 shell, list its layers, read their pixels, save the picture as a PNG to look
 at and check that a kernel compiles, all through the client in `lib/sara.py`.
 
-- Sára must be running with its door open, as above. **Help > Connect an
+- Sára must be running with its door open, as above. **Modules > Connect an
   agent** also copies a message for an agent, which the student may paste into
   the conversation. It describes the door's raw HTTP, but use `lib/sara.py`,
   which speaks it for you and finds the door by itself.
