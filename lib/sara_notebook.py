@@ -21,7 +21,7 @@ The body may instead be the short pixel form a module's pixel function takes,
 which the app wraps into a kernel called `pixels`:
 
     %%gmacs Background -> Dithered
-    uniform float levels = 4.0    # range 2 16
+    uniform float levels: hint_range(2, 16) = 4.0
 
     def pixel(ivec2 at) -> vec4:
         return floor(src(at) * levels + 0.5) / levels
@@ -36,7 +36,12 @@ runs the kernel over that rectangle and `rect=canvas` over the whole canvas,
 whatever the read layer holds. With neither it runs over the chunks the read
 layer holds, and over the whole canvas when that layer holds none, so a cell
 that makes a texture from `at` alone works over the empty layer `sara.init()`
-answers. The body is the kernel, sent as source to the app's `kernel` step,
+answers. A word `halo=<n>`, a whole number of zero or more, is how many pixels
+past its rectangle the kernel may read, 16 where the line names none, and a read
+past the canvas's edge takes the nearest canvas texel, so a blur of radius 32
+over the whole canvas names `halo=32` or more and keeps its border. The word is
+the cell's, never a parameter's, and a kernel that declares a parameter called
+`halo` beside it is refused. The body is the kernel, sent as source to the app's `kernel` step,
 and the cell shows the written layer with `show()`. Every scalar parameter the
 compiled kernel answers becomes a slider, its range from the
 `hint_range(<min>, <max>[, <step>])` on its line in the params block or on its
@@ -139,13 +144,15 @@ class CellLine:
     images the kernel declares beside `src`, names a layer the kernel reads
     under that name, and the `kernel` step gets it in `inputs`. `rect=` takes
     four whole numbers, `x,y,w,h`, or the word `canvas`, which the step reads
-    as the whole canvas."""
+    as the whole canvas. `halo=` takes one whole number of zero or more, the
+    pixels the step gathers past the rectangle."""
 
     def __init__(self, line: str, images: set[str] | frozenset[str] = frozenset()) -> None:
         self.layer: str | int | None = None
         self.into: str | int | None = None
         self.values: dict[str, float | bool] = {}
         self.rect: list[int] | str | None = None
+        self.halo: int | None = None
         self.inputs: dict[str, str | int] = {}
         layers: list[str | int] = []
         for word in shlex.split(line):
@@ -158,6 +165,8 @@ class CellLine:
                 self.inputs[key] = int(value) if value.isdigit() else value
             elif key == "rect":
                 self.rect = _rect(value)
+            elif key == "halo":
+                self.halo = _halo(value)
             elif value in ("true", "false"):
                 self.values[key] = value == "true"
             else:
@@ -185,6 +194,13 @@ def _rect(value: str) -> list[int] | str:
     return numbers
 
 
+def _halo(value: str) -> int:
+    """The `halo=` word's value as the `kernel` step takes it, a whole number of zero or more."""
+    if not (value.isascii() and value.isdigit()):
+        raise ValueError(f"halo={value} is not a whole number of zero or more")
+    return int(value)
+
+
 def images(source: str) -> set[str]:
     """The readonly images *source* declares beside `src`, each a layer the first line may name."""
     return {name for name in _READONLY_IMAGE.findall(source) if name != "src"}
@@ -198,6 +214,26 @@ def kernel_name(source: str) -> str:
     if _PIXEL_SIGNATURE.search(source) is not None:
         return PIXEL_KERNEL
     raise ValueError("a %%gmacs cell's body starts with `kernel <name>` or holds `def pixel(ivec2 at) -> vec4`")
+
+
+def declared(source: str) -> set[str]:
+    """The names of the parameters *source* declares, in its params block and on its `uniform` lines.
+
+    A local variable in a function's body is no parameter, so only the block
+    under `params:` is read, up to the first line that is not indented.
+    """
+    found: set[str] = set()
+    inside = False
+    for line in source.splitlines():
+        if line.strip() == "params:":
+            inside = True
+            continue
+        if line.strip() and not line[0].isspace():
+            inside = False
+        match = _UNIFORM_LINE.match(line) or (_PARAM_LINE.match(line) if inside else None)
+        if match is not None:
+            found.add(match.group(2))
+    return found
 
 
 def ranges(source: str) -> dict[str, Range]:
@@ -334,6 +370,11 @@ class Cell:
     def __init__(self, document: sara.Document, line: str, source: str) -> None:
         self.document = document
         self.line = CellLine(line, images(source))
+        if self.line.halo is not None and "halo" in declared(source):
+            raise ValueError(
+                "halo is taken by the cell, whose `halo=` word sets how far the kernel reads past its rectangle, "
+                "so the kernel's parameter called halo needs another name"
+            )
         self.source = source
         self.name = kernel_name(source)
         self.into = self.line.into
@@ -359,6 +400,8 @@ class Cell:
             step["into"] = self.into
         if self.line.rect is not None:
             step["rect"] = self.line.rect
+        if self.line.halo is not None:
+            step["halo"] = self.line.halo
         if self.line.inputs:
             step["inputs"] = dict(self.line.inputs)
         said = self.document.kernel(step)

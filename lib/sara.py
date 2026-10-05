@@ -24,7 +24,9 @@ folder rather than installed. It speaks the door's HTTP itself, on one
 connection it keeps: it reads the file Sara writes when its door listens,
 connects over the Unix socket where Python has one and the loopback port
 otherwise, which is Windows, and posts each step with the file's token as a
-Bearer. It never launches anything. Its first request says it attaches, so
+Bearer. With no door to reach and no Sara running, it starts the `sara` on the
+`PATH` with its door and waits for it, and otherwise raises a guide to opening
+the door, which a notebook shows without a traceback. Its first request says it attaches, so
 closing hangs up without `quit` and Sara stays open. Sara drops a client idle
 for ten minutes, and the next call attaches again, reading the file afresh. A
 call that was sent and never answered raises, since it may have run. An error
@@ -36,9 +38,11 @@ from __future__ import annotations
 import json
 import os
 import selectors
+import shutil
 import socket
 import statistics
 import struct
+import subprocess
 import sys
 import tempfile
 import time
@@ -60,10 +64,40 @@ VERDICT = "SaCapture: "
 # The words of the `layer` step's `done` lines the wrappers read.
 DUPLICATED = "duplicated as "
 KEPT = "kept the last layer"
+# How long `connect` waits for the door of a Sara it started, past which the guide is raised.
+START_BOUND_S = 60.0
+# The names a running Sara's process goes by, the Linux build behind its wrapper and the Windows one.
+PROCESS_NAMES = ("sara.x86_64", "sara.exe")
+# The error colour IPython's own tracebacks use, and the colour after it.
+RED, PLAIN = "\x1b[0;31m", "\x1b[0m"
+# The Saras `connect` started, kept so a child that outlives the call is never collected while it runs.
+STARTED: list[subprocess.Popen] = []
+# The document `init()` answered, which `layer_of` falls back to until it closes.
+_held: Document | None = None
 
 
 class SaraError(RuntimeError):
     """What the app answered when a step did not do what it was asked."""
+
+
+class NoDoorError(SaraError):
+    """No Sara answers where the known file says, which is the guide to opening a door."""
+
+    def __init__(self, found: str = "") -> None:
+        super().__init__("\n".join(guide(found)))
+
+
+def guide(found: str = "", platform: str | None = None) -> list[str]:
+    """The lines a cell shows when no door answers: *found*, or that Sara has none open, the two ways
+    to open one, the command for *platform*, and to run the cell again."""
+    platform = platform or sys.platform
+    command = "sara-with-door.cmd in Sara's folder" if platform.startswith("win") else "sara -- --agent-door"
+    return [
+        found or "Sara has no door open for this Python to reach.",
+        "In a running Sara, Modules › Connect an agent opens it.",
+        f"Or start Sara with its door: {command}",
+        "Then run the cell again.",
+    ]
 
 
 def door_file(platform: str | None = None) -> Path:
@@ -81,26 +115,106 @@ def door_file(platform: str | None = None) -> Path:
     return base / "app_userdata" / "Sara" / DOOR_FILE_NAME
 
 
-def connect(path: str | Path | None = None) -> Document:
-    """The document of the Sara whose door the known file, or *path*, names."""
-    return Document(Door(Path(path) if path is not None else door_file()))
+def connect(path: str | Path | None = None, *, start: bool = True) -> Document:
+    """The document of the Sara whose door the known file, or *path*, names. With no door to reach,
+    the Sara on the `PATH` is started with its door when no Sara runs and *start* is left on."""
+    known = Path(path) if path is not None else door_file()
+    try:
+        return Document(Door(known))
+    except NoDoorError as error:
+        if not start:
+            raise
+        found = error
+    return Document(_start(known, found))
 
 
-def init(path: str | Path | None = None, *, attach: bool = False) -> tuple[Document, Layer, np.ndarray]:
+def _start(known: Path, found: NoDoorError) -> Door:
+    """Starts `sara` from the `PATH` detached with `-- --agent-door` and attaches once its door
+    answers. A Sara that runs is never given a second one beside it, and nor is one that cannot be
+    told from none, so both raise *found*, as does a `PATH` with no `sara` on it. A stale known file
+    counts as no Sara, since the Sara that wrote it is looked for by its process and not by the file."""
+    program = shutil.which("sara")
+    if program is None or _sara_runs() is not False:
+        raise found
+    print("Starting Sara with its door…", flush=True)
+    child = subprocess.Popen([program, "--", "--agent-door"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **_detached())
+    STARTED.append(child)
+    deadline = time.monotonic() + START_BOUND_S
+    while True:
+        try:
+            return Door(known)
+        except SaraError:
+            # A file from the last run names a dead door, and a file being written may not parse yet.
+            pass
+        ended = child.poll()
+        if ended:
+            raise NoDoorError(f"Sara started from {program} ended with {ended} and opened no door.") from None
+        if time.monotonic() > deadline:
+            raise NoDoorError(f"Sara started from {program} opened no door in {START_BOUND_S:g} s.") from None
+        time.sleep(0.25)
+
+
+def _detached() -> dict:
+    """What `Popen` takes for a child that outlives this Python and its notebook."""
+    if sys.platform.startswith("win"):
+        return {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {"start_new_session": True}
+
+
+def _sara_runs(platform: str | None = None) -> bool | None:
+    """Whether a Sara runs here, read off its process, and None where the platform cannot say."""
+    platform = platform or sys.platform
+    if platform.startswith("linux"):
+        try:
+            ids = [entry for entry in os.listdir("/proc") if entry.isdigit()]
+        except OSError:
+            return None
+        return any(_is_sara(pid) for pid in ids)
+    if platform.startswith("win"):
+        try:
+            # The console's code page is not UTF-8, and the names looked for are ASCII.
+            listed = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, encoding="utf-8", errors="replace", timeout=10, check=True)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        names = [line.split(",")[0].strip('"').lower() for line in listed.stdout.splitlines()]
+        # A Godot may be running Sara from the editor, which `tasklist` cannot say.
+        return True if any(name in PROCESS_NAMES for name in names) else None if any(name.startswith("godot") for name in names) else False
+    return None
+
+
+def _is_sara(pid: str) -> bool:
+    """Whether Linux process *pid* is an exported Sara, or a Godot the editor runs Sara's project in."""
+    try:
+        name = Path(f"/proc/{pid}/comm").read_text(encoding="utf-8").strip()
+        if not name.startswith("godot"):
+            return name in PROCESS_NAMES
+        args = Path(f"/proc/{pid}/cmdline").read_bytes().decode("utf-8", "replace").split("\0")
+        if "--remote-debug" not in args or "--path" not in args[:-1]:
+            return False
+        project = Path(args[args.index("--path") + 1].replace("%20", " ")) / "project.godot"
+        return 'config/name="Sara"' in project.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+
+def init(path: str | Path | None = None, *, attach: bool = False, start: bool = True) -> tuple[Document, Layer, np.ndarray]:
     """What a lesson opens with: connect, and answer the document, the layer selected in Sara and
     its pixels, the whole canvas as `(h, w, 4)`. Inside IPython `%%gmacs` is registered on that document.
     The document is a new sRGB one at the size File > New offers, which **replaces the one open in
     Sara**, so `layer.read()` hands back the numbers a picture holds and not Sara's own Oklab ones.
     `attach=True` keeps the document already open and answers its selected layer instead.
     That layer is the document's `home`, which `live`, `check` and `bench` read when given no source,
-    until `import_image` moves it to the picture it opens."""
-    document = connect(path)
+    until `import_image` moves it to the picture it opens. With no door to reach it starts Sara when it can,
+    as `connect` says, and `start=False` turns that off."""
+    global _held
+    document = connect(path, start=start)
     try:
         _register_magic(document)
         if not attach:
             _open_srgb_document(document)
         layer = document.layer()
         document.home = layer
+        _held = document
         return document, layer, layer.read()
     except Exception:
         # The door serves one client at a time, so a call that failed hangs up for the next.
@@ -124,26 +238,54 @@ def live(apply: Callable[..., np.ndarray], params: dict, source: Layer | str | i
 
 
 def layer_of(source: Layer | str | int | None) -> Layer:
-    """*source* as a Layer, a Layer as it is. A name or an index is on the document `init()` connected,
-    the one `%%gmacs` runs on, connected and handed to the notebook when there is none since the door
-    serves one client, and None is the document's `home`, the layer `init()` read or the picture
-    `import_image` opened since, or the one selected in Sara when there is neither."""
+    """*source* as a Layer, a Layer as it is. A name or an index is on the document `init()` answered,
+    held here until it closes so a script dials no second connection to a door serving one client, or
+    else the one `%%gmacs` runs on, connected and handed to the notebook when there is none. None is the
+    document's `home`, the layer `init()` read or the picture `import_image` opened since, or the one
+    selected in Sara when there is neither."""
     if isinstance(source, Layer):
         return source
-    import sara_notebook
-
-    document = sara_notebook.GmacsMagics.document
+    document = _held
     if document is None:
-        document = connect()
-        sara_notebook.use(document)
+        import sara_notebook
+
+        document = sara_notebook.GmacsMagics.document
+        if document is None:
+            document = connect()
+            sara_notebook.use(document)
     return document.layer(source) if source is not None else document.home or document.layer()
 
 
-def _register_magic(document: Document) -> None:
-    """Registers `%%gmacs` on *document* when this runs in IPython, which is looked for among the
-    modules already loaded and never imported, so a script that did not start it stays free of it."""
+def _shell() -> object | None:
+    """The IPython shell this runs in, looked for among the modules already loaded and never
+    imported, so a script that did not start IPython stays free of it."""
     ipython = sys.modules.get("IPython")
-    shell = ipython.get_ipython() if ipython is not None else None
+    return ipython.get_ipython() if ipython is not None else None
+
+
+def _register_handler() -> None:
+    """Shows a `SaraError` in IPython as its own lines in the error colour with no traceback. Every
+    other exception keeps IPython's traceback, and a plain script keeps the ordinary one for all."""
+    shell = _shell()
+    if shell is not None:
+        shell.set_custom_exc((SaraError,), _show_error)
+
+
+def _show_error(shell: object, kind: type, error: BaseException, _traceback: object, tb_offset: int | None = None) -> list[str]:
+    """Shows *error*'s own lines as IPython shows a traceback, which a kernel sends as the cell's error
+    output. IPython drops what a handler answers when the code ran, so the handler shows them itself."""
+    lines = [f"{RED}{line}{PLAIN}" for line in str(error).splitlines()]
+    show = getattr(shell, "_showtraceback", None)
+    if show is not None:
+        show(kind, error, lines)
+    else:
+        print("\n".join(lines), file=sys.stderr)
+    return lines
+
+
+def _register_magic(document: Document) -> None:
+    """Registers `%%gmacs` on *document* when this runs in IPython."""
+    shell = _shell()
     if shell is None:
         return
     try:
@@ -186,7 +328,7 @@ class Door:
         self._hang_up()
         path = self.path
         if not path.exists():
-            raise SaraError(f"no Sara is listening, {path} is missing: start Sara with its door")
+            raise NoDoorError()
         try:
             written = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError) as error:
@@ -201,7 +343,7 @@ class Door:
             self.conn.connect()
         except OSError as error:
             self._hang_up()
-            raise SaraError(f"Sara is not listening where {path} says ({error}): start Sara with its door") from error
+            raise NoDoorError(f"Sara has no door open: {path} names one that does not answer ({error}).") from error
         self._write([{"attach": True}])
         self._read([{"attach": True}])
 
@@ -402,6 +544,9 @@ class Document:
         return Picture(data)
 
     def close(self) -> None:
+        global _held
+        if _held is self:
+            _held = None
         self.door.close()
 
     def __enter__(self) -> Document:
@@ -647,3 +792,6 @@ def png_bytes(rgba: np.ndarray) -> bytes:
         + chunk(b"IDAT", zlib.compress(rows.tobytes()))
         + chunk(b"IEND", b"")
     )
+
+
+_register_handler()
