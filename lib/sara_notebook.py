@@ -379,7 +379,7 @@ class Cell:
         self.name = kernel_name(source)
         self.into = self.line.into
         self.values: dict[str, Any] = dict(self.line.values)
-        # An `Image` and no `Output`: VS Code's Jupyter 2025.9.1 cannot load that widget's module (L8 of plan 33).
+        # An `Image` and no `Output` (L8 of plan 33). The `Output` likely lost the same start-up race `warm_up` takes.
         self.picture = ipywidgets.Image(format="png")
         self.timing = ipywidgets.Label()
         self.sliders: dict[str, ipywidgets.Widget] = {}
@@ -578,14 +578,34 @@ def use(document: sara.Document) -> None:
     GmacsMagics.document = document
 
 
+# The widget `register` makes and never shows, kept so it is made once in a kernel.
+_warm_up: ipywidgets.Widget | None = None
+
+
+def warm_up() -> ipywidgets.Widget:
+    """Makes one widget nobody sees, once, so the first widget VS Code's renderer meets is this one.
+
+    VS Code's Jupyter renderer loads `@jupyter-widgets/controls` while it handles the first widget a kernel
+    announces, and fails that widget alone with "No version of module @jupyter-widgets/controls is
+    registered". The widgets after it load. Without this the first loser is a cell's picture, whose whole
+    box then shows the error until the cell is run again. A widget that is never displayed fails out of
+    sight."""
+    global _warm_up
+    if _warm_up is None:
+        _warm_up = ipywidgets.Label()
+    return _warm_up
+
+
 def register(shell: Any = None, document: sara.Document | None = None) -> None:
     """Registers `%%gmacs` with *shell*, the running IPython when none is given, and runs its cells on
-    *document* when one is given, which `sara.init()` does so no second connection is made."""
+    *document* when one is given, which `sara.init()` does so no second connection is made. It makes the
+    hidden widget of `warm_up` too, so the setup cell meets the renderer's slow start, not a `%%gmacs` cell."""
     if shell is None:
         from IPython import get_ipython
 
         shell = get_ipython()
     shell.register_magics(GmacsMagics)
+    warm_up()
     if document is not None:
         use(document)
 
