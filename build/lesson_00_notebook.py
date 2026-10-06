@@ -27,8 +27,9 @@ def md(text):
                   "source": _pictures(text).strip("\n").splitlines(keepends=True)})
 
 
-def code(text):
-    cells.append({"cell_type": "code", "metadata": {}, "execution_count": None, "outputs": [],
+def code(text, hidden=False):
+    metadata = {"jupyter": {"source_hidden": True}} if hidden else {}
+    cells.append({"cell_type": "code", "metadata": metadata, "execution_count": None, "outputs": [],
                   "source": text.strip("\n").splitlines(keepends=True)})
 
 
@@ -125,8 +126,10 @@ Notebook se Sárou komunikuje přes místní spojení (*agent door*). Ve výchoz
 | Systém | Spuštění |
 |---|---|
 | Windows | dvojklik na `sara-with-door.cmd` |
-| Linux | v terminálu `./sara.x86_64 -- --agent-door` |
-| Sára už běží | v menu **Help → Connect an agent** |
+| Linux | v terminálu `./sara.x86_64 --display-driver wayland -- --agent-door` |
+| Sára už běží | v menu **Modules › Local Server** zaškrtněte spojení |
+
+Na Linuxu s X11 místo Waylandu vynechte `--display-driver wayland`. Bez něj Sára na Waylandu běží přes XWayland, nezjistí měřítko obrazovky a velikost rozhraní jen odhadne.
 
 Spusťte buňku níže. `sara.init()` se připojí k Sáře, otevře v ní nový dokument v sRGB ve výchozí velikosti (1920 × 1080), zaregistruje příkaz `%%gmacs` (sekce 4) a vrátí tři hodnoty: dokument `doc`, vrstvu vybranou v Sáře `layer` a její obsah jako pole čísel `pixels`.
 
@@ -143,10 +146,13 @@ doc, layer, pixels = sara.init()
 """)
 
 md(r"""
-Buňka vypíše verzi Sáry, grafickou kartu a velikost plátna. Co umí `doc` a `layer`, shrnuje příloha na konci notebooku. V JupyterLab ukáže `Tab` za `doc.` seznam metod a `Shift + Tab` na názvu funkce její popis.
+Buňka nic nevypíše, v Sáře se jen otevře nový prázdný dokument. Verzi Sáry a grafickou kartu ukáže v Sáře **Help › About Sara**, kartu v řádku `Device`. Co umí `doc` a `layer`, shrnuje příloha na konci notebooku. V JupyterLab ukáže `Tab` za `doc.` seznam metod a `Shift + Tab` na názvu funkce její popis.
 
 > **ℹ️ Poznámka**
 > Chyba `No module named 'sara'` znamená, že vedle notebooku chybí složka `lib`. Jiná chyba při připojení obvykle znamená, že Sára neběží se zapnutým spojením.
+
+> **ℹ️ Poznámka**
+> Sára mluví vždy jen s jedním kernelem notebooku. Chyba `Sara hung up with a step outstanding` znamená, že jste buňku se `sara.init()` spustili podruhé, nebo že ještě běží kernel jiné lekce. Restartujte kernel tohoto notebooku (Restart) a kernel jiné lekce vypněte (Shut Down). Buňku se `sara.init()` proto v jednom kernelu spouštějte jen jednou.
 
 > **❓ Otázka**
 > Na jaké grafické kartě Sára počítá? Je to samostatná karta, nebo grafika v procesoru? Notebooky se dvěma kartami někdy použijí tu slabší.
@@ -354,6 +360,9 @@ md(r"""
 ## 4. První kernel
 
 Kernel se píše do buňky, která začíná `%%gmacs`. Za ním je jméno vrstvy, ze které kernel čte, šipka a jméno vrstvy pro výsledek. Pokud výsledná vrstva neexistuje, Sára ji vytvoří.
+
+> **⚠️ Pozor**
+> Kernel, který běží příliš dlouho, třeba kvůli nekonečnému cyklu, grafická karta přeruší a Sára spadne. Neuložená práce se ztratí. Malbu, o kterou nechcete přijít, si proto uložte dřív, než začnete kernely psát.
 """)
 
 code("""
@@ -766,11 +775,21 @@ sara.live(apply_grey_mean, PARAMS_GREY, target="Grey mean NumPy")
 md(r"""
 ### ✅ Kontrola
 
-Porovnání s kernelem „Grey mean“ z úkolu 2, jeho posuvník nastavte na 1:
+Kontrola porovná se správným výsledkem obě vaše verze, kernel „Grey mean“ z úkolu 2 i NumPy z úkolu 4. Posuvníky obou nastavte na 1. Správný výsledek spočítá skrytá buňka, aby neprozradila řešení:
 """)
 
 code("""
-sara.check("Grey mean", apply_grey_mean(pixels, amount=1.0))
+# The answer of tasks 2 and 4, hidden so that it does not give them away.
+def grey_mean_goal(img):
+    out = img.copy()
+    out[..., :3] = img[..., :3].mean(axis=-1, keepdims=True)
+    return out
+""", hidden=True)
+
+code("""
+goal = grey_mean_goal(pixels)          # the right answer, from the hidden cell above
+sara.check("Grey mean", goal)          # your kernel from task 2
+sara.check("Grey mean NumPy", goal)    # your NumPy from task 4
 """)
 
 md(r"""
@@ -854,11 +873,23 @@ sara.live(apply_grey_oklab, PARAMS_GREY, target="Grey OKLab NumPy")
 md(r"""
 ### ✅ Kontrola
 
-Porovnání s kernelem „Grey OKLab“ z úkolu 3, posuvník na 1:
+Stejná kontrola pro OKLab, kernel z úkolu 3 i NumPy z úkolu 5, posuvníky obou na 1:
 """)
 
 code("""
-sara.check("Grey OKLab", apply_grey_oklab(pixels, amount=1.0))
+# The answer of tasks 3 and 5, hidden so that it does not give them away.
+def grey_oklab_goal(img):
+    out = img.copy()
+    lab = linear_to_oklab(srgb_to_linear(img[..., :3]))
+    lab[..., 1:] = 0.0
+    out[..., :3] = linear_to_srgb(oklab_to_linear(lab))
+    return out
+""", hidden=True)
+
+code("""
+goal = grey_oklab_goal(pixels)          # the right answer, from the hidden cell above
+sara.check("Grey OKLab", goal)          # your kernel from task 3
+sara.check("Grey OKLab NumPy", goal)    # your NumPy from task 5
 """)
 
 md(r"""
@@ -1035,7 +1066,7 @@ if stripe % 2 == 1:
 
 code("""
 %%gmacs "color_chart" -> "Stripes"
-uniform float width: hint_range(2, 64) = 16.0
+uniform float width: hint_range(2, 64, 1) = 16.0
 
 def pixel(ivec2 at) -> vec4:
     vec4 c = src(at)

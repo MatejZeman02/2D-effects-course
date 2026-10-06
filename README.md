@@ -32,7 +32,9 @@ English.
    ```
 
 3. Start Sára with its agent door (`sara-with-door.cmd` on Windows,
-   `./sara.x86_64 -- --agent-door` on Linux) and open lesson 0.
+   `./sara.x86_64 --display-driver wayland -- --agent-door` on Linux) and open
+   lesson 0. On an X11 desktop leave out `--display-driver wayland`. Without it
+   on Wayland, Sára runs under XWayland and has to guess its interface scale.
 
 > [!NOTE]
 > VS Code's Jupyter 2025.9.1 cannot draw an `ipywidgets.Output` and shows a

@@ -57,8 +57,12 @@ GitHub Copilot read this file directly.
   out in the course, not from this repository.
 - A notebook talks to a running Sára over a local connection, its agent door.
   Start Sára with `sara-with-door.cmd` on Windows or
-  `./sara.x86_64 -- --agent-door` on Linux, or pick **Modules > Connect an agent**
-  in a Sára that is already running.
+  `./sara.x86_64 --display-driver wayland -- --agent-door` on Linux (without
+  `--display-driver wayland` on an X11 desktop), or tick **Modules > Local
+  Server** in a Sára that is already running.
+- Sára serves one notebook kernel at a time. `Sara hung up with a step
+  outstanding` means `sara.init()` ran a second time in one kernel, or another
+  lesson's kernel is still alive: restart this kernel and shut the other down.
 - `sara.init()` replaces the document open in Sára with a new sRGB one. Warn
   the student first if they may have unsaved work there.
 - You cannot see Sára's window, but you can look at its picture through the
