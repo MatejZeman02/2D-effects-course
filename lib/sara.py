@@ -46,6 +46,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import zlib
 from http.client import HTTPConnection, HTTPException
@@ -65,6 +66,10 @@ VERDICT = "SaCapture: "
 # The words of the `layer` step's `done` lines the wrappers read.
 DUPLICATED = "duplicated as "
 KEPT = "kept the last layer"
+# How long a client sits idle before it hangs up, so another notebook's kernel can attach, and how long an
+# attach that finds Sara held tries again, past the holder's release.
+RELEASE_S = 2.0
+HELD_WAIT_S = RELEASE_S + 3.0
 # How long `connect` waits for the door of a Sara it started, past which the guide is raised.
 START_BOUND_S = 60.0
 # The names a running Sara's process goes by, the Linux build behind its wrapper and the Windows one.
@@ -341,9 +346,8 @@ class _UnixConnection(HTTPConnection):
 
 # What a connection closed at once says. Sara serves one client at a time, and a second is closed unheard.
 HELD = (
-    "Sara closed the connection at once. It serves one client at a time and another holds it: an earlier "
-    "sara.init() in this kernel, or another notebook's kernel. Restart this kernel and shut the other one "
-    "down, then run this cell again."
+    "Sara is busy with another client. It serves one at a time, and another notebook's kernel or script "
+    "kept it for the last few seconds. Stop what runs there, a cell or a slider drag, then run this cell again."
 )
 
 
@@ -351,17 +355,52 @@ class _NotSent(SaraError):
     """A request that never went out, so Sara ran none of it."""
 
 
+class _HeldError(SaraError):
+    """Sara closed the connection unheard, as another client holds it."""
+
+
 class Door:
-    """One HTTP connection to a listening Sara, kept open, a step posted and its answer read. Sara
-    drops a client idle for ten minutes, so a call that finds the connection closed attaches again."""
+    """One HTTP connection to a listening Sara, a step posted and its answer read. Sara serves one client
+    at a time, so the connection is hung up once idle for `RELEASE_S` and attached again by the next call,
+    and two notebooks on one Sara take turns rather than the second being turned away."""
 
     def __init__(self, path: Path) -> None:
         self.path = path
         self._next_id = 0
         self.conn: HTTPConnection | None = None
-        self._attach()
+        # A slider's debounce sends from a timer thread, and the release runs on one of its own.
+        self._lock = threading.RLock()
+        self._release: threading.Timer | None = None
+        with self._lock:
+            self._attach()
+            self._release_later()
+
+    def _release_later(self) -> None:
+        """Hangs up once `RELEASE_S` passes with no call, the next call attaching again."""
+        if self._release is not None:
+            self._release.cancel()
+        self._release = threading.Timer(RELEASE_S, self._release_now)
+        self._release.daemon = True
+        self._release.start()
+
+    def _release_now(self) -> None:
+        with self._lock:
+            self._release = None
+            self._hang_up()
 
     def _attach(self) -> None:
+        """Connects and attaches, trying again while another client holds Sara, as one that went idle
+        lets go within `RELEASE_S`, and raising `HELD` when it is still held past `HELD_WAIT_S`."""
+        deadline = time.monotonic() + HELD_WAIT_S
+        while True:
+            try:
+                return self._attach_once()
+            except _HeldError:
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(0.25)
+
+    def _attach_once(self) -> None:
         """Reads the known file again, a Sara opened since has a new token, then connects and attaches."""
         self._hang_up()
         path = self.path
@@ -382,13 +421,14 @@ class Door:
         except OSError as error:
             self._hang_up()
             raise NoDoorError(f"Sara has no door open: {path} names one that does not answer ({error}).") from error
+        self._write([{"attach": True}])
         try:
-            self._write([{"attach": True}])
             self._read([{"attach": True}])
         except SaraError as error:
             # The door closes a second client at once, before it reads a line, so the attach ran nowhere.
             if isinstance(error.__cause__, ConnectionError):
-                raise SaraError(HELD) from error.__cause__
+                self._hang_up()
+                raise _HeldError(HELD) from error.__cause__
             raise
 
     def send(self, step: dict) -> dict:
@@ -399,17 +439,24 @@ class Door:
         """Sends *steps* as one request and answers their replies in order, raising on a refusal. A
         connection Sara closed meanwhile is attached again first, and a request that never went out is
         sent once more. One that went out and was not answered may have run, so it raises instead."""
-        fresh = self.conn is None or self._closed()
-        if fresh:
-            self._attach()
-        try:
-            self._write(steps)
-        except _NotSent:
-            if fresh:
-                raise
-            self._attach()
-            self._write(steps)
-        return self._read(steps)
+        with self._lock:
+            if self._release is not None:
+                self._release.cancel()
+                self._release = None
+            try:
+                fresh = self.conn is None or self._closed()
+                if fresh:
+                    self._attach()
+                try:
+                    self._write(steps)
+                except _NotSent:
+                    if fresh:
+                        raise
+                    self._attach()
+                    self._write(steps)
+                return self._read(steps)
+            finally:
+                self._release_later()
 
     def _closed(self) -> bool:
         """Whether Sara closed the connection while it sat idle. Sara says nothing unasked, so a socket
@@ -472,7 +519,11 @@ class Door:
 
     def close(self) -> None:
         """Hangs up and leaves Sara running: an attached client never sends `quit`."""
-        self._hang_up()
+        with self._lock:
+            if self._release is not None:
+                self._release.cancel()
+                self._release = None
+            self._hang_up()
 
 
 def _lines(answer: dict) -> list[str]:
