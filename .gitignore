@@ -216,6 +216,8 @@ __marimo__/
 .streamlit/secrets.toml
 
 # This course: build/ holds the generators and lib/ the Sara client, so both are kept.
+# Each lesson's solved copy is built beside it for the author's test runs, never handed out.
+*_solution.ipynb
 # The Krita template's NumPy is unpacked at build time and its zips go to releases.
 krita/pga_filter/vendor/
 krita/dist/

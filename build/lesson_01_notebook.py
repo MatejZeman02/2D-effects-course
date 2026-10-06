@@ -10,9 +10,10 @@ A picture from imgs/1 is written as @img(file, width, alt text).
 The solutions are constants near the top, so the markdown shows exactly the
 code that test_lesson_01.py runs.
 """
-import json
 import re
 from pathlib import Path
+
+import lesson_writer
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "lesson_01_gradient_map_dither.ipynb"
@@ -30,10 +31,13 @@ def md(text):
                   "source": _pictures(text).strip("\n").splitlines(keepends=True)})
 
 
-def code(text, hidden=False):
+def code(text, hidden=False, solve=()):
     metadata = {"jupyter": {"source_hidden": True}} if hidden else {}
-    cells.append({"cell_type": "code", "metadata": metadata, "execution_count": None, "outputs": [],
-                  "source": text.strip("\n").splitlines(keepends=True)})
+    cell = {"cell_type": "code", "metadata": metadata, "execution_count": None, "outputs": [],
+            "source": lesson_writer.lines(text)}
+    if solve:
+        cell["solution"] = lesson_writer.solved(text, solve)
+    cells.append(cell)
 
 
 # --- The kernels and the solutions ------------------------------------------------
@@ -80,6 +84,34 @@ def ign(ivec2 at) -> float:
 def posterise(float t, int n, float d) -> float:
     float levels = float(n - 1)
     return floor(clamp(t, 0.0, 1.0) * levels + d) / levels"""
+
+# The stubs the kernels' task cells hold, which the solved copy replaces.
+BLEND_STUB = """\
+    if space == 1:
+        return a                  # TODO: mix the amounts of light
+    if space == 2:
+        return a                  # TODO: mix in OKLab"""
+BLEND_SOLVED = "\n".join("    " + line for line in SOLUTION_BLEND.splitlines())
+
+GRADIENT_STUB = """\
+def gradient(float t) -> vec3:
+    # TODO: dark to mid below mid_at, mid to light above it, mixed in OKLab
+    return dark"""
+
+DITHER_STUB = """\
+def bayer(ivec2 at) -> float:
+    # TODO: this pixel's Bayer threshold, from 0 to 1
+    return 0.5
+
+
+def ign(ivec2 at) -> float:
+    # TODO: interleaved gradient noise at this pixel, from 0 to 1
+    return 0.5
+
+
+def posterise(float t, int n, float d) -> float:
+    # TODO: round t to one of n levels from 0 to 1, d is the threshold
+    return t"""
 
 # The labels are in the same order in both kernels and in PARAMS, whose first
 # label is the template's default, so the goal kernel defaults to index 0.
@@ -356,7 +388,7 @@ def pixel(ivec2 at) -> vec4:
     vec4 c = src(at)
     float t = linear_srgb_to_oklab(srgb_to_linear_srgb(c.rgb)).x
     return vec4(blend(dark, light, t), c.a)
-""")
+""", solve=[(BLEND_STUB, BLEND_SOLVED)])
 
 md(r"""
 ### ✅ Kontrola
@@ -416,7 +448,7 @@ def gradient(float t) -> vec3:
 def pixel(ivec2 at) -> vec4:
     vec4 c = src(at)
     return vec4(gradient(to_lab(c.rgb).x), c.a)
-""")
+""", solve=[(GRADIENT_STUB, SOLUTION_GRADIENT)])
 
 md(r"""
 ### ✅ Kontrola
@@ -514,7 +546,7 @@ def pixel(ivec2 at) -> vec4:
     float L = posterise(linear_srgb_to_oklab(srgb_to_linear_srgb(c.rgb)).x, steps, threshold(at))
     vec3 grey = linear_srgb_to_srgb(oklab_to_linear_srgb(vec3(L, 0.0, 0.0)))
     return vec4(grey, c.a)
-""")
+""", solve=[(DITHER_STUB, SOLUTION_DITHER)])
 
 md(r"""
 ### ✅ Kontrola
@@ -567,7 +599,7 @@ Napište `gradient(t, dark, mid, light, mid_at)` v NumPy. `t` je pole světlost�
 </details>
 """)
 
-code(GRADIENT_NP_GIVEN)
+code(GRADIENT_NP_GIVEN, solve=[(GRADIENT_NP_GIVEN, SOLUTION_GRADIENT_NP)])
 
 md(r"""
 ### 🎯 Úkol 5: celý efekt
@@ -593,7 +625,7 @@ code(APPLY_NP_GIVEN + """
 
 
 sara.live(apply, PARAMS, source="balls", target="Goal NumPy")
-""")
+""", solve=[(APPLY_NP_GIVEN, SOLUTION_APPLY_NP)])
 
 md(r"""
 ### ✅ Kontrola
@@ -675,20 +707,7 @@ md(r"""
 
 
 def build():
-    notebook = {
-        "cells": cells,
-        "metadata": {
-            "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
-            "language_info": {"name": "python"},
-        },
-        "nbformat": 4,
-        "nbformat_minor": 5,
-    }
-    for i, cell in enumerate(cells):
-        cell["id"] = f"l1-{i:02d}"
-    OUT.write_text(json.dumps(notebook, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    print(OUT, len(cells), "cells")
-
+    lesson_writer.write(cells, OUT, "l1")
 
 if __name__ == "__main__":
     build()

@@ -7,9 +7,10 @@ lesson_00_diagrams.py.
 Markdown cells are raw strings, so LaTeX keeps single backslashes and braces.
 A picture from imgs/0 is written as @img(file, width, alt text).
 """
-import json
 import re
 from pathlib import Path
+
+import lesson_writer
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "lesson_00_canvas_kernel_krita.ipynb"
@@ -27,10 +28,13 @@ def md(text):
                   "source": _pictures(text).strip("\n").splitlines(keepends=True)})
 
 
-def code(text, hidden=False):
+def code(text, hidden=False, solve=()):
     metadata = {"jupyter": {"source_hidden": True}} if hidden else {}
-    cells.append({"cell_type": "code", "metadata": metadata, "execution_count": None, "outputs": [],
-                  "source": text.strip("\n").splitlines(keepends=True)})
+    cell = {"cell_type": "code", "metadata": metadata, "execution_count": None, "outputs": [],
+            "source": lesson_writer.lines(text)}
+    if solve:
+        cell["solution"] = lesson_writer.solved(text, solve)
+    cells.append(cell)
 
 
 # --- Title --------------------------------------------------------------------
@@ -226,7 +230,7 @@ print(pixels[0, w - 1], pixels[h - 1, 0])
 code("""
 # Task 1: print both pixels
 
-""")
+""", solve=[("print both pixels\n", "print both pixels\nprint(pixels[0, w - 1], pixels[h - 1, 0])\n")])
 
 md(r"""
 ### Z NumPy do Sáry
@@ -457,7 +461,7 @@ def pixel(ivec2 at) -> vec4:
     float y = 0.0                 # TODO: mean of the three channels
     vec3 grey = vec3(y)
     return vec4(mix(c.rgb, grey, amount), c.a)
-""")
+""", solve=[("float y = 0.0                 # TODO: mean of the three channels", "float y = (c.r + c.g + c.b) / 3.0")])
 
 md(r"""
 ### Proč průměr nestačí
@@ -524,7 +528,7 @@ def pixel(ivec2 at) -> vec4:
     # TODO: scale a and b by (1 - amount), keep L
     vec3 rgb = linear_srgb_to_srgb(oklab_to_linear_srgb(lab))
     return vec4(rgb, c.a)
-""")
+""", solve=[("# TODO: scale a and b by (1 - amount), keep L", "lab.yz = lab.yz * (1.0 - amount)")])
 
 md(r"""
 Porovnejte „Grey mean“ a „Grey OKLab“ přepínáním viditelnosti, v Sáře ikonou oka v panelu vrstev, nebo z notebooku:
@@ -770,7 +774,7 @@ def apply_grey_mean(img, amount):
 
 
 sara.live(apply_grey_mean, PARAMS_GREY, target="Grey mean NumPy")
-""")
+""", solve=[("y = np.zeros(img.shape[:2], dtype=np.float32)    # TODO: mean of R, G, B for every pixel", "y = rgb.mean(axis=-1)")])
 
 md(r"""
 ### ✅ Kontrola
@@ -868,7 +872,7 @@ def apply_grey_oklab(img, amount):
 
 
 sara.live(apply_grey_oklab, PARAMS_GREY, target="Grey OKLab NumPy")
-""")
+""", solve=[("# TODO: scale a and b by (1 - amount), keep L", "lab[..., 1:] *= 1.0 - amount")])
 
 md(r"""
 ### ✅ Kontrola
@@ -1073,7 +1077,7 @@ def pixel(ivec2 at) -> vec4:
     int stripe = at.x / int(width)
     # TODO: return odd stripes inverted
     return c
-""")
+""", solve=[("# TODO: return odd stripes inverted\n", "if stripe % 2 == 1:\n        return vec4(1.0 - c.rgb, c.a)\n")])
 
 md(r"""
 ### Nápady na semestrální práci
@@ -1136,17 +1140,10 @@ Funkce, které notebook používá, jsou v souborech `sara.py`, `sara_notebook.p
 | `import oklab_color_space` | načte knihovnu Sáry |
 """)
 
-nb = {
-    "cells": cells,
-    "metadata": {
-        "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
-        "language_info": {"name": "python"},
-    },
-    "nbformat": 4,
-    "nbformat_minor": 5,
-}
-for i, cell in enumerate(nb["cells"]):
-    cell["id"] = f"l0-{i:02d}"
-with open(OUT, "w", encoding="utf-8") as f:
-    json.dump(nb, f, ensure_ascii=False, indent=1)
-print(OUT, len(cells), "cells")
+
+def build():
+    lesson_writer.write(cells, OUT, "l0")
+
+
+if __name__ == "__main__":
+    build()

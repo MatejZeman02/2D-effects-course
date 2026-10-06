@@ -12,10 +12,11 @@ A picture from imgs/4 is written as @img(file, width, alt text).
 The solutions are constants near the top, so the markdown shows exactly the
 code that test_lesson_04.py runs.
 """
-import json
 import re
 import textwrap
 from pathlib import Path
+
+import lesson_writer
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "lesson_04_frequency_domain.ipynb"
@@ -35,10 +36,13 @@ def md(text):
                   "source": _pictures(text).strip("\n").splitlines(keepends=True)})
 
 
-def code(text, hidden=False):
+def code(text, hidden=False, solve=()):
     metadata = {"jupyter": {"source_hidden": True}} if hidden else {}
-    cells.append({"cell_type": "code", "metadata": metadata, "execution_count": None, "outputs": [],
-                  "source": text.strip("\n").splitlines(keepends=True)})
+    cell = {"cell_type": "code", "metadata": metadata, "execution_count": None, "outputs": [],
+            "source": lesson_writer.lines(text)}
+    if solve:
+        cell["solution"] = lesson_writer.solved(text, solve)
+    cells.append(cell)
 
 
 # --- The kernels ------------------------------------------------------------------
@@ -365,7 +369,7 @@ Napište `spectrum(F)`, která z pole koeficientů `F` udělá šedý obrázek: 
 </details>
 """)
 
-code(SPECTRUM_GIVEN + "\n\n\n" + WAVE_SPECTRUM)
+code(SPECTRUM_GIVEN + "\n\n\n" + WAVE_SPECTRUM, solve=[(SPECTRUM_GIVEN, SOLUTION_SPECTRUM)])
 
 md(r"""
 ### ✅ Kontrola
@@ -453,7 +457,7 @@ Nedokončený kernel výsledek prvního průchodu jen opíše, takže spektrum v
 </details>
 """)
 
-code(DFT_COLUMNS.format(columns=COLUMNS_GIVEN))
+code(DFT_COLUMNS.format(columns=COLUMNS_GIVEN), solve=[(COLUMNS_GIVEN, SOLUTION_COLUMNS)])
 
 md(r"""
 ### ✅ Kontrola
@@ -547,7 +551,7 @@ Napište `gaussian_filter(h, w, sigma)`, pole $H$ tvaru (h, w) s frekvencemi ve 
 </details>
 """)
 
-code(GAUSSIAN_GIVEN + "\n\n\n" + BLUR_GIVEN)
+code(GAUSSIAN_GIVEN + "\n\n\n" + BLUR_GIVEN, solve=[(GAUSSIAN_GIVEN, SOLUTION_GAUSSIAN), (BLUR_GIVEN, SOLUTION_BLUR)])
 
 md(r"""
 ### ✅ Kontrola
@@ -638,7 +642,7 @@ code(WIENER_GIVEN + f"""
 
 fixed = np.dstack([wiener(lin_blurry[..., c], {BLUR_SIGMA}, 0.01 ** 2) for c in range(3)])
 doc.new_layer("Deblurred", rgba(linear_to_srgb(fixed))).show()
-""")
+""", solve=[(WIENER_GIVEN, SOLUTION_WIENER)])
 
 md(r"""
 ### ✅ Kontrola
@@ -688,7 +692,7 @@ code(PARAMS_NP + "\n\n\n" + APPLY_GIVEN + """
 
 
 sara.live(apply, PARAMS, source="astronaut_blur", target="Filter NumPy")
-""")
+""", solve=[(APPLY_GIVEN, SOLUTION_APPLY)])
 
 md(r"""
 ### ✅ Kontrola
@@ -758,20 +762,7 @@ md(r"""
 
 
 def build():
-    notebook = {
-        "cells": cells,
-        "metadata": {
-            "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
-            "language_info": {"name": "python"},
-        },
-        "nbformat": 4,
-        "nbformat_minor": 5,
-    }
-    for i, cell in enumerate(cells):
-        cell["id"] = f"l4-{i:02d}"
-    OUT.write_text(json.dumps(notebook, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    print(OUT, len(cells), "cells")
-
+    lesson_writer.write(cells, OUT, "l4")
 
 if __name__ == "__main__":
     build()
