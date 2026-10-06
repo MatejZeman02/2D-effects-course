@@ -339,6 +339,14 @@ class _UnixConnection(HTTPConnection):
         self.sock.connect(self.socket_path)
 
 
+# What a connection closed at once says. Sara serves one client at a time, and a second is closed unheard.
+HELD = (
+    "Sara closed the connection at once. It serves one client at a time and another holds it: an earlier "
+    "sara.init() in this kernel, or another notebook's kernel. Restart this kernel and shut the other one "
+    "down, then run this cell again."
+)
+
+
 class _NotSent(SaraError):
     """A request that never went out, so Sara ran none of it."""
 
@@ -374,8 +382,14 @@ class Door:
         except OSError as error:
             self._hang_up()
             raise NoDoorError(f"Sara has no door open: {path} names one that does not answer ({error}).") from error
-        self._write([{"attach": True}])
-        self._read([{"attach": True}])
+        try:
+            self._write([{"attach": True}])
+            self._read([{"attach": True}])
+        except SaraError as error:
+            # The door closes a second client at once, before it reads a line, so the attach ran nowhere.
+            if isinstance(error.__cause__, ConnectionError):
+                raise SaraError(HELD) from error.__cause__
+            raise
 
     def send(self, step: dict) -> dict:
         """Sends *step* and answers the app's reply, raising on a refusal."""
