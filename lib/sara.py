@@ -2,6 +2,7 @@
 
     import sara
     doc, layer, a = sara.init()        # a new sRGB document in the Sara open, its layer, its canvas
+    doc, layer, a = sara.init(width=512, height=512)  # the same at 512 by 512 pixels
     doc, layer, a = sara.init(attach=True)  # or the document already open, the layer selected in it
     doc = sara.connect()               # or just the document, never a new Sara
     layer = doc.layer("Background")    # or doc.layer(0), the lowest, or doc.layer() the selected
@@ -30,7 +31,7 @@ the door, which a notebook shows without a traceback. Its first request says it 
 closing hangs up without `quit` and Sara stays open. Sara drops a client idle
 for ten minutes, and the next call attaches again, reading the file afresh. A
 call that was sent and never answered raises, since it may have run. An error
-the app answers is a `SaraError` carrying the line.
+the app answers is a `SaraError` saying the app's sentence, its verdict as `said`.
 """
 
 from __future__ import annotations
@@ -77,7 +78,11 @@ _held: Document | None = None
 
 
 class SaraError(RuntimeError):
-    """What the app answered when a step did not do what it was asked."""
+    """What the app answered when a step did not do what it was asked, its verdict as `said` when it gave one."""
+
+    def __init__(self, message: str = "", said: dict | None = None) -> None:
+        super().__init__(message)
+        self.said = said
 
 
 class NoDoorError(SaraError):
@@ -94,7 +99,7 @@ def guide(found: str = "", platform: str | None = None) -> list[str]:
     command = "sara-with-door.cmd in Sara's folder" if platform.startswith("win") else "sara -- --agent-door"
     return [
         found or "Sara has no door open for this Python to reach.",
-        "In a running Sara, Modules › Connect an agent opens it.",
+        "In a running Sara, ticking Modules › Local Server opens it.",
         f"Or start Sara with its door: {command}",
         "Then run the cell again.",
     ]
@@ -197,21 +202,31 @@ def _is_sara(pid: str) -> bool:
         return False
 
 
-def init(path: str | Path | None = None, *, attach: bool = False, start: bool = True) -> tuple[Document, Layer, np.ndarray]:
+def init(
+    path: str | Path | None = None,
+    *,
+    width: int | None = None,
+    height: int | None = None,
+    attach: bool = False,
+    start: bool = True,
+) -> tuple[Document, Layer, np.ndarray]:
     """What a lesson opens with: connect, and answer the document, the layer selected in Sara and
     its pixels, the whole canvas as `(h, w, 4)`. Inside IPython `%%gmacs` is registered on that document.
     The document is a new sRGB one at the size File > New offers, which **replaces the one open in
     Sara**, so `layer.read()` hands back the numbers a picture holds and not Sara's own Oklab ones.
+    `width=512, height=512` sizes it instead, both or neither, named so that NumPy's `(h, w)` order
+    is never confused with a picture's width by height.
     `attach=True` keeps the document already open and answers its selected layer instead.
     That layer is the document's `home`, which `live`, `check` and `bench` read when given no source,
     until `import_image` moves it to the picture it opens. With no door to reach it starts Sara when it can,
     as `connect` says, and `start=False` turns that off."""
     global _held
+    size = _canvas_size(width, height, attach)
     document = connect(path, start=start)
     try:
         _register_magic(document)
         if not attach:
-            _open_srgb_document(document)
+            _open_srgb_document(document, size)
         layer = document.layer()
         document.home = layer
         _held = document
@@ -222,10 +237,25 @@ def init(path: str | Path | None = None, *, attach: bool = False, start: bool = 
         raise
 
 
-def _open_srgb_document(document: Document) -> None:
-    """Replaces the document open in Sara with a new sRGB one at File > New's size, which the `document`
-    step's verdict says it made, a canvas it found nowhere to put it in being a verdict as well."""
-    said = document.door.verdict({"document": "srgb", "size": "default"})
+def _canvas_size(width: int | None, height: int | None, attach: bool) -> list[int] | str:
+    """What the `document` step's `size` says for *width* and *height*: `[w, h]`, or `"default"` for neither.
+    Checked before anything connects, so a wrong pair starts no Sara."""
+    if width is None and height is None:
+        return "default"
+    if attach:
+        raise ValueError("attach=True keeps the open document, so it takes no width or height")
+    if width is None or height is None:
+        raise ValueError("a canvas takes both width and height, or neither for File > New's size")
+    for name, value in (("width", width), ("height", height)):
+        if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or value < 1:
+            raise ValueError(f"{name} is a whole number of pixels, at least 1, not {value!r}")
+    return [int(width), int(height)]
+
+
+def _open_srgb_document(document: Document, size: list[int] | str = "default") -> None:
+    """Replaces the document open in Sara with a new sRGB one at *size*, File > New's when "default", which
+    the `document` step's verdict says it made, a canvas it found nowhere to put it in being a verdict as well."""
+    said = document.door.verdict({"document": "srgb", "size": size})
     if not isinstance(said, str) or not said.startswith("srgb, a new "):
         raise SaraError(f"{VERDICT}document {said}")
 
@@ -407,7 +437,11 @@ class Door:
             self.conn = None
 
     def verdict(self, step: dict) -> str | dict:
-        """The step's own verdict, parsed when it is JSON, raising when it says an error."""
+        """The step's own verdict, parsed when it is JSON, raising when it says an error.
+
+        The error says the app's own sentence after the step's name, `kernel: no layer called Ink.`,
+        since a notebook shows it to a student who never sees the JSON around it. The whole verdict
+        stays on the exception as `said`."""
         kind = next(iter(step))
         answer = self.send(step)
         for line in (line for line in _lines(answer) if VERDICT + kind + " " in line):
@@ -418,7 +452,7 @@ class Door:
             except ValueError:
                 return said
             if isinstance(parsed, dict) and parsed.get("error"):
-                raise SaraError(line[at:])
+                raise SaraError(f"{kind}: {str(parsed['error']).strip()}", said=parsed)
             return parsed
         raise SaraError(f"Sara answered {kind} with no verdict line")
 
