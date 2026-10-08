@@ -85,7 +85,7 @@ def numbers(ax, values, fmt, colours=None):
 def convolution_window():
     """A 7 x 7 patch of grey values, the 3 x 3 window, its weights and the pixel it writes."""
     L = lightness(load("coffee.png"))
-    patch = L[590:597, 653:660]            # a clean edge, found by eye and by contrast
+    patch = np.round(L[590:597, 653:660], 2)   # a clean edge found by eye, rounded as the labels print it
     w = KERNELS["zaostření"]
     out = np.zeros((7, 7))
     pad = np.pad(patch, 1, mode="edge")
@@ -100,7 +100,7 @@ def convolution_window():
     ax.set_title("okolí pixelu $f$", fontsize=12)
     ax = axes[1]
     ax.imshow(w, cmap="RdBu_r", vmin=-5, vmax=5)
-    numbers(ax, w, lambda v: f"{v:g}", [["black"] * 3] * 3)
+    numbers(ax, w, lambda v: f"{v:g}", [["white" if abs(v) > 3 else "black" for v in row] for row in w])
     ax.add_patch(Rectangle((-0.5, -0.5), 3, 3, fill=False, ec=ORANGE, lw=3))
     ax.set_title("váhy $w$", fontsize=12)
     ax = axes[2]
@@ -136,7 +136,7 @@ def separable():
     sigma = 3.0
     k = gaussian_1d(sigma)
     fig = plt.figure(figsize=(12, 4.2))
-    grid = fig.add_gridspec(2, 3, width_ratios=[1, 6, 7], height_ratios=[1, 6], wspace=0.08, hspace=0.08)
+    grid = fig.add_gridspec(2, 4, width_ratios=[1, 6, 1.5, 7], height_ratios=[1, 6], wspace=0.08, hspace=0.08)
     top = fig.add_subplot(grid[0, 1])
     top.bar(np.arange(len(k)), k, color=ORANGE, width=0.8)
     top.set_xlim(-0.5, len(k) - 0.5)
@@ -150,7 +150,7 @@ def separable():
     square.imshow(np.outer(k, k), cmap="magma", aspect="auto")
     bare(square)
     square.text(len(k) / 2 - 0.5, len(k) + 1.2, "sloupec × řádek = jádro 2D", ha="center", va="top", fontsize=11)
-    plot = fig.add_subplot(grid[:, 2])
+    plot = fig.add_subplot(grid[:, 3])
     r = np.arange(1, 25)
     plot.plot(r, (2 * r + 1) ** 2, color=GREY, lw=2.2, label="jeden průchod, $(2r + 1)^2$")
     plot.plot(r, 2 * (2 * r + 1), color=ORANGE, lw=2.2, label="dva průchody, $2(2r + 1)$")

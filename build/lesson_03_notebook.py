@@ -203,7 +203,7 @@ shared vec3 row[GROUP + 2 * R_MAX]
 @workgroup_size(64, 1)
 def blur_x_shared():
     ivec2 size = image_size(src)
-    # Step 1: the group's threads load the row together, two or three pixels each.
+    # Step 1: the group's threads load the row together, one or two pixels each.
     int first = int(group_id.x) * GROUP - R_MAX
     for i in range(int(local_id.x), GROUP + 2 * R_MAX, GROUP):
         ivec2 p = clamp(ivec2(first + i, pixel.y), ivec2(0), size - 1)
@@ -235,7 +235,7 @@ SOBEL = f"""\
 import linear_srgb_color_space
 import oklab_color_space
 
-uniform float gain: hint_range(0.25, 4) = 1.0
+uniform float gain: hint_range(0.25, 8) = 2.0
 uniform bool direction = false
 
 
@@ -387,8 +387,7 @@ Funkce z úvodní lekce shrnuje její příloha. Sloupec Sekce říká, kde se f
 |---|---|---|
 | `halo=32` na prvním řádku buňky | kernel smí číst až 32 pixelů za okrajem vrstvy | 1 |
 | `uniform float weights[9]` | matice 3 × 3 jako mřížka políček pod buňkou, čtená po řádcích | 1 |
-| `range_inclusive(a, b)` | cyklus od `a` do `b` včetně | 1 |
-| `min`, `max`, `clamp`, `floor` na `ivec2` | po složkách, jako u `vec2` | 3 |
+| `min`, `max`, `clamp` na `ivec2`, `floor` na `vec2` a převod `ivec2(...)` | po složkách | 3 |
 | `kernel`, `image`, `params:` | celý kernel místo funkce `pixel`, s obrázky a parametry | 4 |
 | `shared`, `barrier()`, `local_id`, `group_id` | sdílená paměť skupiny vláken, čekání na celou skupinu a čísla vlákna a skupiny | 4 |
 
@@ -396,9 +395,9 @@ Funkce z úvodní lekce shrnuje její příloha. Sloupec Sekce říká, kde se f
 
 | Volání | Co dělá | Sekce |
 |---|---|---|
-| `np.pad(a, šířky, mode=...)` | pole rozšířené o okraje podle pravidla, `"edge"`, `"symmetric"`, `"wrap"` nebo `"constant"` | 3, 6 |
+| `np.pad(a, šířky, mode=...)` | pole rozšířené o okraje podle pravidla, `"edge"`, `"symmetric"`, `"wrap"` nebo `"constant"` | 1, 3, 5, 6 |
 | `np.roll(a, posun, axis)` | pole posunuté dokola | 3 |
-| `a[:, i:i + w]` | výřez pole, pohled na stejná data bez kopie | 6 |
+| `a[:, i:i + w]` | výřez pole, pohled na stejná data bez kopie | 1, 6 |
 """)
 
 md(r"""
@@ -490,7 +489,7 @@ Průměr okolí dělá z jasných bodů hranaté skvrny, protože vzdálený sou
 
 $$w(i, j) = e^{-\frac{i^2 + j^2}{2\sigma^2}}$$
 
-Váhy za $3\sigma$ jsou menší než setina té prostřední, a kernel je proto vynechá. Rozmazání míchá světlo, a proto počítá v lineárním RGB, jako míchání barev v lekci o barevných prostorech.
+Váha ve vzdálenosti $3\sigma$ je $e^{-4.5}$, asi setina té prostřední, a vzdálenější váhy kernel vynechá. Rozmazání míchá světlo, a proto počítá v lineárním RGB, jako míchání barev v lekci o barevných prostorech.
 """)
 
 code(GAUSS_2D)
@@ -559,7 +558,7 @@ md(r"""
 
 <details><summary>🔑 Odpověď</summary>
 
-Poloměr vzrostl z 9 na 24. Jeden průchod čte $(2r + 1)^2$ sousedů, $49^2 / 19^2 \approx 6.7$krát víc, dva průchody $2(2r + 1)$, jen $98 / 38 \approx 2.6$krát víc. Naměřené poměry tomu odpovídají jen zhruba. Kernel s málo sousedy trvá hlavně režii, spuštění a zápis vrstvy, a GPU čte sousedy z rychlé vyrovnávací paměti (*cache*), takže čtení navíc nestojí všechna stejně. Druhý průchod navíc zapisuje a čte vrstvu `Blur X` celou ještě jednou. Při malém poloměru proto dva průchody nemusí vyhrát.
+Poloměr vzrostl z 9 na 24. Jeden průchod čte $(2r + 1)^2$ sousedů, $49^2 / 19^2 \approx 6.7$krát víc, dva průchody $2(2r + 1)$, jen $98 / 38 \approx 2.6$krát víc. Naměřené poměry tomu odpovídají jen zhruba. U kernelu s málo sousedy tvoří většinu času režie, spuštění a zápis vrstvy, a GPU čte sousedy z rychlé vyrovnávací paměti (*cache*), takže čtení navíc stojí málo. Dva průchody navíc celou vrstvu `Blur X` jednou zapíšou a znovu přečtou. Při malém poloměru proto dva průchody nemusí vyhrát. Před dalšími kontrolami vraťte `sigma` ve všech třech kernelech na 3.
 </details>
 """)
 
@@ -623,7 +622,7 @@ U fotky je nejlepší Mirror nebo Clamp: za okrajem pokračuje něco podobného 
 md(r"""
 ## 4. Sdílená paměť
 
-V prvním průchodu čte každé vlákno $2r + 1$ pixelů řádku, a sousední vlákna čtou skoro tytéž pixely. Při $\sigma = 8$ přečte GPU každý pixel 49krát a 49krát ho převede ze sRGB do lineárního RGB. Vlákna jedné **skupiny** (*workgroup*) mají společnou rychlou **sdílenou paměť** (*shared memory*), kterou vidí jen ta skupina. Skupina si do ní řádek načte jednou, každé vlákno dva nebo tři pixely, počká na ostatní a pak sčítá ze sdílené paměti. Tak to dělá Acerola ve videu o rozmazání a tak to dělají knihovny.
+V prvním průchodu čte každé vlákno $2r + 1$ pixelů řádku, a sousední vlákna čtou skoro tytéž pixely. Při $\sigma = 8$ přečte GPU každý pixel 49krát a 49krát ho převede ze sRGB do lineárního RGB. Vlákna jedné **skupiny** (*workgroup*) mají společnou rychlou **sdílenou paměť** (*shared memory*), kterou vidí jen ta skupina. Skupina si do ní řádek načte jednou, každé vlákno jeden nebo dva pixely, počká na ostatní a pak sčítá ze sdílené paměti. Tak to dělají knihovny pro zpracování obrazu na GPU.
 
 @img(shared_tile.png, 900, Skupina 64 vláken načte do sdílené paměti svých 64 pixelů a 24 pixelů na každé straně, pak každé vlákno sečte 49 hodnot ze sdílené paměti)
 
@@ -648,7 +647,7 @@ md(r"""
 
 <details><summary>🔑 Odpověď</summary>
 
-Vyplatí se, když vlákna čtou hodně stejných pixelů a čtení je drahé: velký poloměr a převod ze sRGB u každého čtení. Kernel se sdílenou pamětí čte a převádí každý pixel jednou, ať je poloměr jakýkoli, a jeho čas skoro neroste. Při malém poloměru je rozdíl malý, protože GPU drží nedávno čtené pixely ve vyrovnávací paměti samo, a načtení do sdílené paměti a čekání na `barrier()` něco stojí. Sdílená paměť má také omezenou velikost, desítky kilobajtů na skupinu, a poloměr kernelu je proto omezený konstantou `R_MAX`.
+Vyplatí se, když vlákna čtou hodně stejných pixelů a čtení je drahé: velký poloměr a převod ze sRGB u každého čtení. Kernel se sdílenou pamětí čte a převádí každý pixel nanejvýš dvakrát, ať je poloměr jakýkoli, a jeho čas skoro neroste. Při malém poloměru je rozdíl malý, protože GPU drží nedávno čtené pixely ve vyrovnávací paměti samo, a načtení do sdílené paměti a čekání na `barrier()` něco stojí. Velikost sdíleného pole musí být známá při překladu, a poloměr je proto omezený konstantou `R_MAX`.
 </details>
 """)
 
@@ -686,7 +685,7 @@ code(SOBEL, solve=[(SOBEL_STUB, SOLUTION_SOBEL)])
 md(r"""
 ### ✅ Kontrola
 
-Nechte `direction` vypnutý a `gain` na 1 a spusťte buňku. Porovná sílu hran se Sobelem v NumPy. Pomocné funkce v ní obsahují převody z lekce o barevných prostorech, světlost `lightness`, `rgba` a váhy Gaussova jádra `gaussian_1d`, které budou potřeba v další sekci.
+Nechte `direction` vypnutý a `gain` na 2 a spusťte obě buňky. První obsahuje převody z lekce o barevných prostorech, světlost `lightness`, `rgba` a váhy Gaussova jádra `gaussian_1d`, které budou potřeba v další sekci. Druhá porovná sílu hran se Sobelem v NumPy.
 """)
 
 code(HELPERS_NP)
@@ -696,7 +695,7 @@ L = np.pad(lightness(photo.read()), 1, mode="edge")
 h, w = L.shape[0] - 2, L.shape[1] - 2
 gx = sum((i - 1) * (2 - abs(j - 1)) * L[j:j + h, i:i + w] for j in range(3) for i in range(3))
 gy = sum((j - 1) * (2 - abs(i - 1)) * L[j:j + h, i:i + w] for j in range(3) for i in range(3))
-sara.check("Sobel", rgba(np.clip(np.hypot(gx, gy), 0, 1)))
+sara.check("Sobel", rgba(np.clip(2.0 * np.hypot(gx, gy), 0, 1)))
 """)
 
 md(r"""
@@ -719,7 +718,7 @@ Filtr do Krity je v NumPy. NumPy nemá vlákna na pixel, ale umí celé pole naj
 
 ### 🎯 Úkol 5: rozmazání v NumPy
 
-Napište `blur(a, sigma)`: rozmazání po řádcích a pak po sloupcích, okraj podle pravidla Clamp. Váhy dává `gaussian_1d(sigma)`, pole délky $2r + 1$. Nedokončená funkce pole nemění.
+Napište `blur(a, sigma)`: rozmazání po řádcích a pak po sloupcích, okraj podle pravidla Clamp. Váhy dává `gaussian_1d(sigma)`, pole délky $2r + 1$. Nedokončená funkce pole nemění. Kontrola porovnává s vrstvou `Gauss 2D`, takže kernel `Gauss 2D` má mít `sigma` 3.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -745,8 +744,6 @@ sara.check("Gauss 2D", rgba(linear_to_srgb(soft)))
 """, solve=[(BLUR_NP_GIVEN, SOLUTION_BLUR_NP)])
 
 md(r"""
-Kontrola porovnává s vrstvou `Gauss 2D`, takže kernel `Gauss 2D` má mít `sigma` 3.
-
 **Zaostření** (*unsharp mask*) přičte k obrázku jeho rozdíl od rozmazaného obrázku, $f + a\,(f - \text{blur}(f))$. Rozdíl jsou detaily menší než $\sigma$ a `amount` $a$ říká, kolikrát je zesílit. Název je z fotokomory, kde se k negativu přikládala rozmazaná, tedy neostrá (*unsharp*), maska.
 
 ### 🎯 Úkol 6: filtr
@@ -791,7 +788,7 @@ Vložte filtr do `pga_filter/effect.py` s `TITLE = "Blur and sharpen"` a vyzkou�
 <details><summary>💡 Nápověda</summary>
 
 1. Do `effect.py` patří pomocné funkce, vaše `blur`, `PARAMS` a `apply`. Řádek `import numpy as np` nechte nahoře.
-2. Pokud filtr na velké fotce trvá dlouho, zmenšete náhled v dialogu Krity, nebo filtr spusťte na výběru.
+2. Náhled počítá jen malou kopii, pomalé je až Apply na celé fotce. Zkuste filtr nejdřív na výběru. Ve zmenšeném náhledu „Whole region, scaled down“ vypadá rozmazání silnější, skutečnou sílu ukáže „Centre at full size“.
 </details>
 
 > **❓ Otázka**
@@ -819,8 +816,8 @@ md(r"""
 
 - **Rozmazání s proměnným poloměrem.** Hloubka ostrosti nebo rozmazání podle masky mění $\sigma$ pixel od pixelu a jádro pak není oddělitelné.
 - **Rychlé aproximace.** Několik průměrů za sebou se blíží Gaussovi, a průměr jde spočítat v čase nezávislém na poloměru, posuvným součtem. Kawaseho rozmazání a pyramida zmenšených obrázků jsou rychlé způsoby, jak hry dělají rozmazání pro záři.
-- **Rozmazání, které zachová hrany.** Bilaterální filtr váží souseda i podle toho, jak se liší barvou, a hrany nerozmaže. Patří k nim i Kuwaharův filtr z lekce o stylizaci.
-- **Cannyho detektor hran.** Sobel, ztenčení hran na jeden pixel a dvě prahové hodnoty, dává čisté čáry místo šedých pruhů.
+- **Rozmazání, které zachová hrany.** Bilaterální filtr váží souseda i podle toho, jak se liší barvou, a hrany nerozmaže. Mezi taková rozmazání patří i Kuwaharův filtr z lekce o stylizaci.
+- **Cannyho detektor hran.** Gaussovo rozmazání, Sobel, ztenčení hran na jeden pixel a dvě prahové hodnoty dají dohromady čisté čáry místo šedých pruhů.
 - **Konvoluce přes Fourierovu transformaci.** Pro velká jádra je rychlejší násobit spektra, jak ukáže lekce o frekvencích.
 
 ### Bonusové úkoly
