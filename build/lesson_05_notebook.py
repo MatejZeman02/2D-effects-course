@@ -329,7 +329,7 @@ def answer(snippet, lang="python"):
 md(r"""
 # Lekce 5: Stylizace, čárová kresba a kreslený vzhled
 
-Na konci lekce budete mít v Kritě filtr, který z fotky udělá kresbu tuší, nebo kreslený obrázek s plochými barvami a obrysy. Postavíte ho z několika průchodů za sebou: dvě rozmazání z lekce 3, jejich rozdíl, měkký práh, posterizaci z lekce 1 a Kuwaharův filtr, který z fotky udělá malbu.
+Na konci lekce budete mít v Kritě filtr, který z fotky udělá kresbu tuší, nebo kreslený obrázek s plochými barvami a obrysy. Postavíte ho z několika průchodů za sebou: dvě rozmazání z lekce 3, jejich rozdíl, měkký práh a posterizace z lekce 1. Navíc napíšete Kuwaharův filtr, který z fotky udělá malbu.
 
 Spusťte buňku. Otevře v Sáře nový dokument v sRGB s plátnem 902 × 600 a v něm testovací fotku jako vrstvu `chelsea`.
 """)
@@ -363,7 +363,6 @@ Funkce z úvodní lekce shrnuje její příloha. Sloupec Sekce říká, kde se f
 | Volání | Co dělá | Sekce |
 |---|---|---|
 | `np.tanh(a)` | hyperbolický tangens po prvcích | 5 |
-| `np.where(podmínka, a, b)` | po prvcích `a`, kde podmínka platí, jinak `b` | 5 |
 """)
 
 md(r"""
@@ -378,15 +377,15 @@ code(GOAL, hidden=True)
 md(r"""
 ## 1. Rozdíl dvou rozmazání
 
-Rozmazání z lekce 3 je dolní propust: nechá velké tvary a odstraní detaily menší než $\sigma$. Dvě rozmazání s různou $\sigma$ odstraní různě velké detaily, a jejich **rozdíl** (*difference of Gaussians*, DoG) nechá jen detaily mezi oběma velikostmi, pásmovou propust z lekce o frekvencích:
+Rozmazání z lekce 3 je dolní propust: nechá velké tvary a odstraní detaily menší než $\sigma$. Dvě rozmazání s různou $\sigma$ odstraní různě velké detaily, a jejich **rozdíl** (*difference of Gaussians*, DoG) nechá jen detaily mezi oběma velikostmi. Je to **pásmová propust** (*band pass*): ve spektru z lekce 4 ztlumí nízké i vysoké frekvence a nechá pásmo mezi nimi:
 
 $$D = G_\sigma * L - G_{k\sigma} * L, \qquad k \approx 1.6$$
 
-Na hraně je $D$ kladné na světlé straně a záporné na tmavé, uprostřed plochy nula. Tak podobně vidí hrany i sítnice: buňky reagují na rozdíl středu a okolí, a Marr a Hildreth z toho v roce 1980 udělali detektor hran.
+Na hraně je $D$ kladné na světlé straně a záporné na tmavé, uprostřed plochy nula. Podobně vidí hrany i sítnice: buňky reagují na rozdíl středu a okolí, a Marr a Hildreth z toho v roce 1980 udělali detektor hran.
 
 @img(dog_profile.png, 900, Dvě Gaussovy křivky různé šířky, jejich rozdíl ve tvaru mexického klobouku a odezva rozdílu na schodovou hranu se zákmity na obou stranách)
 
-Kernel níže spočítá obě rozmazání světlosti OKLab L najednou a uloží je do jedné vrstvy: $G_\sigma$ do červené, $G_{k\sigma}$ do zelené a samotnou světlost do modré. Další kernely ji čtou jako tři čísla, ne jako barvu. Vrstva proto vypadá šedě s barevnými lemy.
+Kernel níže spočítá obě rozmazání světlosti OKLab L najednou a uloží je do jedné vrstvy: $G_\sigma$ do červené, $G_{k\sigma}$ do zelené a samotnou světlost do modré. Další kernely ji čtou jako tři čísla, ne jako barvu. Na plochách jsou všechna tři čísla skoro stejná, a tak vrstva vypadá šedě, s barevnými lemy u hran.
 """)
 
 code(BLURS)
@@ -425,7 +424,7 @@ sara.check("DoG", rgba(0.5 + 10.0 * dog[..., 0]))
 
 md(r"""
 > **❓ Otázka**
-> Zvětšete `sigma` v buňce `Blurs` na 3 a pak ji zmenšete na 0.5. Jak se změní, které hrany DoG najde? Kernel `DoG` po změně spusťte znovu.
+> Zvětšete `sigma` v buňce `Blurs` na 3 a pak ji zmenšete na 0.5. Jak se změní, které hrany DoG najde? Kernel `DoG` po změně spusťte znovu. Nakonec spusťte buňku `Blurs` znovu, aby měla zase výchozí `sigma` 1.5.
 
 <details><summary>🔑 Odpověď</summary>
 
@@ -475,11 +474,11 @@ Porovnejte vrstvu `XDoG` s obrázkem níže, levým horním, který má výchoz�
 @img(xdog_params.png, 900, Šest variant čárové kresby kočky s různými hodnotami sigma, p, epsilon a phi)
 
 > **❓ Otázka**
-> Co se stane s $p = 0$? A proč obrázek s velkým $p$ a malým $\varepsilon$ vypadá jako negativ?
+> Co se stane s $p = 0$? A proč obrázek s $p = 60$ a $\varepsilon = 0.9$ vypadá jako negativ?
 
 <details><summary>🔑 Odpověď</summary>
 
-S $p = 0$ je $S = G_\sigma * L$, rozmazaná světlost, a XDoG je jen práh světlosti: tmavé plochy černé, světlé bílé, žádné obrysy. Velké $p$ zesílí rozdíl, takže na světlé straně hran je $S$ mnohem větší než 1 a na tmavé straně záporné. Malé $\varepsilon$ pak nechá bílé skoro všechno kromě tmavých lemů, a tmavé plochy se světlým okrajem zbělají. Obrázek se skládá z hran, ne z ploch.
+S $p = 0$ je $S = G_\sigma * L$, rozmazaná světlost, a XDoG je jen práh světlosti: tmavé plochy černé, světlé bílé, žádné obrysy. Velké $p$ zesílí rozdíl, takže na světlé straně hran je $S$ mnohem větší než 1 a na tmavé záporné. S $\varepsilon = 0.9$ je skoro každá plocha pod prahem a zčerná. Bílé zůstanou jen světlé strany hran, které $p$ vytáhlo nad $\varepsilon$: bílé čáry na černém, jako negativ kresby.
 </details>
 """)
 
@@ -487,7 +486,7 @@ S $p = 0$ je $S = G_\sigma * L$, rozmazaná světlost, a XDoG je jen práh svět
 md(r"""
 ## 3. Kreslený vzhled
 
-Kreslený film (*toon shading*) má málo odstínů a černé obrysy. Odstíny dá posterizace světlosti z lekce 1, obrysy XDoG. Kernel teď čte **dvě vrstvy**: fotku jako `src` a čáry jako `lines`. Funkce `pixel` umí jen jeden vstup, a tak je kernel napsaný celý, jako sdílený průchod v lekci 3. Řádek `image lines: readonly` přidá druhý obrázek a `lines=XDoG` na prvním řádku buňky říká, která vrstva to je.
+Kreslený vzhled (*toon shading*) napodobuje kreslený film: málo odstínů a černé obrysy. Odstíny dá posterizace světlosti z lekce 1, obrysy XDoG. Kernel teď čte **dvě vrstvy**: fotku jako `src` a čáry jako `lines`. Funkce `pixel` umí jen jeden vstup, a tak je kernel napsaný celý, jako sdílený průchod v lekci 3. Řádek `image lines: readonly` přidá druhý obrázek a `lines=XDoG` na prvním řádku buňky říká, která vrstva to je.
 
 @img(toon_steps.png, 900, Fotka kočky, její posterizovaná světlost, čáry XDoG a obojí dohromady jako kreslený obrázek)
 
@@ -527,7 +526,7 @@ md(r"""
 Posterizace zaokrouhluje, takže pixel na hranici dvou úrovní se na GPU a v NumPy může zaokrouhlit různě. Desetiny procenta jsou v pořádku.
 
 > **❓ Otázka**
-> Srst kočky je po posterizaci zrnitá, plné skvrn jedné a druhé úrovně. Proč, a co by pomohlo?
+> Srst kočky je po posterizaci zrnitá, plná skvrn jedné a druhé úrovně. Proč, a co by pomohlo?
 
 <details><summary>🔑 Odpověď</summary>
 
@@ -539,7 +538,7 @@ Světlost srsti se mění pixel od pixelu kolem hranice dvou úrovní, a každý
 md(r"""
 ## 4. Kuwahara: fotka jako malba
 
-Kuwaharův filtr z roku 1976 vyhladí plochy a hrany nechá ostré. Kolem pixelu vezme čtyři čtverce, každý s pixelem v jednom rohu. Spočítá v každém průměrnou barvu a rozptyl světlosti, a pixel dostane průměr čtverce s **nejmenším rozptylem**, toho nejklidnějšího. U hrany je to čtverec, který leží celý na jedné straně, a hrana se proto nerozmaže. Výsledek vypadá jako olejomalba, s plochými tahy štětce.
+Kuwaharův filtr z roku 1976 vyhladí plochy a hrany nechá ostré. Kolem pixelu vezme čtyři čtverce, každý s pixelem v jednom rohu. Spočítá v každém průměrnou barvu a rozptyl jasu, a pixel dostane průměr čtverce s **nejmenším rozptylem**, toho nejklidnějšího. U hrany je to čtverec, který leží celý na jedné straně, a hrana se proto nerozmaže. Výsledek vypadá jako olejomalba, s plochými tahy štětce.
 
 @img(kuwahara.png, 900, Čtyři čtverce kolem pixelu na hraně, ten s nejmenším rozptylem zvýrazněný, a výřez fotky před filtrem a po něm)
 
@@ -625,6 +624,8 @@ Filtr do Krity spojí XDoG a toon v NumPy. Rozmazání `blur` a funkci `toon` u�
 
 Napište `xdog(L, sigma, p, epsilon, phi)`. `L` je pole `(h, w)`, `blur` chce `(h, w, c)`, takže světlost rozšiřte o osu a výsledek o ni zase zmenšete. Nedokončená funkce vrací bílý papír.
 
+Buňka pod funkcí porovná výsledek s vrstvou `XDoG`. Pokud jste na konci sekce 4 přepnuli `Blurs` na `Kuwahara` nebo hýbali posuvníky, vraťte první řádek `Blurs` na `%%gmacs "chelsea" -> "Blurs" halo=32` a spusťte znovu `Blurs` a pak `XDoG`.
+
 <details><summary>💡 Nápověda</summary>
 
 1. `blur(L[..., None], sigma)[..., 0]` je rozmazaná světlost `(h, w)`.
@@ -647,8 +648,6 @@ sara.check("XDoG", rgba(lines))
 """, solve=[(XDOG_NP_GIVEN, SOLUTION_XDOG_NP)])
 
 md(r"""
-Kontrola porovnává s vrstvou `XDoG`, takže `Blurs` a `XDoG` mají mít výchozí hodnoty a `Blurs` má číst `chelsea`. Pokud jste je změnili, spusťte obě buňky znovu s původním prvním řádkem.
-
 ### 🎯 Úkol 6: filtr
 
 Napište `apply`. Styl `Lines` vrátí čáry jako šedý obrázek, `Toon` posterizaci s čarami přes funkci `toon`. Nedokončená funkce vrací obrázek beze změny.
@@ -699,21 +698,21 @@ md(r"""
 ## Shrnutí
 
 - Rozdíl dvou Gaussových rozmazání je pásmová propust: nechá detaily mezi dvěma velikostmi a na hranách dá kladné a záporné hodnoty.
-- XDoG k rozmazané světlosti přičte zesílený rozdíl a výsledek projde měkkým prahem. Čtyři čísla, $\sigma$, $p$, $\varepsilon$ a $\varphi$, dají od kresby tuší po uhel.
+- XDoG k rozmazané světlosti přičte zesílený rozdíl a výsledek projde měkkým prahem. Čtyři čísla, $\sigma$, $p$, $\varepsilon$ a $\varphi$, nastaví vzhled od kresby tuší po kresbu uhlem.
 - Kreslený vzhled je posterizovaná světlost krát čáry. Celý kernel čte dvě vrstvy, druhou přes `image ...: readonly` a jméno na prvním řádku buňky.
 - Kuwaharův filtr vyhladí plochy a nechá hrany, protože bere průměr nejklidnějšího ze čtyř čtverců.
 - Stylizace je řetěz průchodů: každý kernel zapíše vrstvu, kterou čte další, a každý článek jde vyměnit.
 
 ### Co jsme vynechali
 
-- **Čáry podél hran.** Rozmazání podél směru hrany (*flow-based DoG*, s polem směrů *edge tangent flow*) spojí přerušované čáry do plynulých tahů. Směr hrany dává Sobel z lekce 3.
+- **Čáry podél hran.** Rozmazání podél směru hrany (*flow-based DoG*, s polem směrů *edge tangent flow*) spojí přerušované čáry do plynulých tahů. Směr hrany dává Sobelův operátor z lekce o konvoluci.
 - **Anizotropní Kuwahara.** Výseče protažené podél hrany místo čtverců. Výsledek vypadá jako opravdová malba štětcem.
 - **Šrafování a půltóny.** Světlost se dá převést na šrafy, tečky tiskového rastru nebo znaky ASCII. Znaky potřebují obrázek s písmeny jako druhý vstup, a to teď umíte.
 - **Paleta.** Místo posterizace světlosti se barvy dají zaokrouhlit na paletu několika barev, vybranou ručně nebo shlukováním (k-means).
 
 ### Bonusové úkoly
 
-1. **Barevné čáry.** Místo černé kreslete čáry barvou: tmavší verzí barvy plochy pod nimi, nebo pevnou barvou z posuvníku `source_color`.
+1. **Barevné čáry.** Místo černé kreslete čáry barvou: tmavší verzí barvy plochy pod nimi, nebo pevnou barvou z výběru barvy (`source_color`).
 2. **Tloušťka čáry.** Ztlušťte čáry XDoG tak, že vezmete minimum z okolí, a zjistěte, jak to vypadá s různým poloměrem.
 3. **Půltóny.** Napište kernel, který plochu nahradí mřížkou černých teček s poloměrem podle světlosti, jako novinová fotka.
 4. **Rychlá Kuwahara.** Součty ve čtvercích jdou spočítat z integrálního obrazu (*summed-area table*) v konstantním čase, nezávisle na poloměru. Napište to v NumPy přes `np.cumsum`.
