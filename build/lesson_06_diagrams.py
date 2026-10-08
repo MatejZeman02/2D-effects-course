@@ -69,7 +69,7 @@ def exposure_strip(hdr):
     fig, axes = plt.subplots(1, 5, figsize=(15, 2.3), gridspec_kw={"wspace": 0.03})
     for ax, stops in zip(axes, (-4, -2, 0, 2, 4)):
         ax.imshow(linear_to_srgb(np.clip(hdr * 2.0 ** stops, 0, 1)))
-        ax.set_title(f"{stops:+d} stops" if stops else "0 stops", fontsize=11)
+        ax.set_title(f"{stops:+d} EV" if stops else "0 EV", fontsize=11)
         bare(ax)
     save(fig, "exposure_strip.png")
 
@@ -83,11 +83,11 @@ def dynamic_range(hdr):
     ax.set_yscale("log")
     ax.axvspan(-8, 0, color=ORANGE, alpha=0.12)
     ax.set_ylim(0.6, 2e6)
-    ax.text(-4, 3e5, "obrazovka, 8 stops", ha="center", color=ORANGE, fontsize=11)
+    ax.text(-4, 3e5, "obrazovka, 8 EV", ha="center", color=ORANGE, fontsize=11)
     mean = np.log2(np.exp(np.log(1e-4 + y).mean()))
     ax.axvline(mean, color="black", lw=1.5, ls="--")
     ax.text(mean + 0.2, 2.5e4, "geometrický průměr", ha="left", fontsize=10)
-    ax.set_xlabel("$\\log_2$ jasu (clonová čísla, 0 je bílá)", fontsize=11)
+    ax.set_xlabel("$\\log_2$ jasu (EV, 0 je bílá)", fontsize=11)
     ax.set_ylabel("počet pixelů", fontsize=11)
     plain(ax)
     save(fig, "dynamic_range.png")
@@ -130,7 +130,7 @@ def reduce_tree():
                     cx = child * width / 2 + width / 4
                     ax.add_patch(FancyArrowPatch((cx, y + 1.3 - 0.4), (x, y + 0.4), arrowstyle="-|>",
                                                  mutation_scale=8, color=BLUE, lw=0.8))
-        label = "16 pixelů" if depth == 0 else f"krok {depth}: {len(v)} vláken"
+        label = "16 pixelů" if depth == 0 else f"krok {depth}: {len(v)} " + ("vlákno" if len(v) == 1 else "vlákna" if len(v) < 5 else "vláken")
         ax.text(16.6, -depth * 1.3, label, va="center", fontsize=10, color=GREY)
     ax.set_xlim(-0.3, 19.5)
     ax.set_ylim(-len(levels) * 1.3 + 0.6, 0.7)
@@ -181,7 +181,7 @@ def gamut():
     y = luminance(c)
     scaled = c * (aces(y) / np.maximum(y, 1e-4))[..., None]
     rows = [(aces(c), "křivka po složkách"), (np.clip(scaled, 0, 1), "jas, pak ořezání"),
-            (fit_numpy(scaled), "jas, pak sytost v OKLab")]
+            (fit_numpy(scaled), "jas, pak sytost v OKLabu")]
     fig, axes = plt.subplots(3, 1, figsize=(10, 4.6), gridspec_kw={"hspace": 0.75})
     for ax, (picture, title) in zip(axes, rows):
         ax.imshow(linear_to_srgb(np.repeat(picture, 8, axis=0)), aspect="auto", extent=(-3, 6, 6, 0))
@@ -189,7 +189,7 @@ def gamut():
         ax.set_yticks([])
         plain(ax)
         ax.spines["left"].set_visible(False)
-    axes[-1].set_xlabel("expozice (clonová čísla)", fontsize=11)
+    axes[-1].set_xlabel("expozice (EV)", fontsize=11)
     save(fig, "gamut.png")
 
 

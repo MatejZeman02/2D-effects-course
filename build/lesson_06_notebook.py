@@ -137,7 +137,7 @@ BRIGHT_X = f"""\
 uniform float sigma: hint_range(1, 16) = {SIGMA}
 
 
-# Lesson 3's first pass, without the sRGB conversions: the layer is linear light already.
+# The convolution lesson's first pass, without the sRGB conversions: the layer is linear light already.
 def pixel(ivec2 at) -> vec4:
     int r = int(ceil(3.0 * sigma))
     vec3 total = vec3(0.0)
@@ -302,7 +302,7 @@ def gaussian_1d(sigma):
 
 
 def blur(a, sigma):
-    """a, (h, w, c), blurred by a Gaussian of sigma pixels, rows then columns, edges clamped (lesson 3)."""
+    """a, (h, w, c), blurred by a Gaussian of sigma pixels, rows then columns, edges clamped (the convolution lesson)."""
     k = gaussian_1d(sigma)
     r = len(k) // 2
     h, w = a.shape[:2]
@@ -384,7 +384,7 @@ def answer(snippet, lang="python"):
 md(r"""
 # Lekce 6 (bonus): HDR, záře a tone mapping
 
-Fotka ze skutečného světa má světla, která jsou stokrát jasnější než obloha, a obrazovka umí ukázat jen rozsah od 0 do 1. Hry a fotoaparáty proto počítají ve vysokém dynamickém rozsahu (*high dynamic range*, HDR) a teprve na konci světlo stlačí do obrazovky. V této lekci to postavíte celé: expozici, tónovou křivku, automatickou expozici z průměru celého obrázku spočítaného na GPU, záři kolem světel (*bloom*) a stlačení sytých barev v OKLab.
+Fotka ze skutečného světa má světla, která jsou stokrát jasnější než obloha, a obrazovka umí ukázat jen rozsah od 0 do 1. Hry a fotoaparáty proto počítají ve vysokém dynamickém rozsahu (*high dynamic range*, HDR) a teprve na konci světlo stlačí do obrazovky. V této lekci to postavíte celé: expozici, tónovou křivku, automatickou expozici z průměru celého obrázku spočítaného na GPU, záři kolem světel (*bloom*) a stlačení sytých barev v OKLabu.
 
 Lekce je bonusová a na samostudium. Spusťte buňku. Otevře v Sáře dokument s plátnem 640 × 427 a do vrstvy `HDR` zapíše fotku rakety na rampě v lineárním světle, s lampami až stokrát jasnějšími než bílá.
 """)
@@ -422,9 +422,8 @@ Funkce z úvodní lekce shrnuje její příloha. Sloupec Sekce říká, kde se f
 
 | Volání | Co dělá | Sekce |
 |---|---|---|
-| `doc.new_layer(jméno, pole)` | nová vrstva s danými pixely | 0 |
 | `doc.door.verdict({"reduce": ...})` | součet, průměr, minimum a maximum vrstvy, spočítané na GPU | 2 |
-| `np.load("....npz")["rgb"]` | pole uložené v souboru NumPy | 0 |
+| `np.load("....npz")["rgb"]` | pole uložené v souboru NumPy | úvod |
 """)
 
 md(r"""
@@ -439,13 +438,13 @@ code(GOAL, hidden=True)
 md(r"""
 ## 1. Expozice a tónová křivka
 
-Fotoaparát světlo nejdřív vynásobí **expozicí**, a ta se měří v **clonových číslech** (*stops*): o jedno víc je dvakrát víc světla. Pak ho musí dostat do rozsahu obrazovky. Nejjednodušší je oříznout všechno nad 1. Posuňte `stops` v kernelu níže a podívejte se, co ořezání dělá s lampami a co s oblohou.
+Fotoaparát světlo nejdřív vynásobí **expozicí**, a ta se měří v **expozičních stupních** (EV, *stops*): o jeden stupeň víc je dvakrát víc světla. Pak ho musí dostat do rozsahu obrazovky. Nejjednodušší je oříznout všechno nad 1. Posuňte `stops` v kernelu níže a podívejte se, co ořezání dělá s lampami a co s oblohou.
 
-@img(exposure_strip.png, 900, Fotka rakety při expozici od minus čtyř do plus čtyř clonových čísel, oříznutá na rozsah obrazovky)
+@img(exposure_strip.png, 900, Fotka rakety při expozici od minus čtyř do plus čtyř expozičních stupňů, oříznutá na rozsah obrazovky)
 
-Při žádné expozici není vidět obloha a lampy zároveň. Rozsah fotky, od nejtmavšího pixelu po nejjasnější, je asi dvacet clonových čísel, obrazovka jich ukáže asi osm.
+Při žádné expozici není vidět obloha a lampy zároveň. Rozsah fotky, od nejtmavšího pixelu po nejjasnější, je asi dvacet expozičních stupňů, obrazovka jich ukáže asi osm.
 
-@img(dynamic_range.png, 900, Histogram logaritmu jasu pixelů fotky, asi dvacet clonových čísel, s vyznačeným rozsahem, který ukáže obrazovka)
+@img(dynamic_range.png, 900, Histogram logaritmu jasu pixelů fotky, asi dvacet expozičních stupňů, s vyznačeným rozsahem, který ukáže obrazovka)
 """)
 
 code(EXPOSURE)
@@ -481,7 +480,7 @@ code(TONE, solve=[(TONE_STUB, SOLUTION_TONE)])
 md(r"""
 ### ✅ Kontrola
 
-Pomocné funkce obsahují převody z lekce o barevných prostorech, jas `luminance` a rozmazání `blur` z lekce 3. Kontrola porovná vrstvu `Tone` s křivkou ACES v NumPy, s `stops` na 0.
+Pomocné funkce obsahují převody z lekce o barevných prostorech, jas `luminance` a rozmazání `blur` z lekce o konvoluci. Kontrola porovná vrstvu `Tone` s křivkou ACES v NumPy, s `stops` na 0.
 """)
 
 code(HELPERS_NP)
@@ -507,17 +506,17 @@ Tmavá scéna potřebuje víc světla než slunečná, jinak je celá černá, a
 md(r"""
 ## 2. Automatická expozice a redukce na GPU
 
-Expozice má posunout „typický“ jas scény na středně šedou, **klíč** (*key*) kolem 0.18. Typický jas ale není aritmetický průměr: jedna lampa sto jasů posune průměr víc než celá obloha. Reinhard proto bere průměr **logaritmů**, tedy geometrický průměr:
+Expozice má posunout „typický“ jas scény na středně šedou, **klíč** (*key*) kolem 0.18. Typický jas ale není aritmetický průměr: jedna lampa se stonásobným jasem posune průměr víc než celá obloha. Reinhard proto bere průměr **logaritmů**, tedy geometrický průměr:
 
 $$\bar L = \exp\Big(\frac{1}{n} \sum \log(\delta + Y)\Big), \qquad \text{expozice} = \frac{\text{klíč}}{\bar L}$$
 
-Malé $\delta$ zabrání logaritmu nuly. Na logaritmické ose má každé clonové číslo stejnou váhu.
+Malé $\delta$ zabrání logaritmu nuly. Na logaritmické ose má každý expoziční stupeň stejnou váhu.
 
 Průměr celého obrázku je **redukce**: z milionu čísel jedno. Jedno vlákno by sčítalo pixel po pixelu. GPU sčítá ve stromu: každé vlákno sečte dvojici, pak dvojice součtů, a po $\log_2 n$ krocích zbude jedno číslo. Sára to umí jako krok `reduce`, který vrátí součet, průměr, minimum a maximum každého kanálu vrstvy.
 
 @img(reduce.png, 860, Strom sčítání šestnácti čísel ve čtyřech krocích, v každém kroku polovina vláken sečte dvojici)
 
-Redukce umí jen čísla, která se sčítají v libovolném pořadí. Histogram by potřeboval, aby vlákna zapisovala do společných přihrádek (*atomics*), a ten buňka zatím nemá.
+Redukce umí jen čísla, která se sčítají v libovolném pořadí. Histogram by potřeboval, aby vlákna zapisovala do společných přihrádek (*atomics*), a ty buňka `%%gmacs` zatím nenabízí.
 
 ### 🎯 Úkol 2: logaritmus jasu
 
@@ -551,7 +550,7 @@ print(f"mean log luminance {{mean_log:.4f}}, exposure {{exposure:.3f}}, {{np.log
 md(r"""
 ### ✅ Kontrola
 
-Průměr spočítaný na GPU porovnáme s NumPy. Vrstva drží čísla s polovinou přesnosti (*half float*), takže se shodují asi na tři místa.
+Průměr spočítaný na GPU porovnáme s NumPy. Vrstva drží čísla v poloviční přesnosti (*half float*), takže se shodují asi na tři místa.
 """)
 
 code("""
@@ -568,11 +567,11 @@ code(AUTO)
 
 md(r"""
 > **❓ Otázka**
-> Zkuste klíč 0.18, 0.12 a 0.05 a buňky spusťte znovu. Proč by hra měnila expozici postupně, snímek po snímku, a ne hned?
+> Zkuste klíč 0.18, 0.12 a 0.05 a buňky spusťte znovu, a nakonec klíč vraťte na 0.12. Proč by hra měnila expozici postupně, snímek po snímku, a ne hned?
 
 <details><summary>🔑 Odpověď</summary>
 
-Klíč říká, jak světlá má scéna vypadat: 0.18 je den, 0.05 noc. Kdyby se expozice měnila okamžitě, obraz by při každém záblesku nebo otočení kamery ke světlu blikal. Hry proto expozici k cíli posouvají pomalu, jako oko, které si na tmu zvyká několik sekund. Tomu se říká přizpůsobení oka (*eye adaptation*).
+Klíč říká, jak světlá má scéna vypadat: 0.18 je den, 0.05 noc. Kdyby se expozice měnila okamžitě, obraz by při každém záblesku nebo otočení kamery ke světlu blikal. Hry proto expozici k cíli posouvají pomalu, jako oko, které si na tmu zvyká postupně, zornice za pár sekund, sítnice i desítky minut. Tomu se říká přizpůsobení oka (*eye adaptation*).
 </details>
 """)
 
@@ -580,11 +579,11 @@ Klíč říká, jak světlá má scéna vypadat: 0.18 je den, 0.05 noc. Kdyby se
 md(r"""
 ## 3. Záře
 
-Silné světlo se v objektivu i v oku rozptýlí a kolem lampy vznikne záře. Hry ji napodobí třemi průchody: vyberou jen světlo nad prahem, rozmažou ho a přičtou k obrázku **před** tónovou křivkou, dokud je to ještě světlo, ne barva obrazovky.
+Silné světlo se v objektivu i v oku rozptýlí a kolem lampy vznikne záře. Hry ji napodobí třemi kroky: vyberou jen světlo nad prahem, rozmažou ho a přičtou k obrázku **před** tónovou křivkou, dokud je to ještě světlo, ne barva obrazovky.
 
 @img(bloom_steps.png, 900, Obrázek s tónovou křivkou, světlo nad prahem, jeho rozmazání a obrázek se září)
 
-Výběr světla a dva průchody rozmazání z lekce 3 jsou hotové. Rozmazání je bez převodů ze sRGB, protože vrstva drží lineární světlo.
+Výběr světla a dva průchody rozmazání z lekce o konvoluci jsou hotové. Rozmazání je bez převodů ze sRGB, protože vrstva drží lineární světlo.
 """)
 
 code(BRIGHT)
@@ -627,19 +626,19 @@ Po tónové křivce jsou lampy i bílá raketa stejně bílé, 1, a práh by je 
 
 # --- 4. Gamut ---------------------------------------------------------------------
 md(r"""
-## 4. Syté barvy v OKLab
+## 4. Syté barvy v OKLabu
 
-Křivka po složkách stlačí každý kanál zvlášť. Sytá oranžová lampa má červenou složku mnohem větší než modrou, a křivka červenou stlačí víc. Barva se proto s rostoucím jasem posouvá ke žluté a nakonec k bílé, a modré světlo k fialové. Hráči tomu říkají „notorious six“: při velkém jasu zbude jen šest barev, tři základní a tři doplňkové.
+Křivka po složkách stlačí každý kanál zvlášť. Sytá oranžová lampa má červenou složku mnohem větší než modrou, a křivka červenou stlačí víc. Barva se proto s rostoucím jasem posouvá ke žluté, modrá k azurové, a kde je třetí složka nulová, tam už zůstane. Vývojáři a koloristé tomu říkají „notorious six“: při velkém jasu zbude jen šest barev, tři základní a tři doplňkové.
 
-Druhá možnost je stlačit jen **jas** a barvu vynásobit stejným poměrem. Odstín zůstane, ale jasná sytá barva skončí mimo krychli 0 až 1, kterou obrazovka umí (mimo **gamut**). Ořezání kanálů odstín zase posune. Správně je zachovat v OKLab světlost a odstín a ubrat **sytost** (*chroma*), dokud se barva do krychle nevejde.
+Druhá možnost je stlačit jen **jas** a barvu vynásobit stejným poměrem. Odstín zůstane, ale jasná sytá barva skončí mimo krychli 0 až 1, kterou obrazovka umí (mimo **gamut**). Ořezání kanálů odstín zase posune. Správně je zachovat v OKLabu světlost a odstín a ubrat **sytost** (*chroma*), dokud se barva do krychle nevejde.
 
-@img(gamut.png, 900, Pruh sytých barev s rostoucí expozicí ve třech podáních: křivka po složkách, jas s ořezáním a jas se stlačením sytosti v OKLab)
+@img(gamut.png, 900, Pruh sytých barev s rostoucí expozicí ve třech podáních: křivka po složkách, jas s ořezáním a jas se stlačením sytosti v OKLabu)
 
 Největší sytost, která se vejde, se najde **půlením intervalu** (*bisection*): podíl sytosti od 0 do 1, a v každém kroku se interval zkrátí na polovinu, podle toho, zda je barva uvnitř. Po 16 krocích je podíl přesný na $2^{-16}$.
 
 ### 🎯 Úkol 4: stlačení do gamutu
 
-Doplňte `fit`. Barvu, která je uvnitř, vraťte beze změny. Jinak ji převeďte do OKLab, světlost ořízněte na 1 a půlením najděte největší podíl sytosti `ab`, při kterém je barva uvnitř. Funkce `inside` je hotová. Nedokončená funkce ořezává, jako volba `Clip`.
+Doplňte `fit`. Barvu, která je uvnitř, vraťte beze změny. Jinak ji převeďte do OKLabu, světlost ořízněte na 1 a půlením najděte největší podíl sytosti `ab`, při kterém je barva uvnitř. Funkce `inside` je hotová. Nedokončená funkce ořezává, jako volba `Clip`.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -688,7 +687,7 @@ Přepněte `mode` a porovnejte lampy a oranžový lem u rampy. Rozdíl je jemný
 
 <details><summary>🔑 Odpověď</summary>
 
-Světlost je to, co tónová křivka nastavila, a změna by udělala z jasné lampy tmavší. Odstín je to, co oko pozná nejdřív, a jeho změna je vidět jako jiná barva. Sytost se mění nejméně nápadně: velmi jasná barva i ve skutečnosti vypadá bledší, protože oko se jí přizpůsobí. Proto jasná světla v obrázku přecházejí do bílé, a s OKLab plynule a bez změny odstínu.
+Světlost je to, co tónová křivka nastavila, a změna by udělala z jasné lampy tmavší. Odstín je to, co oko pozná nejdřív, a jeho změna je vidět jako jiná barva. Sytost se mění nejméně nápadně: velmi jasná barva i ve skutečnosti vypadá bledší, protože oko se jí přizpůsobí. Proto jasná světla v obrázku přecházejí do bílé, a s OKLabem plynule a bez změny odstínu.
 </details>
 """)
 
@@ -770,26 +769,26 @@ Vložte filtr do `pga_filter/effect.py` s `TITLE = "Tonemapper"`. Tonemapper pot
 md(r"""
 ## Shrnutí
 
-- Světlo ve scéně má rozsah i dvacet clonových čísel, obrazovka asi osm. Výpočet probíhá v lineárním světle bez omezení a do obrazovky se světlo stlačí až na konci.
+- Světlo ve scéně má rozsah i dvacet expozičních stupňů, obrazovka asi osm. Výpočet probíhá v lineárním světle bez omezení a do obrazovky se světlo stlačí až na konci.
 - Tónová křivka stlačí jasné plynule. Reinhard je nejjednodušší, ACES má tvar S a filmový vzhled.
 - Automatická expozice posune geometrický průměr jasu na klíč. Průměr celého obrázku je redukce, kterou GPU sčítá ve stromu.
-- Hodnota z Pythonu se do kernelu dostane jako parametr, i dosazením do prvního řádku buňky.
+- Hodnota z Pythonu se do kernelu dostane jako parametr, dosazením `{proměnná}` do prvního řádku buňky.
 - Záře je světlo nad prahem, rozmazané a přičtené před tónovou křivkou.
-- Křivka po složkách posouvá odstín jasných barev. Stlačení jasu a pak sytosti v OKLab odstín zachová.
+- Křivka po složkách posouvá odstín jasných barev. Stlačení jasu a pak sytosti v OKLabu odstín zachová.
 
 ### Co jsme vynechali
 
 - **Histogram a percentily.** Expozice podle histogramu ignoruje nejtmavší a nejjasnější procenta pixelů. Histogram na GPU potřebuje atomické zápisy do přihrádek.
 - **Lokální tone mapping.** Expozice, která se mění místo od místa, jako „HDR fotky“ z mobilu. Bez opatrnosti dělá kolem hran svatozáře.
 - **Pyramida záře.** Hry zmenšují obrázek několikrát na polovinu, rozmazávají malé verze a skládají je zpět. Je to rychlejší než velké jádro a záře má dlouhý měkký ocas.
-- **Moderní křivky.** AgX a Khronos PBR Neutral řeší posun odstínu přímo v křivce. Blender a Godot je mají jako volbu.
-- **HDR obrazovky.** Obrazovka s jasem přes 1000 nitů ukáže víc než 1, a tonemapper pak stlačuje jen to, co se nevejde ani jí.
+- **Moderní křivky.** AgX a Khronos PBR Neutral řeší posun odstínu přímo v křivce. Blender má obě, Godot zatím jen AgX.
+- **HDR obrazovky.** Obrazovka s jasem přes 1000 nitů ukáže víc než 1, a tonemapper pak stlačuje jen to, co se nevejde ani do ní.
 
 ### Bonusové úkoly
 
 1. **Postupná adaptace.** V NumPy spočítejte expozici pro sérii snímků se změnou jasu a posouvejte ji k cíli o pár procent na snímek.
 2. **Histogram.** Spočítejte v NumPy histogram logaritmu jasu a expozici podle mediánu místo průměru. Jak se liší?
-3. **Barevná záře.** Obarvěte záři podle posuvníku `source_color`, nebo ji zesilte jen v jednom kanálu, jako u starých objektivů.
+3. **Barevná záře.** Obarvěte záři barvou z výběru `source_color`, převedenou do lineárního světla, nebo ji zesilte jen v jednom kanálu, jako u starých objektivů.
 4. **AgX.** Najděte popis křivky AgX a napište ji jako čtvrtou volbu `curve`.
 """)
 
