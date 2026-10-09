@@ -313,6 +313,32 @@ def numpy_shifts():
     save(fig, "numpy_shifts.png")
 
 
+def second_derivative():
+    """A soft edge sampled at pixels, its first and second differences, and the edge minus the second."""
+    x = np.arange(24)
+    f = 0.2 + 0.6 / (1 + np.exp(-(x - 11.5) / 0.9))
+    p = np.pad(f, 1, mode="edge")
+    first = (p[2:] - p[:-2]) / 2
+    second = p[2:] - 2 * p[1:-1] + p[:-2]
+    panels = [(f, "světlost $f$", GREY), (first, "první derivace, $(f_{+1} - f_{-1}) / 2$", BLUE),
+              (second, r"druhá derivace, jádro $(1\;\,{-2}\;\,1)$", ORANGE),
+              (f - second, r"$f - f''$, zaostření", GREY)]
+    fig, axes = plt.subplots(1, 4, figsize=(15, 3.0), gridspec_kw={"wspace": 0.28})
+    for ax, (values, title, colour) in zip(axes, panels):
+        ax.axvline(11.5, color="#cccccc", lw=1, ls="--", zorder=0)
+        ax.axhline(0, color="#cccccc", lw=1, zorder=0)
+        ax.plot(x, values, color=colour, lw=1.4)
+        ax.plot(x, values, "o", color=colour, ms=3.5)
+        ax.set_title(title, fontsize=11)
+        ax.set_xticks([])
+        for s in ("top", "right"):
+            ax.spines[s].set_visible(False)
+    axes[3].plot(x, f, color=GREY, lw=1, ls=":", zorder=0)
+    axes[2].annotate("průchod nulou\nna hraně", (11.5, 0), (14.5, 0.03), fontsize=10, color=GREY,
+                     arrowprops=dict(arrowstyle="-", color=GREY, lw=0.8))
+    save(fig, "second_derivative.png")
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     make_photo()
@@ -322,6 +348,7 @@ def main():
     edge_modes()
     shared_tile()
     sobel()
+    second_derivative()
     numpy_shifts()
     print("wrote", sorted(p.name for p in OUT.glob("*.png")))
 

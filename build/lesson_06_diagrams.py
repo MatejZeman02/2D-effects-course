@@ -26,11 +26,14 @@ BLUE = "#4C78A8"
 GREY = "#6B6B6B"
 
 space = {"np": np}
-for source in (nb.HELPERS_NP, nb.CURVES_NP, nb.SOLUTION_AUTO_NP, nb.SOLUTION_APPLY):
+for source in (nb.HELPERS_NP, nb.CURVES_NP, nb.SOLUTION_AUTO_NP, nb.SOLUTION_APPLY,
+               nb.PYRAMID_NP, nb.SOLUTION_REMAP, nb.LOCAL_NP):
     exec(source, space)
 srgb_to_linear, linear_to_srgb = space["srgb_to_linear"], space["linear_to_srgb"]
 oklab, oklab_to_linear, luminance = space["oklab"], space["oklab_to_linear"], space["luminance"]
 aces, reinhard, blur, auto_exposure = space["aces"], space["reinhard"], space["blur"], space["auto_exposure"]
+gaussian_pyramid, laplacian_pyramid = space["gaussian_pyramid"], space["laplacian_pyramid"]
+remap, local_laplacian = space["remap"], space["local_laplacian"]
 
 
 def make_hdr():
@@ -193,6 +196,70 @@ def gamut():
     save(fig, "gamut.png")
 
 
+def log_luminance(hdr):
+    return np.log2(1e-4 + luminance(hdr))
+
+
+def laplacian_levels(hdr):
+    """The Gaussian and the Laplacian pyramid of the log luminance, each level at its own size."""
+    L = log_luminance(hdr)
+    levels = 5
+    rows = [(gaussian_pyramid(L, levels), "Gaussova pyramida $g_i$", "gray", (L.min(), L.max())),
+            (laplacian_pyramid(L, levels), "Laplaceova pyramida $\\ell_i$", "RdBu_r", (-2.5, 2.5))]
+    fig, axes = plt.subplots(2, 1, figsize=(12, 8), gridspec_kw={"hspace": 0.15})
+    for ax, (pyramid, title, cmap, (lo, hi)) in zip(axes, rows):
+        x = 0
+        for i, level in enumerate(pyramid):
+            h, w = level.shape
+            last = i == levels - 1
+            ax.imshow(level, cmap="gray" if last else cmap, vmin=L.min() if last else lo, vmax=L.max() if last else hi,
+                      extent=(x, x + w, h, 0), interpolation="nearest")
+            ax.text(x + w / 2, h + 12, f"{w} × {h}", ha="center", va="top", fontsize=9, color=GREY)
+            x += w + 50
+        ax.set_xlim(-5, x)
+        ax.set_ylim(L.shape[0] + 50, -5)
+        ax.set_title(title, fontsize=11, loc="left")
+        bare(ax)
+    save(fig, "laplacian_pyramid.png")
+
+
+def remap_curve():
+    x = np.linspace(-4, 4, 801)
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.axvspan(-1, 1, color=ORANGE, alpha=0.1)
+    ax.plot(x, x, color=GREY, lw=1.5, ls="--", label="beze změny, $\\alpha = \\beta = 1$")
+    ax.plot(x, remap(x, 0.0, 1.0, 1.0, nb.BETA), color=BLUE, lw=2.2,
+            label=f"hrany stlačené, $\\alpha = 1$, $\\beta = {nb.BETA:g}$")
+    ax.plot(x, remap(x, 0.0, 1.0, 0.5, nb.BETA), color=ORANGE, lw=2.2,
+            label=f"a detail zesílený, $\\alpha = 0.5$, $\\beta = {nb.BETA:g}$")
+    ax.text(0, -3.6, "detail", ha="center", fontsize=10, color=ORANGE)
+    ax.text(-2.7, -3.6, "hrana", ha="center", fontsize=10, color=GREY)
+    ax.text(2.7, -3.6, "hrana", ha="center", fontsize=10, color=GREY)
+    ax.set_xlabel("$x - g$ (v násobcích $\\sigma_r$)", fontsize=11)
+    ax.set_ylabel("$r_g(x) - g$", fontsize=11)
+    ax.set_ylim(-4, 4)
+    ax.legend(frameon=False, fontsize=10, loc="upper left")
+    plain(ax)
+    save(fig, "remap.png")
+
+
+def local_tonemap(hdr):
+    """The lamps by a global curve, by a blurred base and detail, and by the local Laplacian filter."""
+    L = log_luminance(hdr)
+    base = blur(L[..., None], 16)[..., 0]
+    logs = [(L, "tónová křivka pro celý obrázek"),
+            (nb.BETA * base + (L - base), "základ a detail: svatozář kolem lamp"),
+            (local_laplacian(L, nb.SIGMA_R, nb.ALPHA, nb.BETA), "lokální Laplaceův filtr")]
+    crop = (slice(330, 427), slice(110, 330))
+    fig, axes = plt.subplots(1, 3, figsize=(15, 2.5), gridspec_kw={"wspace": 0.03})
+    for ax, (out, title) in zip(axes, logs):
+        lin = hdr * (2.0 ** (out - L))[..., None]
+        ax.imshow(np.clip(linear_to_srgb(aces(lin * auto_exposure(lin))), 0, 1)[crop])
+        ax.set_title(title, fontsize=11)
+        bare(ax)
+    save(fig, "local_tonemap.png")
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     make_hdr()
@@ -203,6 +270,9 @@ def main():
     reduce_tree()
     bloom_steps(hdr)
     gamut()
+    laplacian_levels(hdr)
+    remap_curve()
+    local_tonemap(hdr)
     print("wrote", sorted(p.name for p in OUT.glob("*.*")))
 
 

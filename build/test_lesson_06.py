@@ -176,3 +176,42 @@ def test_the_pictures_exist():
     for path in shown:
         assert (ROOT / path).is_file(), path
     assert "`rocket_hdr.npz`" in (ROOT / nb.IMG / "SOURCES.md").read_text()
+
+
+@pytest.fixture(scope="module")
+def local():
+    return namespace(nb.HELPERS_NP, nb.PYRAMID_NP, nb.SOLUTION_REMAP, nb.LOCAL_NP)
+
+
+def test_the_pyramid_collapses_back_exactly(hdr, local):
+    L = np.log2(1e-4 + local["luminance"](hdr))
+    pyramid = local["laplacian_pyramid"](L, 7)
+    assert [level.shape for level in pyramid][-1] == (7, 10)
+    assert np.abs(local["collapse"](pyramid) - L).max() < 1e-4
+
+
+def test_remap_is_continuous_and_the_check_expects_the_solution(local):
+    remap = local["remap"]
+    for alpha, beta in ((1.0, 1.0), (0.5, 0.4), (2.0, 0.1)):
+        assert np.allclose(remap(np.array([1 - 1e-9, 1 + 1e-9, -1 - 1e-9]), 0.0, 1.0, alpha, beta), [1, 1, -1])
+    x = np.linspace(-5, 5, 101)
+    assert np.allclose(remap(x, 0.3, 0.7, 1.0, 1.0), x)
+    check = [c for c in code_cells() if 'print("remap: ok"' in c][0]
+    space = dict(local)
+    exec(check.split("def remap")[0] + check.split("return collapse(out)")[1], space)
+    assert np.allclose(space["got"], space["want"], atol=1e-3)
+
+
+def test_the_unfinished_remap_leaves_the_picture(hdr, local):
+    space = namespace(nb.HELPERS_NP, nb.PYRAMID_NP, nb.REMAP_GIVEN, nb.LOCAL_NP)
+    L = np.log2(1e-4 + space["luminance"](hdr[::4, ::4]))
+    assert np.abs(space["local_laplacian"](L, nb.SIGMA_R, 0.5, 0.4) - L).max() < 1e-4
+
+
+def test_the_local_filter_compresses_the_range_and_keeps_neutral(hdr, local):
+    L = np.log2(1e-4 + local["luminance"](hdr))
+    same = local["local_laplacian"](L, nb.SIGMA_R, 1.0, 1.0)
+    assert np.abs(same - L).max() < 1e-4
+    out = local["local_laplacian"](L, nb.SIGMA_R, nb.ALPHA, nb.BETA)
+    assert out.shape == L.shape and np.isfinite(out).all()
+    assert np.ptp(out) < 0.7 * np.ptp(L)

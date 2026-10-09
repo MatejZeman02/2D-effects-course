@@ -24,6 +24,7 @@ IMG = "imgs/6"
 WIDTH, HEIGHT = 640, 427      # the photo's size and the canvas's
 KEY = 0.12                    # the grey auto exposure aims the mean at
 THRESHOLD, SIGMA, STRENGTH = 2.0, 6.0, 0.1
+SIGMA_R, ALPHA, BETA = 1.0, 1.0, 0.4   # the local Laplacian filter of section 6, in stops
 cells = []
 
 
@@ -363,6 +364,83 @@ def apply(img, auto, key, stops, threshold, sigma, strength, curve, encode):
     out[..., :3] = linear_to_srgb(lin) if encode else lin
     return out'''
 
+PYRAMID_NP = '''\
+K5 = np.array([1, 4, 6, 4, 1], dtype=np.float32) / 16
+
+
+def smooth(a):
+    """a, (h, w), blurred by the five weights K5, rows then columns, edges clamped."""
+    h, w = a.shape
+    p = np.pad(a, ((0, 0), (2, 2)), mode="edge")
+    a = sum(K5[i] * p[:, i:i + w] for i in range(5))
+    p = np.pad(a, ((2, 2), (0, 0)), mode="edge")
+    return sum(K5[i] * p[i:i + h] for i in range(5))
+
+
+def down(a):
+    """Half the size: blurred, then every second pixel."""
+    return smooth(a)[::2, ::2]
+
+
+def up(a, shape):
+    """Twice the size, cut to shape: every pixel repeated, then blurred."""
+    big = np.repeat(np.repeat(a, 2, axis=0), 2, axis=1)[:shape[0], :shape[1]]
+    return smooth(big)
+
+
+def gaussian_pyramid(a, levels):
+    pyramid = [a]
+    for _ in range(levels - 1):
+        pyramid.append(down(pyramid[-1]))
+    return pyramid
+
+
+def laplacian_pyramid(a, levels):
+    g = gaussian_pyramid(a, levels)
+    return [g[i] - up(g[i + 1], g[i].shape) for i in range(levels - 1)] + [g[-1]]
+
+
+def collapse(pyramid):
+    """The picture back from its Laplacian pyramid, from the smallest level up."""
+    a = pyramid[-1]
+    for level in reversed(pyramid[:-1]):
+        a = level + up(a, level.shape)
+    return a'''
+
+REMAP_GIVEN = '''\
+def remap(x, g, sigma_r, alpha, beta):
+    """x moved around g: differences under sigma_r as detail, larger ones as an edge."""
+    # TODO: t^alpha within sigma_r of g, 1 + beta * (t - 1) beyond, in units of sigma_r
+    return x'''
+
+SOLUTION_REMAP = '''\
+def remap(x, g, sigma_r, alpha, beta):
+    """x moved around g: differences under sigma_r as detail, larger ones as an edge."""
+    d = x - g
+    t = np.abs(d) / sigma_r
+    detail = g + np.sign(d) * sigma_r * t ** alpha
+    edge = g + np.sign(d) * sigma_r * (1 + beta * (t - 1))
+    return np.where(t <= 1, detail, edge)'''
+
+LOCAL_NP = '''\
+def local_laplacian(a, sigma_r, alpha, beta, levels=7):
+    """a, (h, w), its small differences scaled as detail and its large ones as edges."""
+    gauss = gaussian_pyramid(a, levels)
+    refs = np.arange(a.min(), a.max() + 2 * sigma_r, sigma_r)      # the values g, sigma_r apart
+    pyramids = [laplacian_pyramid(remap(a, g, sigma_r, alpha, beta), levels) for g in refs]
+    out = []
+    for i in range(levels - 1):
+        # Which two values g this level's Gaussian value lies between, and how far along
+        pos = np.clip((gauss[i] - refs[0]) / sigma_r, 0, len(refs) - 1.001)
+        k = pos.astype(int)
+        w = pos - k
+        stack = np.stack([pyramid[i] for pyramid in pyramids])
+        rows, cols = np.indices(k.shape)
+        out.append((1 - w) * stack[k, rows, cols] + w * stack[k + 1, rows, cols])
+    out.append(gauss[-1])
+    return collapse(out)'''
+
+
 GOAL = ("# The tonemapper of section 5, hidden because you write it yourself.\n"
         "def _goal():\n"
         + textwrap.indent("\n\n".join(piece.replace("\n\n\n", "\n\n") for piece in
@@ -384,7 +462,7 @@ def answer(snippet, lang="python"):
 md(r"""
 # Lekce 6 (bonus): HDR, záře a tone mapping
 
-Fotka ze skutečného světa má světla, která jsou stokrát jasnější než obloha, a obrazovka umí ukázat jen rozsah od 0 do 1. Hry a fotoaparáty proto počítají ve vysokém dynamickém rozsahu (*high dynamic range*, HDR) a teprve na konci světlo stlačí do obrazovky. V této lekci to postavíte celé: expozici, tónovou křivku, automatickou expozici z průměru celého obrázku spočítaného na GPU, záři kolem světel (*bloom*) a stlačení sytých barev v OKLabu.
+Fotka ze skutečného světa má světla, která jsou stokrát jasnější než obloha, a obrazovka umí ukázat jen rozsah od 0 do 1. Hry a fotoaparáty proto počítají ve vysokém dynamickém rozsahu (*high dynamic range*, HDR) a teprve na konci světlo stlačí do obrazovky. V této lekci to postavíte celé: expozici, tónovou křivku, automatickou expozici z průměru celého obrázku spočítaného na GPU, záři kolem světel (*bloom*) a stlačení sytých barev v OKLabu. Nepovinná poslední sekce přidá lokální tone mapping.
 
 Lekce je bonusová a na samostudium. Spusťte buňku. Otevře v Sáře dokument s plátnem 640 × 427 a do vrstvy `HDR` zapíše fotku rakety na rampě v lineárním světle, s lampami až stokrát jasnějšími než bílá.
 """)
@@ -422,8 +500,11 @@ Funkce z úvodní lekce shrnuje její příloha. Sloupec Sekce říká, kde se f
 
 | Volání | Co dělá | Sekce |
 |---|---|---|
-| `doc.door.verdict({"reduce": ...})` | součet, průměr, minimum a maximum vrstvy, spočítané na GPU | 2 |
 | `np.load("....npz")["rgb"]` | pole uložené v souboru NumPy | úvod |
+| `doc.door.verdict({"reduce": ...})` | součet, průměr, minimum a maximum vrstvy, spočítané na GPU | 2 |
+| `a[::2, ::2]` | každý druhý řádek a sloupec, pole poloviční velikosti | 6 |
+| `np.repeat(a, 2, axis=0)` | každý řádek dvakrát za sebou | 6 |
+| `stack[k, rows, cols]` s `np.indices` | z každého místa hodnota z jiné vrstvy pole, podle pole indexů `k` | 6 |
 """)
 
 md(r"""
@@ -765,6 +846,107 @@ Vložte filtr do `pga_filter/effect.py` s `TITLE = "Tonemapper"`. Tonemapper pot
 </details>
 """)
 
+# --- 6. Local Laplacian filter (optional) -------------------------------------------
+md(r"""
+## 6. Lokální kontrast (nepovinné)
+
+Tónová křivka je pro všechny pixely stejná. Stlačí dvacet expozičních stupňů do osmi, a stejně stlačí i malé rozdíly, kresbu mraků nebo nátěr rakety. Obrázek pak vypadá ploše. **Lokální tone mapping** stlačí velké rozdíly mezi oblastmi a malé rozdíly nechá. Sekce je nepovinná a celá v NumPy.
+
+Nejjednodušší pokus rozdělí logaritmus jasu na rozmazaný **základ** a **detail**, rozdíl od základu. Základ stlačí a detail přičte zpět. Rozmazání ale u silné hrany míchá obě strany: kolem jasné lampy je základ jasnější než okolí, a jeho stlačení okolí ztmaví. Vznikne tmavá **svatozář** (*halo*), na obrázku uprostřed.
+
+@img(local_tonemap.png, 900, Výřez s lampami třikrát: s tónovou křivkou pro celý obrázek, se základem a detailem a tmavou svatozáří kolem lamp, a s lokálním Laplaceovým filtrem bez svatozáře)
+
+### Laplaceova pyramida
+
+Burt a Adelson v roce 1983 rozložili obrázek podle velikosti detailů. **Gaussova pyramida** obrázek opakovaně rozmaže malým jádrem $(1\;4\;6\;4\;1) / 16$ a zmenší na polovinu. Každá úroveň **Laplaceovy pyramidy** je rozdíl úrovně Gaussovy pyramidy a zvětšené úrovně pod ní, a poslední úroveň je nejmenší Gaussova:
+
+$$\ell_i = g_i - \text{up}(g_{i+1}), \qquad \ell_n = g_n$$
+
+Rozdíl dvou rozmazání je DoG, tedy skoro Laplaceův operátor z lekce o konvoluci, a odtud jméno. Úroveň $\ell_i$ drží detaily velké asi $2^i$ pixelů. Obrázek se z pyramidy složí zpět přesně: od nejmenší úrovně zvětšit a přičíst další, $g_i = \ell_i + \text{up}(g_{i+1})$.
+
+@img(laplacian_pyramid.png, 860, Gaussova pyramida logaritmu jasu fotky, každá úroveň poloviční, a pod ní Laplaceova pyramida, kde jsou jen hrany a detaily dané velikosti)
+
+Funkce pyramidy jsou hotové. Buňka níže rozloží logaritmus jasu fotky a složí ho zpět.
+""")
+
+code(PYRAMID_NP + """
+
+
+lin = np.maximum(doc.layer("HDR").read()[..., :3], 0.0)
+L = np.log2(1e-4 + luminance(lin))                  # log luminance, in stops
+pyramid = laplacian_pyramid(L, 7)
+print("levels:", [level.shape for level in pyramid])
+print(f"collapsed back, largest difference {np.abs(collapse(pyramid) - L).max():.1e}")
+""")
+
+md(r"""
+### Lokální Laplaceův filtr
+
+Paris, Hasinoff a Kautz v roce 2011 rozhodují o každém koeficientu pyramidy zvlášť. Pro koeficient $\ell_i$ v místě $p$ vezmou hodnotu $g = g_i(p)$ z Gaussovy pyramidy, celý obrázek přemapují funkcí $r_g$ a koeficient vezmou z Laplaceovy pyramidy přemapovaného obrázku. Funkce $r_g$ rozlišuje dva druhy rozdílů od $g$: menší než $\sigma_r$ jsou detail, větší jsou hrana. S $t = |x - g| / \sigma_r$:
+
+$$r_g(x) = g + \operatorname{sign}(x - g)\, \sigma_r \cdot \begin{cases} t^\alpha & t \le 1 \\ 1 + \beta\,(t - 1) & t > 1 \end{cases}$$
+
+S $\alpha < 1$ detail zesílí, s $\beta < 1$ se hrany stlačí. Obě větve se v $t = 1$ potkají, takže $r_g$ je spojitá. Rozdíl přes hranu se nikdy nezesílí, a proto svatozář nevznikne.
+
+@img(remap.png, 700, Funkce r_g kolem g: uvnitř pásu sigma_r detail, beze změny nebo zesílený, vně pásu hrana se sklonem beta)
+
+Přemapovat obrázek zvlášť pro každý koeficient by trvalo dlouho. Rychlá verze (Aubry a kol., 2014) obrázek přemapuje jen pro několik hodnot $g$ s krokem $\sigma_r$ a pro každou postaví Laplaceovu pyramidu. Koeficient v místě $p$ pak lineárně proloží mezi dvěma pyramidami, jejichž $g$ leží kolem $g_i(p)$. Filtr pracuje na logaritmu jasu, kde $\sigma_r = 1$ je jeden expoziční stupeň, a barvu pak vynásobí stejným poměrem jako jas, $2^{\,\text{nový} - \text{starý}}$.
+
+### 🎯 Úkol 8: přemapování
+
+Napište `remap(x, g, sigma_r, alpha, beta)` podle vzorce. `x` je pole, `g` číslo. Funkce `local_laplacian` je hotová. Nedokončená funkce vrací `x`, a filtr pak obrázek nezmění. Kontrola pod funkcí zkusí čtyři hodnoty.
+
+<details><summary>💡 Nápověda</summary>
+
+1. `d = x - g` a `t = np.abs(d) / sigma_r`.
+2. Spočítejte obě větve pro celé pole, každou s `np.sign(d)`, a vyberte `np.where(t <= 1, detail, hrana)`.
+</details>
+
+<details><summary>🔑 Řešení</summary>
+
+""" + answer(SOLUTION_REMAP) + r"""
+</details>
+""")
+
+code(REMAP_GIVEN + "\n\n\n" + LOCAL_NP + """
+
+
+got = remap(np.array([-3.0, -0.5, 0.25, 2.0]), 0.0, 1.0, 0.5, 0.4)
+want = np.array([-1.8, -0.7071, 0.5, 1.4])
+print("remap: ok" if np.allclose(got, want, atol=1e-3) else f"remap gives {np.round(got, 4)}, expected {want}")
+""", solve=[(REMAP_GIVEN, SOLUTION_REMAP)])
+
+md(r"""
+Buňka níže zapíše dvě vrstvy: `Global` s automatickou expozicí a křivkou ACES, jako v sekci 2, a `Local`, kde před expozicí a křivkou proběhne lokální Laplaceův filtr. Porovnejte je kolem lamp, na mracích a na raketě.
+""")
+
+code(f"""
+sigma_r, alpha, beta = {SIGMA_R}, {ALPHA}, {BETA}
+start = time.perf_counter()
+local = lin * 2.0 ** (local_laplacian(L, sigma_r, alpha, beta) - L)[..., None]
+print(f"local Laplacian: {{(time.perf_counter() - start) * 1000:.0f}} ms")
+doc.new_layer("Global", rgba(linear_to_srgb(aces(lin * auto_exposure(lin)))))
+doc.new_layer("Local", rgba(linear_to_srgb(aces(local * auto_exposure(local)))))
+""")
+
+md(r"""
+> **❓ Otázka**
+> Proč základ a detail udělají kolem lamp svatozář, a lokální Laplaceův filtr ne?
+
+<details><summary>🔑 Odpověď</summary>
+
+Rozmazání neví, kde je hrana. Základ kolem lampy je průměr lampy a tmavého okolí, je tedy jasnější než okolí, a stlačení ho stáhne dolů i s okolím. Lokální filtr se pro každý koeficient ptá, jak daleko je pixel od hodnoty $g$ v tom místě. Lampa je od tmavého okolí dál než $\sigma_r$, a tak je pro okolí hranou: její rozdíl se jen stlačí, nikdy se nepřičte k detailu. Detail okolí, kresba mraků, zůstane, protože je od $g$ blíž než $\sigma_r$.
+</details>
+
+> **❓ Otázka**
+> Zkuste `alpha` 0.5. Co se stane s oblohou, a proč?
+
+<details><summary>🔑 Odpověď</summary>
+
+Obloha se rozpadne na skvrny. Fotka byla původně osmibitová, a plynulý přechod oblohy se skládá z drobných schodů. Pro filtr jsou to malé rozdíly, tedy detail, a $t^\alpha$ je zesílí nejvíc ze všeho, protože u nuly roste nejstrměji. Je to stejný problém jako šum u druhé derivace. Paris a kol. proto rozdíly menší než úroveň šumu nechávají beze změny. Nakonec vraťte `alpha` na 1.
+</details>
+""")
+
 # --- Summary ------------------------------------------------------------------
 md(r"""
 ## Shrnutí
@@ -775,11 +957,12 @@ md(r"""
 - Hodnota z Pythonu se do kernelu dostane jako parametr, dosazením `{proměnná}` do prvního řádku buňky.
 - Záře je světlo nad prahem, rozmazané a přičtené před tónovou křivkou.
 - Křivka po složkách posouvá odstín jasných barev. Stlačení jasu a pak sytosti v OKLabu odstín zachová.
+- Laplaceova pyramida rozloží obrázek podle velikosti detailů a složí ho zpět přesně. Lokální Laplaceův filtr v ní stlačí hrany a detail nechá, bez svatozáře.
 
 ### Co jsme vynechali
 
 - **Histogram a percentily.** Expozice podle histogramu ignoruje nejtmavší a nejjasnější procenta pixelů. Histogram na GPU potřebuje atomické zápisy do přihrádek.
-- **Lokální tone mapping.** Expozice, která se mění místo od místa, jako „HDR fotky“ z mobilu. Bez opatrnosti dělá kolem hran svatozáře.
+- **Lokální Laplaceův filtr na GPU.** Každá úroveň pyramidy je kernel nad menším obrázkem a pyramidy pro všechna $g$ jdou spočítat najednou. Darktable ho má v modulu místního kontrastu.
 - **Pyramida záře.** Hry zmenšují obrázek několikrát na polovinu, rozmazávají malé verze a skládají je zpět. Je to rychlejší než velké jádro a záře má dlouhý měkký ocas.
 - **Moderní křivky.** AgX a Khronos PBR Neutral řeší posun odstínu přímo v křivce. Blender má obě, Godot zatím jen AgX.
 - **HDR obrazovky.** Obrazovka s jasem přes 1000 nitů ukáže víc než 1, a tonemapper pak stlačuje jen to, co se nevejde ani do ní.
@@ -790,6 +973,7 @@ md(r"""
 2. **Histogram.** Spočítejte v NumPy histogram logaritmu jasu a expozici podle mediánu místo průměru. Jak se liší?
 3. **Barevná záře.** Obarvěte záři barvou z výběru `source_color`, převedenou do lineárního světla, nebo ji zesilte jen v jednom kanálu, jako u starých objektivů.
 4. **AgX.** Najděte popis křivky AgX a napište ji jako čtvrtou volbu `curve`.
+5. **Lokální kontrast v Kritě.** Přidejte do tonemapperu volbu `local` s posuvníky `alpha` a `beta`.
 """)
 
 md(r"""

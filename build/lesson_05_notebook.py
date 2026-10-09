@@ -385,6 +385,14 @@ Na hraně je $D$ kladné na světlé straně a záporné na tmavé, uprostřed p
 
 @img(dog_profile.png, 900, Dvě Gaussovy křivky různé šířky, jejich rozdíl ve tvaru mexického klobouku a odezva rozdílu na schodovou hranu se zákmity na obou stranách)
 
+Proč rozdíl dvou rozmazání najde hrany? Je to skoro **Laplaceův operátor** rozmazaného obrázku, druhá derivace z lekce o konvoluci. Rozmazání s rostoucím $\sigma$ se řídí rovnicí vedení tepla: změna Gaussova jádra s $\sigma$ je jeho Laplace, $\partial G_\sigma / \partial \sigma = \sigma\, \nabla^2 G_\sigma$. Rozdíl pro blízká $\sigma$ a $k\sigma$ je derivace krát krok:
+
+$$G_{k\sigma} - G_\sigma \approx (k\sigma - \sigma)\, \frac{\partial G_\sigma}{\partial \sigma} = (k - 1)\, \sigma^2\, \nabla^2 G_\sigma$$
+
+$$D \approx -(k - 1)\, \sigma^2\, \nabla^2 (G_\sigma * L)$$
+
+DoG je tedy záporný Laplace rozmazané světlosti (*Laplacian of Gaussian*, LoG), až na násobek. Rozmazání napřed potlačí šum, který by druhá derivace jinak zesílila nejvíc. Marr a Hildreth hledali hrany jako místa, kde LoG prochází nulou, a s $k \approx 1.6$ je DoG tvarem LoG nejblíž.
+
 Kernel níže spočítá obě rozmazání světlosti OKLab L najednou a uloží je do jedné vrstvy: $G_\sigma$ do červené, $G_{k\sigma}$ do zelené a samotnou světlost do modré. Další kernely ji čtou jako tři čísla, ne jako barvu. Na plochách jsou všechna tři čísla skoro stejná, a tak vrstva vypadá šedě, s barevnými lemy u hran.
 """)
 
@@ -698,6 +706,7 @@ md(r"""
 ## Shrnutí
 
 - Rozdíl dvou Gaussových rozmazání je pásmová propust: nechá detaily mezi dvěma velikostmi a na hranách dá kladné a záporné hodnoty.
+- DoG je skoro záporný Laplace rozmazaného obrázku (LoG), protože Gauss se s rostoucím $\sigma$ mění podle rovnice vedení tepla.
 - XDoG k rozmazané světlosti přičte zesílený rozdíl a výsledek projde měkkým prahem. Čtyři čísla, $\sigma$, $p$, $\varepsilon$ a $\varphi$, nastaví vzhled od kresby tuší po kresbu uhlem.
 - Kreslený vzhled je posterizovaná světlost krát čáry. Celý kernel čte dvě vrstvy, druhou přes `image ...: readonly` a jméno na prvním řádku buňky.
 - Kuwaharův filtr vyhladí plochy a nechá hrany, protože bere průměr nejklidnějšího ze čtyř čtverců.
