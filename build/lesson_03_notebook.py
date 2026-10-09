@@ -708,46 +708,6 @@ Barva je směr gradientu, od tmavší strany ke světlejší. Tenká světlá č
 </details>
 """)
 
-md(r"""
-### Druhá derivace
-
-Sobel měří první derivaci, strmost. Hrana je tam, kde je strmost největší, a v tom místě má **druhá derivace** nulu a mění znaménko: na tmavé straně hrany je kladná, na světlé záporná.
-
-@img(second_derivative.png, 900, Měkká hrana vzorkovaná po pixelech, její první derivace s vrcholem na hraně, druhá derivace s průchodem nulou na hraně a hrana minus druhá derivace se zákmity na obou stranách)
-
-Jádro pro druhou derivaci dá Taylorův rozvoj. Pro souseda ve vzdálenosti $h$ na obě strany:
-
-$$f(x \pm h) = f(x) \pm h\,f'(x) + \frac{h^2}{2}\,f''(x) \pm \frac{h^3}{6}\,f'''(x) + O(h^4)$$
-
-Po sečtení obou řádků se členy s lichou mocninou $h$ odečtou:
-
-$$f(x + h) + f(x - h) = 2 f(x) + h^2 f''(x) + O(h^4)$$
-
-$$f''(x) = \frac{f(x + h) - 2 f(x) + f(x - h)}{h^2} + O(h^2)$$
-
-S krokem jednoho pixelu, $h = 1$, je to jádro $(1\;\,{-2}\;\,1)$. Ve 2D se druhé derivace v $x$ a v $y$ sečtou do **Laplaceova operátoru** $\nabla^2 f = f_{xx} + f_{yy}$, a sečtou se i jejich jádra:
-
-$$\nabla^2 \approx \begin{pmatrix} 0 & 1 & 0 \\ 1 & -4 & 1 \\ 0 & 1 & 0 \end{pmatrix}$$
-
-Jádro hrany z tabulky v úkolu 1 je záporný Laplace, který bere i sousedy na úhlopříčkách. Hrany ve všech směrech v něm mají vyrovnanější váhu.
-
-Zaostření z úkolu 1 je identita minus Laplace:
-
-$$\begin{pmatrix} 0 & 0 & 0 \\ 0 & 1 & 0 \\ 0 & 0 & 0 \end{pmatrix} - \begin{pmatrix} 0 & 1 & 0 \\ 1 & -4 & 1 \\ 0 & 1 & 0 \end{pmatrix} = \begin{pmatrix} 0 & -1 & 0 \\ -1 & 5 & -1 \\ 0 & -1 & 0 \end{pmatrix}$$
-
-Odečtení druhé derivace hranu zostří: na tmavé straně je $f''$ kladná a pixel ztmavne, na světlé je záporná a pixel zesvětlí. Vpravo na obrázku je to vidět jako zákmit na obou stranách hrany.
-
-Druhá derivace ale zesílí nejvíc ty nejjemnější detaily. Vlna $\cos \omega x$ vyjde z jádra $(1\;\,{-2}\;\,1)$ jako $(2\cos\omega - 2)\cos\omega x = -4\sin^2(\omega / 2)\,\cos\omega x$, tedy vynásobená číslem, které roste s frekvencí, pro malé $\omega$ skoro $-\omega^2$. Nejvíc tedy zesílí šum. Proto se Laplace počítá z rozmazaného obrázku (*Laplacian of Gaussian*, LoG), a k tomu se vrátí lekce o stylizaci.
-
-> **❓ Otázka**
-> Zadejte do mřížky v úkolu 1 Laplaceovo jádro, 0 1 0 / 1 −4 1 / 0 1 0. Proč je vrstva skoro celá černá, a kde svítí?
-
-<details><summary>🔑 Odpověď</summary>
-
-Součet vah je 0, takže každá plocha zčerná. Svítí jen tmavá strana hran, kde je druhá derivace kladná, a jemná textura. Na světlé straně hran je výsledek záporný. Vrstva záporná čísla drží, ale obrazovka je ukáže jako černou. Jádro s opačnými znaménky ukáže naopak světlou stranu. Nakonec vraťte do mřížky zaostření.
-</details>
-""")
-
 # --- 6. NumPy and Krita -----------------------------------------------------------
 md(r"""
 ## 6. Do Krity
@@ -786,9 +746,7 @@ sara.check("Gauss 2D", rgba(linear_to_srgb(soft)))
 md(r"""
 **Zaostření** (*unsharp mask*) přičte k obrázku jeho rozdíl od rozmazaného obrázku, $f + a\,(f - \text{blur}(f))$. Rozdíl jsou detaily menší než $\sigma$ a `amount` $a$ říká, kolikrát je zesílit. Název je z fotokomory, kde se k negativu přikládala rozmazaná, tedy neostrá (*unsharp*), maska.
 
-Zaostření je zase identita minus Laplace, jen ve větším měřítku. Rozmazání je průměr sousedů $f(\mathbf{x} + \mathbf{u})$ s Gaussovými vahami. Taylorův rozvoj do druhého řádu a průměr přes $\mathbf{u}$: průměr $\mathbf{u}$ je nula, průměr $u_x^2$ i $u_y^2$ je $\sigma^2$ a průměr $u_x u_y$ je nula, takže
-
-$$\text{blur}(f) \approx f + \frac{\sigma^2}{2}\,\nabla^2 f, \qquad f + a\,(f - \text{blur}(f)) \approx f - a\,\frac{\sigma^2}{2}\,\nabla^2 f$$
+Proč zaostření funguje, ukazuje nepovinná sekce 7 o druhé derivaci.
 
 ### 🎯 Úkol 6: filtr
 
@@ -844,6 +802,51 @@ Průhledné pixely mají nějakou barvu, obvykle černou, a rozmazání ji přim
 </details>
 """)
 
+# --- 7. Second derivative (optional) ----------------------------------------------
+md(r"""
+## 7. Druhá derivace (nepovinné)
+
+Sekce je nepovinná a nic dalšího v lekci na ní nestojí. Sobel měří první derivaci, strmost. Hrana je tam, kde je strmost největší, a v tom místě má **druhá derivace** nulu a mění znaménko: na tmavé straně hrany je kladná, na světlé záporná.
+
+@img(second_derivative.png, 900, Měkká hrana vzorkovaná po pixelech, její první derivace s vrcholem na hraně, druhá derivace s průchodem nulou na hraně a hrana minus druhá derivace se zákmity na obou stranách)
+
+Jádro pro druhou derivaci dá Taylorův rozvoj. Pro souseda ve vzdálenosti $h$ na obě strany:
+
+$$f(x \pm h) = f(x) \pm h\,f'(x) + \frac{h^2}{2}\,f''(x) \pm \frac{h^3}{6}\,f'''(x) + O(h^4)$$
+
+Po sečtení obou řádků se členy s lichou mocninou $h$ odečtou:
+
+$$f(x + h) + f(x - h) = 2 f(x) + h^2 f''(x) + O(h^4)$$
+
+$$f''(x) = \frac{f(x + h) - 2 f(x) + f(x - h)}{h^2} + O(h^2)$$
+
+S krokem jednoho pixelu, $h = 1$, je to jádro $(1\;\,{-2}\;\,1)$. Ve 2D se druhé derivace v $x$ a v $y$ sečtou do **Laplaceova operátoru** $\nabla^2 f = f_{xx} + f_{yy}$, a sečtou se i jejich jádra:
+
+$$\nabla^2 \approx \begin{pmatrix} 0 & 1 & 0 \\ 1 & -4 & 1 \\ 0 & 1 & 0 \end{pmatrix}$$
+
+Jádro hrany z tabulky v úkolu 1 je záporný Laplace, který bere i sousedy na úhlopříčkách. Hrany ve všech směrech v něm mají vyrovnanější váhu.
+
+Zaostření z úkolu 1 je identita minus Laplace:
+
+$$\begin{pmatrix} 0 & 0 & 0 \\ 0 & 1 & 0 \\ 0 & 0 & 0 \end{pmatrix} - \begin{pmatrix} 0 & 1 & 0 \\ 1 & -4 & 1 \\ 0 & 1 & 0 \end{pmatrix} = \begin{pmatrix} 0 & -1 & 0 \\ -1 & 5 & -1 \\ 0 & -1 & 0 \end{pmatrix}$$
+
+Odečtení druhé derivace hranu zostří: na tmavé straně je $f''$ kladná a pixel ztmavne, na světlé je záporná a pixel zesvětlí. Vpravo na obrázku je to vidět jako zákmit na obou stranách hrany.
+
+Druhá derivace ale zesílí nejvíc ty nejjemnější detaily. Vlna $\cos \omega x$ vyjde z jádra $(1\;\,{-2}\;\,1)$ jako $(2\cos\omega - 2)\cos\omega x = -4\sin^2(\omega / 2)\,\cos\omega x$, tedy vynásobená číslem, které roste s frekvencí, pro malé $\omega$ skoro $-\omega^2$. Nejvíc tedy zesílí šum. Proto se Laplace počítá z rozmazaného obrázku (*Laplacian of Gaussian*, LoG), a k tomu se vrátí lekce o stylizaci.
+
+Zaostření z úkolu 6 (*unsharp mask*) je zase identita minus Laplace, jen ve větším měřítku. Rozmazání je průměr sousedů $f(\mathbf{x} + \mathbf{u})$ s Gaussovými vahami. Taylorův rozvoj do druhého řádu a průměr přes $\mathbf{u}$: průměr $\mathbf{u}$ je nula, průměr $u_x^2$ i $u_y^2$ je $\sigma^2$ a průměr $u_x u_y$ je nula, takže
+
+$$\text{blur}(f) \approx f + \frac{\sigma^2}{2}\,\nabla^2 f, \qquad f + a\,(f - \text{blur}(f)) \approx f - a\,\frac{\sigma^2}{2}\,\nabla^2 f$$
+
+> **❓ Otázka**
+> Zadejte do mřížky v úkolu 1 Laplaceovo jádro, 0 1 0 / 1 −4 1 / 0 1 0. Proč je vrstva skoro celá černá, a kde svítí?
+
+<details><summary>🔑 Odpověď</summary>
+
+Součet vah je 0, takže každá plocha zčerná. Svítí jen tmavá strana hran, kde je druhá derivace kladná, a jemná textura. Na světlé straně hran je výsledek záporný. Vrstva záporná čísla drží, ale obrazovka je ukáže jako černou. Jádro s opačnými znaménky ukáže naopak světlou stranu. Nakonec vraťte do mřížky zaostření.
+</details>
+""")
+
 # --- Summary ------------------------------------------------------------------
 md(r"""
 ## Shrnutí
@@ -854,7 +857,7 @@ md(r"""
 - Za okrajem obrázku je nutné něco zvolit: Zero ztmaví okraje, Clamp je natáhne, Mirror zrcadlí a Wrap opakuje obrázek jako dlaždici.
 - Sdílená paměť skupiny ušetří opakované čtení stejných pixelů. Vyplatí se u velkých jader s drahým čtením.
 - Sobelův operátor odhadne gradient světlosti. Jeho délka je síla hrany, směr míří kolmo na hranu.
-- Druhá derivace z Taylorova rozvoje je jádro $(1\;\,{-2}\;\,1)$, ve 2D Laplaceův operátor. Na hraně prochází nulou, a zaostření je identita minus Laplace.
+- Druhá derivace z Taylorova rozvoje je jádro $(1\;\,{-2}\;\,1)$, ve 2D Laplaceův operátor. Na hraně prochází nulou, a zaostření je identita minus Laplace (nepovinná sekce 7).
 - NumPy počítá konvoluci jako vážený součet posunutých výřezů celého pole.
 
 ### Co jsme vynechali
