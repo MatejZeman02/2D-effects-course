@@ -24,24 +24,33 @@ English.
 
 1. Get Sára, which comes as a separate zip for Windows or Linux, handed out in
    the course.
-2. Install Python 3.11 or newer, clone this repository and install the Python
-   side into a virtual environment, `.venv`, in the repository's folder. On
+2. Install Python 3.13, the version Krita 6 runs, so an effect behaves the
+   same in the notebook and in the plugin. A computer often has an older
+   Python as its default (the lab's is 3.10), so name the version when you
+   create the virtual environment, `.venv`, in the repository's folder. On
    Windows, in PowerShell:
 
    ```powershell
-   py -m venv .venv
+   py --list
+   py -3.13 -m venv .venv
    .venv\Scripts\Activate.ps1
+   python --version
    pip install -r requirements.txt
    ```
 
-   On Linux:
+   `py --list` shows the versions installed. If 3.13 is not among them,
+   install it from [python.org](https://www.python.org/downloads/), which
+   needs no administrator rights when installed for your user only. On Linux:
 
    ```bash
-   python3 -m venv .venv
+   python3.13 -m venv .venv
    source .venv/bin/activate
+   python --version
    pip install -r requirements.txt
    ```
 
+   `python --version` has to say 3.13. If it does not, the environment was
+   made with another Python: delete the `.venv` folder and create it again.
    Keep the `-r`: without it `pip` reads `requirements.txt` as the name of a
    package. The prompt starts with `(.venv)` while the environment is active.
    If PowerShell refuses `Activate.ps1` because running scripts is disabled,
@@ -69,7 +78,8 @@ English.
 2. Open the repository's folder with **File > Open Folder**, not a single
    notebook, so VS Code finds `.venv`.
 3. Open a lesson, click **Select Kernel** at the top right, choose **Python
-   Environments** and pick `.venv`. The kernel is the Python process that runs
+   Environments** and pick `.venv`, which VS Code lists with its Python
+   version, 3.13. The kernel is the Python process that runs
    the notebook's cells, and `requirements.txt` already installed it
    (`ipykernel`, through JupyterLab). If VS Code offers to install
    `ipykernel`, another environment was picked: choose `.venv` again.
