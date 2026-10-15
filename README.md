@@ -25,7 +25,8 @@ English.
 1. Get Sára, which comes as a separate zip for Windows or Linux, handed out in
    the course.
 2. Install Python 3.13, the version Krita 6 runs, so an effect behaves the
-   same in the notebook and in the plugin. A computer often has an older
+   same in the notebook and in the plugin. `requirements.txt` pins the
+   plugin's NumPy, 2.5.1, for the same reason. A computer often has an older
    Python as its default (the lab's is 3.10), so name the version when you
    create the virtual environment, `.venv`, in the repository's folder. On
    Windows, in PowerShell:

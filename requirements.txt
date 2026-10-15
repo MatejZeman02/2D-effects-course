@@ -1,4 +1,4 @@
-numpy>=1.26
+numpy==2.5.1  # the NumPy the Krita plugin carries, NUMPY in build/krita_template.py
 jupyterlab>=4
 ipywidgets>=8
 matplotlib>=3.8
