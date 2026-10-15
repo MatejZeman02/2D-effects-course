@@ -24,17 +24,64 @@ English.
 
 1. Get Sára, which comes as a separate zip for Windows or Linux, handed out in
    the course.
-2. Clone this repository and install the Python side:
+2. Install Python 3.11 or newer, clone this repository and install the Python
+   side into a virtual environment, `.venv`, in the repository's folder. On
+   Windows, in PowerShell:
 
-   ```bash
+   ```powershell
+   py -m venv .venv
+   .venv\Scripts\Activate.ps1
    pip install -r requirements.txt
-   jupyter lab
    ```
 
+   On Linux:
+
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
+
+   Keep the `-r`: without it `pip` reads `requirements.txt` as the name of a
+   package. The prompt starts with `(.venv)` while the environment is active.
+   If PowerShell refuses `Activate.ps1` because running scripts is disabled,
+   run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, or use
+   `cmd` and `.venv\Scripts\activate.bat` instead.
+
 3. Start Sára with its agent door (`sara-with-door.cmd` on Windows,
-   `./sara.x86_64 --display-driver wayland -- --agent-door` on Linux) and open
-   lesson 0. On an X11 desktop leave out `--display-driver wayland`. Without it
-   on Wayland, Sára runs under XWayland and has to guess its interface scale.
+   `./sara.x86_64 --display-driver wayland -- --agent-door` on Linux). On an
+   X11 desktop leave out `--display-driver wayland`. Without it on Wayland,
+   Sára runs under XWayland and has to guess its interface scale.
+4. Open lesson 0, either in JupyterLab, started with `jupyter lab` while the
+   environment is active, or in VS Code as below.
+
+## The notebooks in VS Code
+
+1. Install two extensions, both by Microsoft: **Python** and **Jupyter**.
+   Jupyter brings **Jupyter Notebook Renderers** along, which draws the
+   sliders and pictures. From a terminal:
+
+   ```bash
+   code --install-extension ms-python.python
+   code --install-extension ms-toolsai.jupyter
+   ```
+
+2. Open the repository's folder with **File > Open Folder**, not a single
+   notebook, so VS Code finds `.venv`.
+3. Open a lesson, click **Select Kernel** at the top right, choose **Python
+   Environments** and pick `.venv`. The kernel is the Python process that runs
+   the notebook's cells, and `requirements.txt` already installed it
+   (`ipykernel`, through JupyterLab). If VS Code offers to install
+   `ipykernel`, another environment was picked: choose `.venv` again.
+4. Run the first cell.
+
+If a cell runs but shows "Error rendering output item using
+'jupyter-ipywidget-renderer'" and "Cannot read properties of undefined
+(reading 'ipywidgetsKernel')" in place of its slider and picture, VS Code's
+widget renderer failed to load. Press **Ctrl+Shift+P**, run **Developer:
+Reload Window** and run the cell again. A dialog saying that widgets need
+supporting files downloaded from a third party website (`@jupyter-widgets/base`)
+is the same fault, and the reload fixes it too.
 
 > [!NOTE]
 > VS Code's Jupyter 2025.9.1 cannot draw an `ipywidgets.Output` and shows a
