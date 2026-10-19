@@ -1024,55 +1024,34 @@ U obdélníkového obrázku záleží na jednotkách. Index $u$ počítá period
 
 ### Souměrnost spektra
 
-Spektrum reálného obrázku je **středově souměrné**, přesněji komplexně sdružené podle středu:
+Obrázek má reálné pixely, a proto jeho spektrum splňuje
 
 $$F(-u, -v) = \overline{F(u, v)}$$
 
-To znamená dvě věci najednou:
+Bod a jeho protějšek přes střed mají stejnou amplitudu a opačnou fázi. Důvod říká odpověď na otázku v sekci 1: reálná vlna je součet dvou komplexních vln s opačnou frekvencí, $\cos\varphi = \frac{1}{2}\left(e^{i\varphi} + e^{-i\varphi}\right)$, a jejich imaginární části se vyruší, jen když jsou oba koeficienty komplexně sdružené. Každý pár bodů je tak jedna reálná vlna a druhá polovina spektra nenese nic nového.
 
-- **amplituda** je v protějších bodech stejná, $|F(-u, -v)| = |F(u, v)|$,
-- **fáze** je v protějších bodech opačná, $\arg F(-u, -v) = -\arg F(u, v)$.
+Souměrnost je **středová**, ne osová. Protějšek bodu $(u, v)$ je $(-u, -v)$, ne $(-u, v)$. Šikmé pruhy proto dají body v protilehlých kvadrantech, třeba vpravo nahoře a vlevo dole. Zrcadlově souměrná je amplituda jen tehdy, když je zrcadlově souměrný sám obrázek.
 
-#### Proč to platí
-
-Pixely jsou reálná čísla, ale bázové vlny $e^{i\varphi}$ jsou komplexní. Aby součet komplexních vln vyšel reálný, musí se imaginární části vyrušit, a to jde jen tehdy, když každá vlna má partnera s opačnou frekvencí a komplexně sdruženým koeficientem. Kosinus je přesně takový pár:
-
-$$\cos\varphi = \tfrac12\left(e^{i\varphi} + e^{-i\varphi}\right)$$
-
-Proto jedna kosinusovka dá ve spektru dva body, $(u, v)$ a $(-u, -v)$, se stejnou amplitudou a opačnou fází. Druhý bod nenese žádnou novou informaci, je to „druhá polovina“ téže reálné vlny.
-
-#### Na co si dát pozor
-
-**Středová souměrnost není osová.** Partner bodu $(u, v)$ leží v $(-u, -v)$, tedy na protější straně přes střed, ne zrcadlově přes osu v $(-u, v)$. Šikmá vlna dá body třeba v pravém horním a levém dolním kvadrantu, ne vpravo nahoře a vlevo nahoře. Na tohle se v testu snadno chytá.
-
-Osová souměrnost spektra nastane, jen když je osově souměrný sám obrázek. Obecně platí:
+Víc o spektru řekne, jak je obrázek souměrný kolem počátku, levého horního pixelu:
 
 | Obrázek | Spektrum |
-| --- | --- |
-| reálný (vždy u nás) | sdruženě souměrné, amplituda středově souměrná |
-| reálný a sudý, $f(-x, -y) = f(x, y)$ | reálné a sudé, imaginární část je nula |
-| reálný a lichý, $f(-x, -y) = -f(x, y)$ | čistě imaginární a liché |
-| souměrný zleva doprava | amplituda také souměrná zleva doprava |
-| komplexní (u nás nenastane) | žádná souměrnost |
+|---|---|
+| reálný, každý obrázek v lekci | protějšky komplexně sdružené |
+| sudý, $f(-x, -y) = f(x, y)$ | reálné, imaginární část je nula |
+| lichý, $f(-x, -y) = -f(x, y)$ | čistě imaginární |
+| souměrný zleva doprava | amplituda souměrná zleva doprava |
 
-Proto má kosinusovka spektrum čistě reálné a sinusovka čistě imaginární (až na DC složku, protože je posunutá kolem šedé). Posun obrázku sudost rozbije, Re a Im se pak „přelévají“, jak ukazuje posuvník `posun` v sekci 1, ale sdružená souměrnost zůstane vždycky. Mění se jen fáze, a to opačně v obou bodech páru.
+Kosinusovka s fází 0 je sudá, a proto má v sekci 1 spektrum jen reálné. Sinusovka je lichá kolem šedé, a tak je její spektrum imaginární všude kromě DC složky. Posun sudost rozbije a reálná a imaginární část se začnou přelévat. Sdružená souměrnost ale zůstane, fáze obou protějšků se mění opačně.
 
-**Body, které jsou partnerem samy sobě**, musí mít reálnou hodnotu (fázi 0 nebo $\pi$). Je to DC složka $(0, 0)$ a u sudého $N$ i nejvyšší frekvence $N/2$, protože $-N/2$ je v DFT totéž co $N/2$. Vlna s frekvencí $N/2$ (černá, bílá, černá…) nemá žádnou fázi kromě „začíná černou, nebo bílou“.
+Dvě podrobnosti u okrajů spektra:
 
-**Sudé $N$ a `fftshift`.** Po posunu je střed na indexu $N/2$ a pole má $N$ řádků. Řádek s indexem 0 je frekvence $-N/2$, ale řádek $+N/2$ se do pole „nevejde“, protože je to tentýž řádek. Proto zobrazené spektrum vypadá souměrně až na jeden řádek a sloupec u horního a levého okraje.
+- Některé body jsou protějškem samy sobě: DC složka, a u sudého $N$ i frekvence $N/2$, protože $-N/2$ je v DFT tentýž index. Jejich hodnota je proto reálná. Vlna s frekvencí $N/2$, střídání černé a bílé po pixelu, nemá jinou fázi než to, jestli začíná černou nebo bílou.
+- Po `fftshift` je nulová frekvence na indexu $N/2$ a první řádek je frekvence $-N/2$. Jeho protějšek $+N/2$ je tentýž řádek a vlastní místo v poli nemá. Nakreslené spektrum je proto souměrné až na první řádek a první sloupec.
 
-#### K čemu je to dobré
+Co z toho plyne v praxi:
 
-Polovina spektra je nadbytečná. Obrázek $N \times N$ má $N^2$ reálných čísel a spektrum $N^2$ komplexních, tedy dvakrát tolik čísel. Souměrnost přesně tuhle dvojnásobnost ruší a informace sedí. Prakticky se to využívá k úspoře:
-
-```python
-F_half = np.fft.rfft2(im)          # tvar (N, N//2 + 1), jen polovina spektra
-im_back = np.fft.irfft2(F_half, s=im.shape)
-```
-
-`rfft2` počítá zhruba dvakrát rychleji a paměti potřebuje polovinu. Ve filtru z této lekce by šla použít místo `fft2`, maska by se pak počítala z `np.fft.rfftfreq`.
-
-Má to i praktický důsledek pro filtry: maska ve spektru musí být také středově souměrná, $H(-u, -v) = \overline{H(u, v)}$, jinak výsledek po zpětné transformaci nevyjde reálný. Gaussova i kruhová maska to splňují samy. Ruční vynulování bodu u vrubového filtru proto musí vynulovat **oba** body páru, jinak zbyde komplexní šum, který zahodí až `.real`.
+- **Polovina spektra stačí.** $N^2$ reálných pixelů dá $N^2$ komplexních koeficientů, dvakrát tolik čísel, a souměrnost tu polovinu navíc přesně určuje. `np.fft.rfft2` proto počítá jen polovinu spektra, pole $N \times (N/2 + 1)$, zhruba za polovinu času a paměti, a `np.fft.irfft2` z ní obrázek vrátí. Filtr z této lekce by s nimi bral frekvence masky z `np.fft.rfftfreq`.
+- **Maska musí souměrnost zachovat**, $H(-u, -v) = \overline{H(u, v)}$, jinak zpětná transformace nevyjde reálná. Gaussova i kruhová maska ji mají samy. Vrubový filtr z bonusových úkolů proto musí vynulovat oba body páru. S jedním vynulovaným bodem by vyšla komplexní čísla, `.real` by imaginární část zahodilo a rušivá vlna by se jen zeslabila na polovinu.
 
 ### Vlastnosti
 
