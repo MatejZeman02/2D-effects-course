@@ -276,6 +276,12 @@ class Steps(list):
     """The values of a slider that stops only at them."""
 
 
+def png_of(fig):
+    buffer = io.BytesIO()
+    fig.savefig(buffer, format="png", dpi=72, bbox_inches="tight", facecolor="white")
+    return buffer.getvalue()
+
+
 def explore(draw, **controls):
     """draw's figure under a row of controls, drawn again whenever one moves.
 
@@ -301,9 +307,7 @@ def explore(draw, **controls):
     def redraw(_=None):
         answer = draw(**{name: control.value for name, control in made.items()})
         fig, text = answer if isinstance(answer, tuple) else (answer, "")
-        buffer = io.BytesIO()
-        fig.savefig(buffer, format="png", dpi=72, bbox_inches="tight", facecolor="white")
-        picture.value = buffer.getvalue()
+        picture.value = png_of(fig)
         caption.value = text
 
     for control in made.values():
@@ -326,6 +330,7 @@ def letter_a(side=256):
 
 
 PICTURES = {
+    "Lenna": grey_of("imgs/4/lenna.png", 256),
     "fotka": grey_of("imgs/4/astronaut.png", 256),
     "písmeno A": letter_a(),
     "cihly": grey_of("imgs/4/brick.png", 256),
@@ -390,8 +395,109 @@ def parts(name, shift):
     return fig
 
 
-explore(parts, name=("obrázek", ["kosinusovka", "sinusovka", "fotka", "písmeno A", "cihly"]),
+explore(parts, name=("obrázek", ["kosinusovka", "sinusovka", "Lenna", "fotka", "písmeno A", "cihly"]),
         shift=("posun", (0, 0, 20)))'''
+
+
+UV = '''\
+# Interactive picture: the wave of the kernel above as the vector (u, v) and the number c = F(u, v).
+import sara_notebook
+
+
+def wave_vector(u, v, phase):
+    """The kernel's wave as a point of the spectrum, its value c, and a cut along the wave."""
+    fig = Figure(figsize=(14, 4.4))
+    plane, numbers, cut = fig.subplots(1, 3, gridspec_kw={"width_ratios": [1, 1, 1.5]})
+    frequency = np.hypot(u, v)
+    turn = np.radians(phase)
+
+    # the plane of the spectrum, v down as in a drawn spectrum
+    plane.axhline(0, color="0.8", lw=0.8)
+    plane.axvline(0, color="0.8", lw=0.8)
+    if frequency:
+        plane.annotate("", (u, v), (0, 0), arrowprops={"arrowstyle": "-|>", "color": "C0", "lw": 2})
+        along = np.array([-v, u]) / frequency * 9
+        plane.plot([u - along[0], u + along[0]], [v - along[1], v + along[1]], "--", color="0.4")
+        plane.text(u + along[0], v + along[1], " pruhy", fontsize=9, color="0.3")
+        plane.plot(-u, -v, "o", mfc="white", mec="C0", ms=8)
+        plane.text(-u, -v, "  (-u, -v)", fontsize=9, color="C0", va="center")
+        plane.set_title(f"(u, v) = ({u}, {v})\\n{frequency:.1f} period na obraz, "
+                        f"směr {np.degrees(np.arctan2(v, u)):.0f}°", fontsize=10)
+    else:
+        plane.set_title("(u, v) = (0, 0)\\nkonstanta, DC složka", fontsize=10)
+    plane.plot(u, v, "o", color="C0", ms=8)
+    plane.set_xlim(-36, 36)
+    plane.set_ylim(36, -36)
+    plane.set_aspect("equal")
+    plane.set_xlabel("u")
+    plane.set_ylabel("v, dolů jako ve spektru")
+
+    # c in the complex plane, divided by N²
+    circle = np.linspace(0, 2 * np.pi, 200)
+    numbers.plot(0.25 * np.cos(circle), 0.25 * np.sin(circle), color="0.85")
+    numbers.axhline(0, color="0.8", lw=0.8)
+    numbers.axvline(0, color="0.8", lw=0.8)
+    if frequency:
+        c = 0.25 * np.exp(1j * turn)
+        numbers.annotate("", (c.real, -c.imag), (0, 0), arrowprops={"arrowstyle": "-|>", "color": "C0", "lw": 1, "ls": "--"})
+        numbers.text(c.real, -c.imag, "  c v (-u, -v)", fontsize=9, color="C0")
+        numbers.set_title(f"c / N² = ¼ · e^(i · {phase:.0f}°)", fontsize=10)
+        numbers.text(-0.57, -0.57, f"|c| / N² = 0.25: amplituda\\narg c = {phase:.0f}°: fáze", fontsize=9)
+    else:
+        c = 0.5 + 0.5 * np.cos(turn)
+        numbers.set_title(f"c / N² = {c.real:.2f}", fontsize=10)
+        numbers.text(-0.57, -0.57, "průměrný jas, fáze nemá smysl", fontsize=9)
+    numbers.annotate("", (np.real(c), np.imag(c)), (0, 0), arrowprops={"arrowstyle": "-|>", "color": "C0", "lw": 2})
+    numbers.text(np.real(c), np.imag(c), "  c", fontsize=10, color="C0")
+    numbers.set_xlim(-0.6, 1.05 if not frequency else 0.6)
+    numbers.set_ylim(-0.6, 0.6)
+    numbers.set_aspect("equal")
+    numbers.set_xlabel("Re")
+    numbers.set_ylabel("Im")
+
+    # a cut through the wave along (u, v), from the top left pixel
+    if frequency:
+        length = 512 / frequency
+        s = np.linspace(0, 2.5 * length, 600)
+        cut.plot(s, 0.5 + 0.5 * np.cos(2 * np.pi * s / length + turn), color="0.2")
+        peak = length * ((-phase) % 360) / 360
+        if peak > 0.01 * length:
+            cut.annotate("", (peak, 1.08), (0, 1.08), arrowprops={"arrowstyle": "-|>", "color": "C1"})
+            cut.text(peak / 2, 1.12, "posun fáze", ha="center", fontsize=9, color="C1")
+        else:
+            cut.text(0, 1.12, " fáze 0, vrchol v počátku", fontsize=9, color="C1")
+        cut.annotate("", (peak + length, -0.08), (peak, -0.08), arrowprops={"arrowstyle": "<|-|>", "color": "C0"})
+        cut.text(peak + length / 2, -0.2, f"vlnová délka 512 / {frequency:.1f} = {length:.1f} px", ha="center", fontsize=9, color="C0")
+        cut.axvline(peak, color="C1", lw=0.8, ls=":")
+        cut.set_xlim(0, 2.5 * length)
+    else:
+        cut.axhline(0.5 + 0.5 * np.cos(turn), color="0.2")
+    cut.set_ylim(-0.3, 1.25)
+    cut.set_xlabel("vzdálenost od levého horního pixelu ve směru (u, v), px")
+    cut.set_title("řez vlnou kolmo na pruhy", fontsize=10)
+    return fig
+
+
+# The kernel's own sliders when it ran on Sara, sliders of this picture's own otherwise.
+wave = sara_notebook.GmacsMagics.last
+if wave is not None and {"u", "v", "phase"} <= set(wave.sliders):
+    controls = wave.sliders
+else:
+    controls = {"u": widgets.IntSlider(value=8, min=-32, max=32, description="u", continuous_update=False),
+                "v": widgets.IntSlider(value=4, min=-32, max=32, description="v", continuous_update=False),
+                "phase": widgets.FloatSlider(value=0, min=0, max=360, description="phase", continuous_update=False)}
+    display(widgets.HBox(list(controls.values())))
+vector_picture = widgets.Image(format="png", layout=widgets.Layout(max_width="100%"))
+
+
+def redraw_vector(_=None):
+    vector_picture.value = png_of(wave_vector(*(controls[name].value for name in ("u", "v", "phase"))))
+
+
+for name in ("u", "v", "phase"):
+    controls[name].observe(redraw_vector, names="value")
+redraw_vector()
+display(vector_picture)'''
 
 
 COMPOSE = '''\
@@ -464,6 +570,8 @@ CAPTIONS = {
     "hrana": "Svislá hrana se mění podél x, a tak dá ve spektru <b>vodorovnou</b> čáru, kolmo na sebe.",
     "fotka": "Spektrum fotky je nejsilnější uprostřed: velké plochy nesou víc energie než detaily. "
              "Kříž přes střed dělají okraje fotky, zkuste okno.",
+    "Lenna": "Klasický testovací obrázek: hladké plochy, ostré hrany i jemná textura peří, "
+             "a tak má ve spektru od každého něco.",
     "písmeno A": "Šikmé hrany písmene dají ve spektru šikmé čáry, každou kolmo na svou hranu.",
     "cihly": "Opakovaný vzor dá mřížku jasných bodů, jako hřeben.",
 }
@@ -759,6 +867,21 @@ Kernel níže nakreslí do Sáry jednu vlnu. Posuvníky `u` a `v` mění frekven
 """)
 
 code(WAVE)
+
+md(r"""
+Vlna z kernelu je ve spektru jeden bod $(u, v)$ s komplexní hodnotou $c = F(u, v)$, a k němu dvojče v $(-u, -v)$ s hodnotou komplexně sdruženou. Z bodu a z jeho hodnoty se vyčte celá vlna:
+
+| Odkud | Veličina | Co říká o vlně |
+|---|---|---|
+| poloha $(u, v)$, délka vektoru $\sqrt{u^2 + v^2}$ | frekvence | kolik period se vejde do obrazu (hustota pruhů) |
+| poloha $(u, v)$, směr vektoru $\operatorname{atan2}(v, u)$ | orientace | kterým směrem vlna kmitá, pruhy jsou na ni kolmé |
+| hodnota $c$, velikost $|c|$ | amplituda | jak silná (kontrastní) vlna je |
+| hodnota $c$, úhel $\arg c$ | fáze | o kolik je vlna posunutá vůči počátku (levému hornímu pixelu) |
+
+Obrázek níže se překreslí, když pohnete posuvníky kernelu nad ním. Vlevo je vektor $(u, v)$ v rovině spektra, s osou $v$ dolů jako ve vykresleném spektru, a čárkovaně směr pruhů. Uprostřed je $c$ v komplexní rovině, vydělené počtem pixelů $N^2$, a čárkovaně hodnota dvojčete. Vpravo je řez vlnou kolmo na pruhy: vzdálenost dvou vrcholů je vlnová délka, $512 / \sqrt{u^2 + v^2}$ pixelů, a fáze posune první vrchol od počátku.
+""")
+
+code(UV, hidden=True)
 
 md(r"""
 Pomocné funkce obsahují převody z lekce o barevných prostorech, `lightness`, která z obrázku spočítá světlost OKLab L, a `rgba`, která z šedého nebo barevného pole udělá neprůhledný obrázek. Buňku stačí spustit.

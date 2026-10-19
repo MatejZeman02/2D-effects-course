@@ -239,4 +239,4 @@ def test_the_pictures_exist():
     for path in shown:
         assert (ROOT / path).is_file(), path
     sources = (ROOT / nb.IMG / "SOURCES.md").read_text()
-    assert "`astronaut.png`" in sources and "`brick.png`" in sources
+    assert all(f"`{name}`" in sources for name in ("astronaut.png", "brick.png", "lenna.png"))
