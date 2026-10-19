@@ -22,6 +22,20 @@ def lines(text):
     return text.strip("\n").splitlines(keepends=True)
 
 
+def markdown(text):
+    """The markdown cells of *text*, a new one at each heading outside a code block, so that a click
+    in the notebook's outline lands on the heading and not on the top of a long cell above it."""
+    parts, fenced = [[]], False
+    for line in text.strip("\n").splitlines(keepends=True):
+        if line.startswith("```"):
+            fenced = not fenced
+        if not fenced and line.startswith("#") and "".join(parts[-1]).strip():
+            parts.append([])
+        parts[-1].append(line)
+    return [{"cell_type": "markdown", "metadata": {}, "source": lines("".join(part))}
+            for part in parts if "".join(part).strip()]
+
+
 def solved(text, solve):
     """The lines of *text* with each `(stub, solution)` of *solve* replaced, so a stub a later edit
     renamed fails the build instead of leaving a task unsolved in the solved copy."""

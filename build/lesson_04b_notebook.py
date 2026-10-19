@@ -22,7 +22,7 @@ cells = []
 
 
 def md(text):
-    cells.append({"cell_type": "markdown", "metadata": {}, "source": lesson_writer.lines(text)})
+    cells.extend(lesson_writer.markdown(text))
 
 
 def code(text, hidden=False, solve=()):

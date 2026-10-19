@@ -27,8 +27,7 @@ def _pictures(text):
 
 
 def md(text):
-    cells.append({"cell_type": "markdown", "metadata": {},
-                  "source": _pictures(text).strip("\n").splitlines(keepends=True)})
+    cells.extend(lesson_writer.markdown(_pictures(text)))
 
 
 def code(text, hidden=False, solve=()):

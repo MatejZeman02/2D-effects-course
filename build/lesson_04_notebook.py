@@ -32,8 +32,7 @@ def _pictures(text):
 
 
 def md(text):
-    cells.append({"cell_type": "markdown", "metadata": {},
-                  "source": _pictures(text).strip("\n").splitlines(keepends=True)})
+    cells.extend(lesson_writer.markdown(_pictures(text)))
 
 
 def code(text, hidden=False, solve=()):
@@ -344,8 +343,8 @@ def letter_a(side=256):
 
 
 PICTURES = {
-    "Lenna": grey_of("imgs/4/lenna.png", 256),
     "fotka": grey_of("imgs/4/astronaut.png", 256),
+    "Lenna": grey_of("imgs/4/lenna.png", 256),
     "písmeno A": letter_a(),
     "cihly": grey_of("imgs/4/brick.png", 256),
 }
@@ -376,7 +375,7 @@ def panel(ax, a, title, **keys):
 
 PARTS = '''\
 # Interactive picture: the four parts of a complex spectrum.
-def wave(kind, n=256):
+def stripes(kind, n=256):
     x = np.arange(n)[None, :] * np.ones((n, 1))
     return 0.5 + 0.5 * (np.cos if kind == "kosinusovka" else np.sin)(2 * np.pi * 6 * x / n)
 
@@ -401,7 +400,7 @@ def both_parts(F):
 
 
 def parts(name, shift):
-    f = wave(name) if name in ("kosinusovka", "sinusovka") else PICTURES[name]
+    f = stripes(name) if name in ("kosinusovka", "sinusovka") else PICTURES[name]
     f = np.roll(f, shift, axis=1)
     F = np.fft.fft2(f)
     strong = np.fft.ifftshift(log_magnitude(F)) > 0.4
@@ -423,7 +422,7 @@ def parts(name, shift):
     return fig
 
 
-explore(parts, name=("obrázek", ["kosinusovka", "sinusovka", "Lenna", "fotka", "písmeno A", "cihly"]),
+explore(parts, name=("obrázek", ["kosinusovka", "sinusovka", "fotka", "Lenna", "písmeno A", "cihly"]),
         shift=("posun", (0, 0, 20)))'''
 
 
@@ -507,9 +506,9 @@ def wave_vector(u, v, phase):
 
 
 # The kernel's own sliders when it ran on Sara, sliders of this picture's own otherwise.
-wave = sara_notebook.GmacsMagics.last
-if wave is not None and {"u", "v", "phase"} <= set(wave.sliders):
-    controls = wave.sliders
+kernel_cell = sara_notebook.GmacsMagics.last
+if kernel_cell is not None and {"u", "v", "phase"} <= set(kernel_cell.sliders):
+    controls = kernel_cell.sliders
 else:
     controls = {"u": widgets.IntSlider(value=8, min=-32, max=32, description="u", continuous_update=False),
                 "v": widgets.IntSlider(value=4, min=-32, max=32, description="v", continuous_update=False),
@@ -1042,17 +1041,31 @@ NumPy spočítá transformaci funkcí `np.fft.fft2` algoritmem FFT (*fast Fourie
 
 @img(fftshift.png, 900, Pořadí koeficientů z np.fft.fft2 s nulovou frekvencí v rohu a po np.fft.fftshift s nulovou frekvencí uprostřed, na schématu a na spektru fotky)
 
-Velikosti se liší o mnoho řádů. Koeficient nulové frekvence je součet všech pixelů, koeficienty jemných detailů bývají tisíckrát menší. Spektrum se proto kreslí v logaritmu, $\ln(1 + |F|)$, a jednička uvnitř drží nulu na nule.
+Buňka níže to ukáže na osmi koeficientech. `np.fft.fftfreq(8)` vypíše, jakou frekvenci má který index pole z `np.fft.fft2`, v periodách na pixel. Po `fftshift` jdou frekvence po řadě od nejzápornější přes nulu uprostřed ke kladným.
+""")
+
+code("""
+print("order of np.fft.fft2: ", np.fft.fftfreq(8))
+print("after np.fft.fftshift:", np.fft.fftshift(np.fft.fftfreq(8)))
+""")
+
+md(r"""
+Velikosti koeficientů se liší o mnoho řádů. Koeficient nulové frekvence je součet všech pixelů, koeficienty jemných detailů bývají tisíckrát menší. Spektrum se proto kreslí v logaritmu, $\ln(1 + |F|)$. Jednička uvnitř drží nulu na nule, $\ln(1 + 0) = 0$, a logaritmus nuly by byl minus nekonečno.
 
 ### 🎯 Úkol 1: spektrum
 
-Napište `spectrum(F)`, která z pole koeficientů `F` udělá šedý obrázek: nulová frekvence uprostřed, logaritmus velikosti, vydělený svým maximem, aby byl od 0 do 1. Buňka pod funkcí ukáže spektrum vlny. Vlna je šedá, stačí z ní vzít červený kanál. Nedokončená funkce vrací černou.
+Napište funkci `spectrum(F)`. Dostane pole komplexních koeficientů `F` z `np.fft.fft2` a vrátí šedý obrázek spektra, který jde ukázat v Sáře. Každý krok pracuje s výsledkem předchozího:
+
+1. **Přesunout.** `np.fft.fftshift(F)` dá nulovou frekvenci doprostřed.
+2. **Velikost.** `np.abs` vezme z každého komplexního čísla jeho velikost, amplitudu vlny.
+3. **Logaritmus.** `np.log1p` spočítá $\ln(1 + x)$, aby byly vidět i slabé vlny.
+4. **Rozsah 0 až 1.** Vydělte pole jeho největší hodnotou, `m.max()`, a `rgba` z něj udělá obrázek.
+
+Nedokončená funkce vrací černý obrázek. Buňka pod funkcí ji vyzkouší na vrstvě `Wave` z kernelu výše. Vlna je šedá, takže stačí její červený kanál.
 
 <details><summary>💡 Nápověda</summary>
 
-1. Pořadí kroků: přesunout, velikost, logaritmus, dělení maximem.
-2. Velikost komplexního čísla dává `np.abs`, logaritmus z jedničky plus čísla `np.log1p`.
-3. Šedé pole na obrázek převede `rgba`.
+Každý krok je jedno volání. Mezivýsledek si uložte do proměnné, třeba `m`, a v dalším kroku pracujte s ní.
 </details>
 
 <details><summary>🔑 Řešení</summary>
