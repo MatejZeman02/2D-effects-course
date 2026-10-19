@@ -59,10 +59,21 @@ def pixel(ivec2 at) -> vec4:
     float t = TAU * float(u * at.x + v * at.y) / 512.0 + radians(phase)
     return vec4(vec3(0.5 + 0.5 * cos(t)), 1.0)"""
 
+SHOWN = """\
+# The layer keeps the complex number c in red and blue for the next pass. Green,
+# the brightest channel, is only for the eye: c is too small to see, so green is
+# log |c|, as a spectrum is drawn.
+def shown(vec2 c) -> vec4:
+    float scale = float(N * N)
+    return vec4(c.x, log(1.0 + length(c) * scale) / log(1.0 + scale), c.y, 1.0)"""
+
 DFT_ROWS = f"""\
 %%gmacs "Lightness" -> "DFT rows"
 const int N = {SIDE}
 const float TAU = 6.28318530718
+
+
+{SHOWN}
 
 
 # The DFT of each row: the pixel at (u, y) gets the coefficient of frequency u
@@ -73,27 +84,30 @@ def pixel(ivec2 at) -> vec4:
         # whole turns dropped while still an int, so cos and sin get a small angle
         float angle = -TAU * float((at.x * x) % N) / float(N)
         total += src(ivec2(x, at.y)).r * vec2(cos(angle), sin(angle))
-    return vec4(total / float(N), 0.0, 1.0)"""
+    return shown(total / float(N))"""
 
 COLUMNS_GIVEN = """\
 def pixel(ivec2 at) -> vec4:
     # TODO: the DFT of column at.x of the rows' DFT, whose values are complex
-    return vec4(src(at).rg, 0.0, 1.0)"""
+    return shown(src(at).rb)"""
 
 SOLUTION_COLUMNS = """\
 def pixel(ivec2 at) -> vec4:
     vec2 total = vec2(0.0)
     for y in range(0, N):
-        vec2 a = src(ivec2(at.x, y)).rg
+        vec2 a = src(ivec2(at.x, y)).rb
         float angle = -TAU * float((at.y * y) % N) / float(N)
         vec2 w = vec2(cos(angle), sin(angle))
         total += vec2(a.x * w.x - a.y * w.y, a.x * w.y + a.y * w.x)
-    return vec4(total / float(N), 0.0, 1.0)"""
+    return shown(total / float(N))"""
 
 DFT_COLUMNS = f"""\
 %%gmacs "DFT rows" -> "DFT"
 const int N = {SIDE}
 const float TAU = 6.28318530718
+
+
+{SHOWN}
 
 
 {{columns}}"""
@@ -840,6 +854,7 @@ Funkce z úvodní lekce shrnuje její příloha. Sloupec Sekce říká, kde se f
 | `const int N = 512` | celočíselná konstanta | 4 |
 | `a % b` | zbytek po dělení celých čísel, u `ivec2` po složkách | 4, 5 |
 | `vec2` jako komplexní číslo | reálná část v `x`, imaginární v `y` | 4 |
+| `log(x)`, `length(v)` | přirozený logaritmus a délka vektoru | 4 |
 | `exp(x)`, `ceil(x)` | $e^x$ a zaokrouhlení nahoru | 5 |
 
 **NumPy**
@@ -1144,7 +1159,7 @@ $$G(u, y) = \frac{1}{N}\sum_{x=0}^{N-1} f(x, y)\, e^{-2\pi i\, ux/N}, \qquad F(u
 
 Každý průchod sčítá $N$ hodnot na pixel místo $N^2$. Dělení $N$ v obou průchodech drží čísla malá, výsledek je `np.fft.fft2` dělené $N^2$.
 
-Komplexní číslo uloží kernel do `vec2`, reálnou část do `x` a imaginární do `y`, a vrstva ho nese v červeném a zeleném kanálu. Vlna $e^{-i\varphi}$ je v kernelu `vec2(cos(angle), sin(angle))` s úhlem `angle` rovným $-\varphi$. Kernel transformuje světlost, kterou do vrstvy `Lightness` zapíše buňka níže:
+Komplexní číslo uloží kernel do `vec2`, reálnou část do `x` a imaginární do `y`, a vrstva ho nese v červeném a modrém kanálu. Na pohled by byla vrstva skoro černá, protože nulová frekvence je tisíckrát silnější než ostatní. Funkce `shown` proto zapíše do zeleného kanálu, na oko nejjasnějšího, logaritmus velikosti, jako se kreslí spektrum. Zelená je jen pro oko, další průchod čte jen červený a modrý kanál. Vlna $e^{-i\varphi}$ je v kernelu `vec2(cos(angle), sin(angle))` s úhlem `angle` rovným $-\varphi$. Kernel transformuje světlost, kterou do vrstvy `Lightness` zapíše buňka níže:
 """)
 
 code("""
@@ -1158,6 +1173,10 @@ První průchod, přes řádky, je hotový. Vstup je reálný, takže stačí n�
 code(DFT_ROWS)
 
 md(r"""
+Vrstva `DFT rows` je zeleně spektrum každého řádku zvlášť, ve stejném pořadí jako u `np.fft.fft`: nulová frekvence v levém sloupci, kladné frekvence doprava a záporné od pravého okraje. Svislé hrany fotky dají světlé vodorovné pruhy, protože každý řádek, který hranu protíná, má hodně vysokých frekvencí.
+""")
+
+md(r"""
 ### 🎯 Úkol 2: transformace sloupců
 
 Napište druhý průchod, přes sloupce vrstvy `DFT rows`. Vstup je tu už komplexní, a dvě komplexní čísla se násobí podle
@@ -1169,7 +1188,7 @@ Nedokončený kernel výsledek prvního průchodu jen opíše, takže spektrum v
 <details><summary>💡 Nápověda</summary>
 
 1. Cyklus je stejný jako v prvním průchodu, jen jde přes `y` a frekvence je `at.y`.
-2. Hodnotu prvního průchodu přečte `src(ivec2(at.x, y)).rg`.
+2. Hodnotu prvního průchodu přečte `src(ivec2(at.x, y)).rb`, reálnou část z červeného kanálu a imaginární z modrého.
 3. Vlnu si uložte do `vec2 w` a násobení podle vzorce napište po složkách: výsledek je `vec2(reálná část, imaginární část)`.
 </details>
 
@@ -1184,14 +1203,15 @@ code(DFT_COLUMNS.format(columns=COLUMNS_GIVEN), solve=[(COLUMNS_GIVEN, SOLUTION_
 md(r"""
 ### ✅ Kontrola
 
-Vrstva `DFT` je skoro celá černá, jen v levém horním rohu svítí bod. Je to nulová frekvence, průměrná světlost fotky, a ostatní koeficienty jsou tisíckrát menší. Buňka níže porovná vrstvu s `np.fft.fft2` a ukáže spektrum spočítané na GPU. Mělo by vypadat stejně jako spektrum fotky výše.
+Vrstva `DFT` je zeleně spektrum fotky v pořadí `np.fft.fft2`: nulová frekvence v levém horním rohu a nízké frekvence ve všech čtyřech rozích, jako na obrázku s `fftshift` v sekci 1. S nedokončeným kernelem je to jen spektrum řádků z prvního průchodu. Buňka níže porovná červený a modrý kanál s `np.fft.fft2` a ukáže spektrum spočítané na GPU se středem uprostřed. Mělo by vypadat stejně jako spektrum fotky výše.
 """)
 
 code("""
 dft = doc.layer("DFT").read()
-F_gpu = (dft[..., 0] + 1j * dft[..., 1]) * 512 ** 2       # back to the scale of np.fft.fft2
+F_gpu = (dft[..., 0] + 1j * dft[..., 2]) * 512 ** 2       # back to the scale of np.fft.fft2
 F = np.fft.fft2(L)
-sara.check("DFT", np.dstack([F.real, F.imag, np.zeros_like(L)]) / 512 ** 2, tolerance=1e-4)
+expected = np.dstack([F.real / 512 ** 2, dft[..., 1], F.imag / 512 ** 2])    # green is only for the eye, not compared
+sara.check("DFT", expected, tolerance=1e-4)
 doc.new_layer("Spectrum GPU", spectrum(F_gpu)).show()
 """)
 
