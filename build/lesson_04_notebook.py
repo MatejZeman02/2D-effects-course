@@ -663,6 +663,59 @@ def spectra(name, size, window):
 explore(spectra, name=("obrázek", list(CAPTIONS)), size=("velikost", (3, 1, 10)),
         window=("okno", ["žádné", "Hannovo"]))'''
 
+NOISES = '''\
+# Interactive picture: white, pink and brown noise, their spectra and their slopes.
+NOISE_KINDS = {"bílý": 0.0, "růžový": 0.5, "hnědý": 1.0}
+NOISE_CAPTIONS = {
+    "bílý": "Každý pixel je náhodný a na sousedech nezávislý. Spektrum jednoho šumu je zase zrnitý šum, "
+            "rovné je až v průměru.",
+    "růžový": "Amplituda klesá jako 1/f<sup>0.5</sup>: hrubší zrno se slabými mráčky.",
+    "hnědý": "Amplituda klesá jako 1/f: velké měkké skvrny. Blíž fotce, ale fotka klesá ještě rychleji.",
+}
+
+
+def radial(F):
+    """The mean |F| over each ring around zero frequency, and the rings' frequencies."""
+    n = len(F)
+    fy, fx = np.meshgrid(np.fft.fftfreq(n) * n, np.fft.fftfreq(n) * n, indexing="ij")
+    ring = np.hypot(fx, fy).round().astype(int).ravel()
+    mean = np.bincount(ring, np.abs(F).ravel()) / np.maximum(np.bincount(ring), 1)
+    return np.arange(1, n // 2), mean[1:n // 2]
+
+
+def slope(f, a):
+    keep = (f >= 4) & (f <= 100)
+    return np.polyfit(np.log(f[keep]), np.log(a[keep]), 1)[0]
+
+
+def coloured_noise(beta, seed, n=256):
+    """White noise with its spectrum times 1/f^beta, as a picture around grey."""
+    F = np.fft.fft2(np.random.default_rng(seed).standard_normal((n, n)))
+    f = np.hypot(*np.meshgrid(np.fft.fftfreq(n) * n, np.fft.fftfreq(n) * n, indexing="ij"))
+    g = np.fft.ifft2(F / np.maximum(f, 1) ** beta).real
+    return 0.5 + 0.15 * g / g.std()
+
+
+def noises(kind, count):
+    beta = NOISE_KINDS[kind]
+    pictures = [coloured_noise(beta, seed) for seed in range(count)]
+    amplitude = np.mean([np.abs(np.fft.fft2(f)) for f in pictures], axis=0)
+    fig = Figure(figsize=(14, 4.4))
+    axes = fig.subplots(1, 3, gridspec_kw={"width_ratios": [1, 1, 1.3]})
+    panel(axes[0], np.clip(pictures[0], 0, 1), f"{kind} šum", vmin=0, vmax=1)
+    panel(axes[1], log_magnitude(amplitude), f"log |F|, průměr přes {count}", vmin=0, vmax=1)
+    f, a = radial(amplitude)
+    photo_f, photo_a = radial(np.fft.fft2(PICTURES["fotka"]))
+    axes[2].loglog(photo_f, photo_a / photo_a[0], color="0.7", label=f"fotka, sklon {slope(photo_f, photo_a):.2f}")
+    axes[2].loglog(f, a / a[0], color="#F58518", label=f"{kind} šum, sklon {slope(f, a):.2f}")
+    axes[2].set_xlabel("frekvence f, period na obrázek")
+    axes[2].set_title("průměrná amplituda po kružnicích kolem středu", fontsize=10)
+    axes[2].legend(fontsize=9)
+    return fig, NOISE_CAPTIONS[kind]
+
+
+explore(noises, kind=("šum", list(NOISE_KINDS)), count=("průměr přes", Steps([1, 4, 16, 64])))'''
+
 PROPERTIES = '''\
 # Interactive picture: what a change of the picture does to the spectrum.
 CHANGES = ["posun", "otočení", "změna měřítka", "rozmazání (konvoluce)", "násobení vlnou", "součet s vlnou",
@@ -1122,6 +1175,29 @@ Hvězdu tedy čtěte podle toho, co z ní *vybočuje*: paprsek znamená výrazno
 
 Změnila se část D. Rozmazání vynásobí spektrum Gaussem, který k vysokým frekvencím klesá k nule, takže hvězda dohasíná dřív a tmavý okraj E začíná blíž ke středu. Střed A zůstal, průměrný jas a velké plochy rozmazání nemění.
 </details>
+""")
+
+md(r"""
+### Spektrum šumu: bílý, růžový a hnědý
+
+**Bílý šum** je obrázek, ve kterém je každý pixel náhodný a na sousedech nezávislý. V průměru má všechny frekvence stejně silné, a jméno má po bílém světle, které také obsahuje všechny barvy. Spektrum jednoho konkrétního šumu ale rovné není. Každý koeficient je zase náhodné číslo: amplituda kolísá kolem společného průměru a fáze je úplně náhodná. Spektrum bílého šumu tak vypadá jako další bílý šum, zrnitá plocha bez středu, kříže i paprsků. Vybočuje jen DC složka uprostřed, průměrný jas šumu. Souměrnost podle středu zůstává, protože šum je reálný obraz. Rovnou plochu ukáže teprve průměr, buď přes mnoho různých šumů, posuvník `průměr přes`, nebo přes kružnice kolem středu, graf vpravo.
+
+Šum dostane „barvu“, když se jeho spektrum vynásobí maskou $1 / f^\beta$, kde $f$ je vzdálenost od středu. Tak vznikl růžový a hnědý šum v obrázku níže. Graf má obě osy v logaritmu, a $1 / f^\beta$ je v něm přímka se sklonem $-\beta$. Šedá čára je pro srovnání fotka astronautky.
+
+| Obraz | Průměrná amplituda | Sklon v grafu | Jak vypadá |
+|---|---|---|---|
+| bílý šum | stejná na všech frekvencích | $0$ | zrno bez struktury |
+| růžový šum | $1 / f^{0.5}$ | $-0.5$ | hrubší zrno se slabými mráčky |
+| hnědý šum | $1 / f$ | $-1$ | velké měkké skvrny, blíž fotce |
+| fotky v lekci | zhruba $1 / f^{1.5}$ | zhruba $-1.5$ | hvězda z předchozí části |
+""")
+
+code(NOISES, hidden=True)
+
+md(r"""
+Odtud je vidět i část E hvězdy. Šum snímače a zaokrouhlení do osmi bitů jsou skoro bílý šum, ve spektru rovné dno. Fotka k vysokým frekvencím slábne, a kde klesne pod to dno, zbyde ve spektru jen šum. Proto Wienerův filtr v sekci 6 frekvence pod úrovní šumu nezesiluje: z fotky v nich nic nezbylo.
+
+Násobení bílého šumu maskou $1 / f^\beta$ se říká **spektrální syntéza** a dělají se tak terény i mraky. Fraktální šum z lekce 2 dojde k podobnému výsledku jinou cestou. Sčítá oktávy, každou dvakrát jemnější a s `gain` 0.5 dvakrát slabší, takže amplituda klesá zhruba jako $1 / f$, jako u hnědého šumu.
 """)
 
 # --- 3. Sampling and aliasing ------------------------------------------------------
