@@ -45,8 +45,8 @@ def blurred_photo(img):
     return np.round(np.clip(linear_to_srgb(out), 0, 1) * 255).astype(np.uint8)
 
 
-def save(fig, name):
-    fig.savefig(OUT / name, dpi=150, bbox_inches="tight", facecolor="white")
+def save(fig, name, dpi=150):
+    fig.savefig(OUT / name, dpi=dpi, bbox_inches="tight", facecolor="white")
     plt.close(fig)
 
 
@@ -155,6 +155,100 @@ def spectrum_shape():
     save(fig, "spectrum_shape.png")
 
 
+def stretched_spectrum(L, window=False):
+    """log |F| of L, zero frequency in the middle, stretched between percentiles so the faint parts show."""
+    n = len(L)
+    f = L - L.mean() * window                      # a window needs the mean out, or the DC drowns it
+    if window:
+        f = f * np.outer(np.hanning(n), np.hanning(n))
+    m = np.log1p(np.abs(np.fft.fftshift(np.fft.fft2(f))))
+    lo, hi = np.percentile(m, [1, 99.97])
+    return np.clip((m - lo) / (hi - lo), 0, 1)
+
+
+def radial_mean(L):
+    """The mean amplitude at each distance from zero frequency, in periods per pixel."""
+    n = len(L)
+    k = np.fft.fftfreq(n)
+    r = np.hypot(k[:, None], k[None, :])
+    a = np.abs(np.fft.fft2(L))
+    bins = np.arange(1, n // 2) / n
+    at = np.digitize(r.ravel(), bins)
+    mean = np.bincount(at, a.ravel(), len(bins) + 1) / np.maximum(np.bincount(at, minlength=len(bins) + 1), 1)
+    return bins[:-1] + 0.5 / n, mean[1:-1]
+
+
+def callout(ax, text, at, to, colour):
+    ax.annotate(text, xy=at, xytext=to, color=colour, fontsize=9.5, weight="bold",
+                arrowprops={"arrowstyle": "-|>", "color": colour, "lw": 1.6},
+                bbox={"boxstyle": "round,pad=0.25", "fc": "white", "ec": colour, "lw": 1})
+
+
+def spectrum_anatomy():
+    """Lenna's spectrum with its parts named, the same with a window, two more photos and the mean fall-off."""
+    green, red = "#54A24B", "#E45756"
+    lenna = lightness(load("lenna.png"))
+    astro = lightness(load("astronaut.png"))
+    brick = lightness(load("brick.png"))
+    n = len(lenna)
+    c = n // 2
+    fig = plt.figure(figsize=(16, 10.6))
+    grid = fig.add_gridspec(2, 3, hspace=0.18, wspace=0.16)
+
+    ax = fig.add_subplot(grid[0, 0])
+    grey(ax, lenna)
+    ax.plot([480, 312], [130, 379], color=red, lw=2.5, alpha=0.8)
+    ax.text(300, 470, "šikmé hrany klobouku a vlasů", color=red, fontsize=9.5, weight="bold", ha="center",
+            bbox={"boxstyle": "round,pad=0.2", "fc": "white", "ec": red, "lw": 1})
+    ax.set_title("Lenna", fontsize=11)
+
+    ax = fig.add_subplot(grid[0, 1])
+    ax.imshow(stretched_spectrum(lenna), cmap="gray")
+    bare(ax)
+    ax.add_patch(plt.Circle((c, c), 14, fill=False, color=ORANGE, lw=2))
+    callout(ax, "A  střed: průměrný jas\na velké plochy", (c + 10, c - 10), (c + 40, c - 150), ORANGE)
+    callout(ax, "B  kříž: okraje dlaždice,\nne hrany fotky", (c + 170, c), (c + 60, c + 120), BLUE)
+    ax.annotate("", xy=(c, c - 190), xytext=(c + 95, c + 105), arrowprops={"arrowstyle": "-|>", "color": BLUE, "lw": 1.6})
+    ray = np.radians(34)
+    callout(ax, "C  paprsek: dlouhá rovná\nhrana, kolmo na ni", (c - 120 * np.cos(ray), c - 120 * np.sin(ray)),
+            (15, c - 200), red)
+    callout(ax, "D  dohasínání: čím jemnější\ndetail, tím slabší vlna", (c - 70, c + 70), (12, c + 150), green)
+    callout(ax, "E  okraj: šum a zaokrouhlení,\nrovné dno bez struktury", (n - 20, n - 20), (c + 25, n - 60), GREY)
+    ax.set_title("spektrum, log |F|", fontsize=11)
+
+    ax = fig.add_subplot(grid[0, 2])
+    ax.imshow(stretched_spectrum(lenna, window=True), cmap="gray")
+    bare(ax)
+    callout(ax, "kříž B zmizel,\npaprsek C zůstal", (c + 120 * np.cos(ray), c + 120 * np.sin(ray)), (c + 20, c + 190), red)
+    ax.set_title("spektrum s Hannovým oknem", fontsize=11)
+
+    for col, (L, name, note, colour) in enumerate(((astro, "fotka", "stejná hvězda:\nA, D a E jako u Lenny", GREY),
+                                                   (brick, "cihly", "F  body a vějíře:\nopakovaný vzor", green))):
+        ax = fig.add_subplot(grid[1, col])
+        ax.imshow(stretched_spectrum(L, window=True), cmap="gray")
+        bare(ax)
+        inset = ax.inset_axes([0.0, 0.68, 0.32, 0.32])
+        grey(inset, L)
+        callout(ax, note, (c + 3, c + 22), (c + 40, c + 170), colour)
+        ax.set_title(f"{name}, spektrum s oknem", fontsize=11)
+
+    ax = fig.add_subplot(grid[1, 2])
+    for L, name, colour in ((lenna, "Lenna", red), (astro, "fotka", BLUE), (brick, "cihly", green)):
+        f, a = radial_mean(L)
+        ax.loglog(f, a / a[0], color=colour, lw=1.6, label=name)
+    f = np.array([1 / n, 0.5])
+    ax.loglog(f, (f / f[0]) ** -1.0, "--", color=GREY, lw=1, label="1 / f")
+    ax.loglog(f, (f / f[0]) ** -2.0, ":", color=GREY, lw=1.2, label="1 / f²")
+    ax.set_xlabel("frekvence, period na pixel", fontsize=10)
+    ax.set_ylabel("amplituda, poměr k nejnižší frekvenci", fontsize=10)
+    ax.set_title("průměr přes kružnice kolem středu:\nfotky klesají skoro stejně, cihly mají hrb", fontsize=11)
+    ax.legend(fontsize=9, frameon=False)
+    ax.set_box_aspect(1)
+    ax.yaxis.set_label_position("right")
+    ax.yaxis.tick_right()
+    save(fig, "spectrum_anatomy.png", dpi=110)      # noise compresses badly, 150 dpi is 2 MB
+
+
 def shift_layout():
     """fft2's order of the coefficients, zero frequency in the corner, and fftshift's, zero in the middle."""
     colours = {"A": "#c6dbef", "B": "#fdd0a2", "C": "#c7e9c0", "D": "#dadaeb"}
@@ -243,6 +337,7 @@ def main():
     Image.fromarray(blurred_photo(load("astronaut.png"))).save(OUT / "astronaut_blur.png", optimize=True)
     dot_product()
     spectrum_shape()
+    spectrum_anatomy()
     shift_layout()
     convolution()
     wiener_curves()

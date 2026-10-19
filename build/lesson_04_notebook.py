@@ -1035,6 +1035,35 @@ Co si z obrázku odnést:
 - **Fáze nese tvar.** Obrázek s amplitudou fotky a fází písmene A vypadá jako A, a obráceně. Fáze říká, kde jsou hrany, amplituda hlavně kolik čeho v obrázku je.
 """)
 
+md(r"""
+### Proč spektra fotek vypadají skoro stejně
+
+Spektrum skoro každé fotky je stejná rozmazaná hvězda: světlý střed, který plynule tmavne ke krajům. Fotky se přitom liší, v čem tedy? Svět má strukturu ve všech velikostech najednou. Fotka obsahuje velké plochy (nebe, zeď), menší tvary (obličej, okno) i jemné detaily (vlasy, textura), a čím je detail menší, tím je jeho vlna slabší. Amplituda proto klesá s frekvencí zhruba stejně u každé fotky, u obrázků v této lekci zhruba jako $1 / f^{1.5}$, a v logaritmu to dává stejný hladký kopec. Na amplitudě se fotky liší jen málo. Liší se fází, která říká, kde přesně hrany leží. Proto v obrázku výše vypadala amplituda fotky s fází písmene A jako A.
+
+Spektra níže mají jas roztažený tak, aby byly vidět i slabé části.
+
+@img(spectrum_anatomy.png, 900, Lenna a její spektrum s popsanými částmi A až E, totéž spektrum s Hannovým oknem, spektra fotky astronautky a cihel s oknem a graf průměrné amplitudy podle frekvence, kde fotky klesají skoro stejně a cihly mají hrb)
+
+| Část | Co ji dělá |
+|---|---|
+| **A** světlý střed | DC složka a nízké frekvence: průměrný jas a velké plochy, nejsilnější vlny fotky |
+| **B** kříž přes střed | okraje dlaždice: levý okraj nenavazuje na pravý a horní na dolní. S fotkou samotnou nesouvisí a okno ho odstraní |
+| **C** paprsek ze středu | dlouhá rovná hrana ve fotce. Paprsek leží kolmo na ni, u Lenny jsou to šikmé hrany klobouku a vlasů |
+| **D** dohasínání od středu | čím jemnější detail, tím slabší vlna. Tento sklon mají skoro všechny fotky stejný |
+| **E** tmavý okraj | nejvyšší frekvence, kde už zbyl jen šum snímače a zaokrouhlení do osmi bitů: rovné dno bez struktury |
+| **F** body a vějíře | opakovaný vzor, třeba cihly, látka nebo plot. Rozteč bodů je převrácená perioda vzoru |
+
+Hvězdu tedy čtěte podle toho, co z ní *vybočuje*: paprsek znamená výraznou hranu, body opakovaný vzor, menší hvězda rozmazanou fotku (D klesá rychleji) a zrnitý okraj šum (E je výš).
+
+> **❓ Otázka**
+> Rozmazaná fotka `astronaut_blur` má spektrum menší než `astronaut`. Která část hvězdy se změnila a proč?
+
+<details><summary>🔑 Odpověď</summary>
+
+Změnila se část D. Rozmazání vynásobí spektrum Gaussem, který k vysokým frekvencím klesá k nule, takže hvězda dohasíná dřív a tmavý okraj E začíná blíž ke středu. Střed A zůstal, průměrný jas a velké plochy rozmazání nemění.
+</details>
+""")
+
 # --- 3. Sampling and aliasing ------------------------------------------------------
 md(r"""
 ## 3. Vzorkování a aliasing
