@@ -67,44 +67,51 @@ def log_spectrum(a):
     return spectrum(np.fft.fft2(a))[..., 0]
 
 
-def box(width, height, angle=0.0, ss=4):
-    """A white rectangle on black in the middle of the canvas, turned by *angle* degrees, antialiased."""
-    s = (np.arange(N * ss) + 0.5) / ss - N / 2
-    y, x = s[:, None], s[None, :]
-    t = np.radians(angle)
-    along, across = x * np.cos(t) + y * np.sin(t), -x * np.sin(t) + y * np.cos(t)
-    inside = (np.abs(along) < width / 2) & (np.abs(across) < height / 2)
-    return inside.reshape(N, ss, N, ss).mean(axis=(1, 3))
-
-
-def waves():
-    """Four basis waves and their spectra: three dots, the arrow (u, v) to one of them."""
-    shown = [(4, 0), (0, 6), (6, 3), (10, -5)]
-    y, x = np.mgrid[0:N, 0:N]
-    fig, axes = plt.subplots(2, 4, figsize=(12, 6.3), gridspec_kw={"hspace": 0.28, "wspace": 0.2})
-    for col, (u, v) in enumerate(shown):
-        grey(axes[0, col], 0.5 + 0.5 * np.cos(2 * np.pi * (u * x + v * y) / N))
-        axes[0, col].set_title(f"u = {u}, v = {v}", fontsize=12)
-        ax = axes[1, col]
-        ax.set_facecolor("black")
-        ax.set_xlim(-12.5, 12.5)
-        ax.set_ylim(12.5, -12.5)                          # v grows downwards, as y in a picture
-        ax.set_aspect("equal")
-        for k in range(-12, 13, 4):
-            ax.axhline(k, color="#333333", lw=0.6, zorder=0)
-            ax.axvline(k, color="#333333", lw=0.6, zorder=0)
-        ax.scatter([0, u, -u], [0, v, -v], s=[90, 60, 60], color="white", zorder=3)
-        ax.annotate("", xy=(u, v), xytext=(0, 0),
-                    arrowprops=dict(arrowstyle="-|>", color=ORANGE, lw=2, shrinkA=0, shrinkB=5), zorder=4)
-        ax.set_xticks([-12, 0, 12])
-        ax.set_yticks([-12, 0, 12])
-        ax.tick_params(labelsize=9)
-        ax.set_xlabel("u", fontsize=10, labelpad=1)
-        if col == 0:
-            ax.set_ylabel("v", fontsize=10, labelpad=1)
-    fig.text(0.05, 0.71, "vlna", rotation=90, fontsize=12, va="center")
-    fig.text(0.05, 0.29, "spektrum", rotation=90, fontsize=12, va="center")
-    save(fig, "waves.png")
+def dot_product():
+    """F(2, 1) of a small photo as two sums: the photo times the cosine and times minus the sine."""
+    n, (u, v) = 64, (2, 1)
+    L = lightness(load("astronaut.png")).reshape(n, N // n, n, N // n).mean(axis=(1, 3))
+    y, x = np.indices((n, n))
+    phi = 2 * np.pi * (u * x + v * y) / n
+    F = np.fft.fft2(L)[v, u]
+    fig = plt.figure(figsize=(13, 4.6))
+    grid = fig.add_gridspec(2, 9, width_ratios=[3, 0.6, 3, 0.6, 3, 0.3, 2.8, 1.2, 4], wspace=0.05, hspace=0.25)
+    for row, (wave, name, part, value) in enumerate(((np.cos(phi), "$\\cos\\varphi$", "Re", F.real),
+                                                      (-np.sin(phi), "$-\\sin\\varphi$", "Im", F.imag))):
+        ax = fig.add_subplot(grid[row, 0])
+        grey(ax, L)
+        ax.set_title("obrázek $f$" if row == 0 else "", fontsize=11)
+        for col, sign in ((1, "×"), (3, "=")):
+            ax = fig.add_subplot(grid[row, col])
+            ax.text(0.5, 0.5, sign, ha="center", va="center", fontsize=22)
+            bare(ax)
+        ax = fig.add_subplot(grid[row, 2])
+        ax.imshow(wave, cmap="RdBu_r", vmin=-1, vmax=1)
+        ax.set_title(f"vlna {name}", fontsize=11)
+        bare(ax)
+        ax = fig.add_subplot(grid[row, 4])
+        product = L * wave
+        ax.imshow(product, cmap="RdBu_r", vmin=-1, vmax=1)
+        ax.set_title("součin pixel po pixelu", fontsize=11)
+        bare(ax)
+        ax = fig.add_subplot(grid[row, 6])
+        ax.text(0, 0.5, f"součet\n{part} F(2, 1) = {value:.0f}", va="center", fontsize=11)
+        bare(ax)
+    ax = fig.add_subplot(grid[:, 8])
+    ax.axhline(0, color="#cccccc", lw=1)
+    ax.axvline(0, color="#cccccc", lw=1)
+    ax.annotate("", (F.real, F.imag), (0, 0), arrowprops=dict(arrowstyle="-|>", color=ORANGE, lw=2))
+    top = 1.25 * abs(F)
+    ax.set_xlim(-top, top)
+    ax.set_ylim(-top, top)
+    ax.set_aspect("equal")
+    ax.set_xlabel("Re", fontsize=10)
+    ax.set_ylabel("Im", fontsize=10)
+    ax.set_title(f"$F(2, 1)$: amplituda $|F| = {abs(F):.0f}$,\nfáze $\\arg F = {np.degrees(np.angle(F)):.0f}°$",
+                 fontsize=11)
+    for s in ("top", "right"):
+        ax.spines[s].set_visible(False)
+    save(fig, "dot_product.png")
 
 
 def shift_layout():
@@ -138,35 +145,6 @@ def shift_layout():
     axes[1, 1].set_title("spektrum fotky po posunutí", fontsize=11)
     fig.text(0.5, 0.505, "A: nezáporné u i v, B: záporné u, C: záporné v, D: obě záporné", ha="center", fontsize=10, color=GREY)
     save(fig, "fftshift.png")
-
-
-def pattern(period=32, radius=8.0):
-    """Soft discs on a square grid, *period* pixels apart, a pattern that repeats exactly."""
-    y, x = (np.mgrid[0:N, 0:N] % period) - period / 2 + 0.5
-    return np.clip(radius - np.hypot(x, y) + 0.5, 0, 1)
-
-
-def pairs():
-    """Pictures and their spectra: narrow against wide, a Gaussian, a turn, a pattern, a photo."""
-    y, x = np.mgrid[0:N, 0:N] - N / 2 + 0.5
-    shown = [("úzký obdélník", box(8, 96)),
-             ("široký obdélník", box(32, 96)),
-             ("Gauss", np.exp(-(x ** 2 + y ** 2) / (2 * 8.0 ** 2))),
-             ("otočený obdélník", box(8, 96, angle=30)),
-             ("opakovaný vzor", pattern()),
-             ("fotka", lightness(load("astronaut.png")))]
-    fig, axes = plt.subplots(2, len(shown), figsize=(15, 5.6), gridspec_kw={"hspace": 0.08, "wspace": 0.06})
-    for col, (label, picture) in enumerate(shown):
-        grey(axes[0, col], picture)
-        seen = log_spectrum(picture)
-        if label == "opakovaný vzor":
-            # the dots are single pixels, which shrinking the picture would average away
-            seen = seen.reshape(N // 4, 4, N // 4, 4).max(axis=(1, 3))
-        grey(axes[1, col], seen)
-        axes[0, col].set_title(label, fontsize=12)
-    fig.text(0.115, 0.71, "obrázek", rotation=90, fontsize=12, va="center")
-    fig.text(0.115, 0.29, "spektrum", rotation=90, fontsize=12, va="center")
-    save(fig, "pairs.png")
 
 
 def convolution():
@@ -222,9 +200,8 @@ def wiener_curves():
 
 def main():
     Image.fromarray(blurred_photo(load("astronaut.png"))).save(OUT / "astronaut_blur.png", optimize=True)
-    waves()
+    dot_product()
     shift_layout()
-    pairs()
     convolution()
     wiener_curves()
     print("wrote", sorted(p.name for p in OUT.glob("*.png")))

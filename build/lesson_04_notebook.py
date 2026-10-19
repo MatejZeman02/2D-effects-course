@@ -245,7 +245,7 @@ def apply(img, mode, sigma, noise):
         out[..., :3] = img[..., :3] - out[..., :3] + 0.5
     return out'''
 
-GOAL = ("# The filter of section 5, hidden because you write it yourself.\n"
+GOAL = ("# The filter of section 7, hidden because you write it yourself.\n"
         "def _goal():\n"
         + textwrap.indent("\n\n".join(piece.replace("\n\n\n", "\n\n") for piece in
                                         [CONVERT_NP, SOLUTION_GAUSSIAN, SOLUTION_BLUR, SOLUTION_WIENER, SOLUTION_APPLY]), "    ")
@@ -254,6 +254,411 @@ GOAL = ("# The filter of section 5, hidden because you write it yourself.\n"
         + '\n\nsara.live(_goal(), PARAMS, source="astronaut_blur", target="Goal")')
 
 DEFAULTS = f'{{"mode": "Deblur", "sigma": {BLUR_SIGMA}, "noise": 0.01}}'
+
+
+# --- The interactive pictures ---------------------------------------------------
+# Hidden cells: what they draw is the lesson, how they draw it is not. Each one
+# shows a matplotlib figure under its controls and draws it again on every move.
+# No ipywidgets.Output, which VS Code cannot draw: the figure goes to an Image.
+TOOLS = '''\
+# The tools of the interactive pictures, hidden because they are not part of the lesson.
+import io
+
+import ipywidgets as widgets
+from IPython.display import display
+from matplotlib import font_manager
+from matplotlib.figure import Figure
+from matplotlib.patches import Circle
+from PIL import Image, ImageDraw, ImageFont
+
+
+class Steps(list):
+    """The values of a slider that stops only at them."""
+
+
+def explore(draw, **controls):
+    """draw's figure under a row of controls, drawn again whenever one moves.
+
+    Each control is (label, choices): a list is a drop-down, Steps([...]) a slider over its values,
+    a tuple (default, low, high) a slider of whole numbers.
+    draw gets the values by the controls' names and answers a Figure, or a Figure and a caption.
+    """
+    made = {}
+    for name, (label, choices) in controls.items():
+        if isinstance(choices, Steps):
+            made[name] = widgets.SelectionSlider(options=choices, value=choices[0], description=label,
+                                                 continuous_update=False)
+        elif isinstance(choices, list):
+            made[name] = widgets.Dropdown(options=choices, value=choices[0], description=label)
+        else:
+            default, low, high = choices
+            made[name] = widgets.IntSlider(value=default, min=low, max=high, description=label,
+                                           continuous_update=False)
+        made[name].style.description_width = "initial"
+    picture = widgets.Image(format="png", layout=widgets.Layout(max_width="100%"))
+    caption = widgets.HTML(layout=widgets.Layout(max_width="60em"))
+
+    def redraw(_=None):
+        answer = draw(**{name: control.value for name, control in made.items()})
+        fig, text = answer if isinstance(answer, tuple) else (answer, "")
+        buffer = io.BytesIO()
+        fig.savefig(buffer, format="png", dpi=72, bbox_inches="tight", facecolor="white")
+        picture.value = buffer.getvalue()
+        caption.value = text
+
+    for control in made.values():
+        control.observe(redraw, names="value")
+    redraw()
+    display(widgets.VBox([widgets.HBox(list(made.values())), picture, caption]))
+
+
+def grey_of(path, side):
+    """The photo at path, grey, side x side, from 0 to 1."""
+    picture = Image.open(path).convert("L").resize((side, side), Image.LANCZOS)
+    return np.asarray(picture, dtype=np.float64) / 255
+
+
+def letter_a(side=256):
+    font = ImageFont.truetype(font_manager.findfont("DejaVu Sans:bold"), int(side * 0.55))
+    picture = Image.new("L", (side, side), 0)
+    ImageDraw.Draw(picture).text((side / 2, side / 2), "A", fill=255, font=font, anchor="mm")
+    return np.asarray(picture, dtype=np.float64) / 255
+
+
+PICTURES = {
+    "fotka": grey_of("imgs/4/astronaut.png", 256),
+    "písmeno A": letter_a(),
+    "cihly": grey_of("imgs/4/brick.png", 256),
+}
+
+
+def log_magnitude(F, thick=False):
+    """|F| with zero frequency in the middle, in logarithm, from 0 to 1, with thick each value
+    spread to its neighbours, so a lone coefficient shows on screen."""
+    m = np.log1p(np.abs(np.fft.fftshift(F)))
+    if thick:
+        m = np.max([np.roll(m, (dy, dx), axis=(0, 1)) for dy in (-1, 0, 1) for dx in (-1, 0, 1)], axis=0)
+    return m / m.max()
+
+
+def phase_picture(angle, strong):
+    """An angle in colour around the circle, grey where the wave is too weak to matter."""
+    import matplotlib
+    colours = matplotlib.colormaps["twilight"]((np.fft.fftshift(angle) + np.pi) / (2 * np.pi))[..., :3]
+    colours[~np.fft.fftshift(strong)] = 0.5
+    return colours
+
+
+def panel(ax, a, title, **keys):
+    ax.imshow(a, cmap=keys.pop("cmap", "gray"), **keys)
+    ax.set_title(title, fontsize=10)
+    ax.set_xticks([])
+    ax.set_yticks([])'''
+
+PARTS = '''\
+# Interactive picture: the four parts of a complex spectrum.
+def wave(kind, n=256):
+    x = np.arange(n)[None, :] * np.ones((n, 1))
+    return 0.5 + 0.5 * (np.cos if kind == "kosinusovka" else np.sin)(2 * np.pi * 6 * x / n)
+
+
+def signed_log(a):
+    """a in logarithm with its sign, from -1 to 1."""
+    s = np.sign(a) * np.log1p(np.abs(a))
+    return s / max(np.abs(s).max(), 1e-9)
+
+
+def parts(name, shift):
+    f = wave(name) if name in ("kosinusovka", "sinusovka") else PICTURES[name]
+    f = np.roll(f, shift, axis=1)
+    F = np.fft.fft2(f)
+    strong = np.fft.ifftshift(log_magnitude(F)) > 0.4
+    views = [(signed_log(np.fft.fftshift(F.real)), "reálná část Re F", {"cmap": "RdBu_r", "vmin": -1, "vmax": 1}),
+             (signed_log(np.fft.fftshift(F.imag)), "imaginární část Im F", {"cmap": "RdBu_r", "vmin": -1, "vmax": 1}),
+             (log_magnitude(F), "amplituda log |F|", {"vmin": 0, "vmax": 1}),
+             (phase_picture(np.angle(F), strong), "fáze arg F, kde je vlna silná", {})]
+    zoom = name in ("kosinusovka", "sinusovka")
+    middle = slice(128 - 8, 128 + 9) if zoom else slice(None)
+    fig = Figure(figsize=(17, 3.8))
+    axes = fig.subplots(1, 5)
+    panel(axes[0], f, f"{name}, posun o {shift} px", vmin=0, vmax=1)
+    for ax, (a, title, keys) in zip(axes[1:], views):
+        panel(ax, a[middle, middle], title + (", střed" if zoom else ""), interpolation="nearest", **keys)
+    import matplotlib
+    turn = matplotlib.cm.ScalarMappable(matplotlib.colors.Normalize(-180, 180), "twilight")
+    fig.colorbar(turn, ax=axes[4], ticks=[-180, -90, 0, 90, 180], format="%d°", fraction=0.046, pad=0.04)
+    return fig
+
+
+explore(parts, name=("obrázek", ["kosinusovka", "sinusovka", "fotka", "písmeno A", "cihly"]),
+        shift=("posun", (0, 0, 20)))'''
+
+
+COMPOSE = '''\
+# Interactive picture: a picture summed from a few of its waves, low, mid and high.
+BANDS = [("nízké", 0, 6, (0.30, 0.47, 0.66)), ("střední", 6, 24, (0.96, 0.52, 0.09)),
+         ("vysoké", 24, 1000, (0.33, 0.66, 0.31))]
+
+
+def compose(picture, count):
+    f = PICTURES[picture]
+    n = len(f)
+    F = np.fft.fft2(f)
+    rows, cols = np.indices(F.shape)
+    flat = (rows * n + cols).ravel()
+    mirror = (((-rows) % n) * n + (-cols) % n).ravel()      # where F(-u, -v) is
+    k = np.fft.fftfreq(n, 1 / n)
+    distance = np.hypot(k[:, None], k[None, :]).ravel()     # periods per picture
+    one_of_pair = flat[(flat <= mirror) & (flat > 0)]        # F(u, v) and F(-u, -v) are one real wave
+    fig = Figure(figsize=(18, 3.6))
+    axes = fig.subplots(1, 6)
+    shown = np.dstack([0.3 * log_magnitude(F)] * 3)
+    total = np.full((n, n), F[0, 0].real / n ** 2)          # the mean, the wave of frequency 0
+    used = 1
+    for i, (name, low, high, colour) in enumerate(BANDS):
+        band = one_of_pair[(distance[one_of_pair] > low) & (distance[one_of_pair] <= high)]
+        strongest = band[np.argsort(-np.abs(F.ravel()[band]), kind="stable")][:count]
+        mask = np.zeros(n * n, bool)
+        mask[strongest] = mask[mirror[strongest]] = True
+        mask = mask.reshape(n, n)
+        part = np.fft.ifft2(F * mask).real
+        total += part
+        used += len(strongest)
+        shown[np.fft.fftshift(mask)] = colour
+        ys, xs = np.nonzero(np.fft.fftshift(mask))
+        axes[0].scatter(xs, ys, s=7, color=colour, linewidths=0)
+        top = np.abs(part).max() or 1
+        panel(axes[i + 1], part, f"{name}: {len(strongest)} z {len(band)} vln", vmin=-top, vmax=top)
+        for side in "top", "bottom", "left", "right":
+            axes[i + 1].spines[side].set(color=colour, linewidth=3)
+    panel(axes[0], shown, "střed spektra, vybrané vlny barevně")
+    axes[0].set_xlim(n // 2 - 64, n // 2 + 64)            # the middle quarter, where the chosen waves lie
+    axes[0].set_ylim(n // 2 + 64, n // 2 - 64)
+    for _, _, high, colour in BANDS[:2]:                   # the bands' borders
+        axes[0].add_patch(Circle((n // 2, n // 2), high, fill=False, color=colour, lw=1))
+    panel(axes[4], total, f"součet: {used} vln, {100 * used / len(one_of_pair):.2g} % ze všech", vmin=0, vmax=1)
+    panel(axes[5], f, "obrázek", vmin=0, vmax=1)
+    return fig
+
+
+explore(compose, count=("vln v pásmu", Steps([1, 2, 3, 5, 10, 20, 50, 100, 200, 500])),
+        picture=("obrázek", list(PICTURES)))'''
+
+SPECTRA = '''\
+# Interactive picture: pictures and their spectra.
+CAPTIONS = {
+    "konstanta": "Konstanta nemá žádnou vlnu kromě nulové frekvence. Spektrum je jediný bod uprostřed, "
+                 "<b>DC složka</b>, součet všech pixelů.",
+    "bod": "Jediný bod obsahuje všechny frekvence stejně silně, spektrum je konstanta. Je to opak konstanty: "
+           "co je v obrázku úzké, je ve spektru široké.",
+    "kosinusovka": "Jedna vlna dá ve spektru <b>dva</b> body souměrně kolem středu, a k tomu DC složku, protože "
+                   "vlna jde od 0 do 1 kolem šedé. Posuvník zvyšuje frekvenci a body se vzdalují od středu.",
+    "šikmá kosinusovka": "Body leží ve směru, ve kterém se vlna mění, tedy <b>kolmo na pruhy</b>.",
+    "obdélník": "Obdélník dá funkci sinc, sin(x)/x: kříž s vlnkami. Užší strana obdélníku dá širší rameno kříže.",
+    "kruh": "Kruh dá soustředné kroužky (Besselova funkce), kruhovou obdobu funkce sinc.",
+    "Gauss": "Gauss dá zase Gauss, bez vlnek. Čím širší v obrázku, tím užší ve spektru. Proto je Gauss "
+             "dobrý filtr.",
+    "hřeben bodů": "Body s roztečí T dají ve spektru body s roztečí N / T. Hustší mřížka v obrázku, "
+                   "řidší ve spektru.",
+    "Gabor": "Gauss krát kosinus dá dva Gaussy posunuté na frekvenci kosinu. Násobení vlnou spektrum posune.",
+    "hrana": "Svislá hrana se mění podél x, a tak dá ve spektru <b>vodorovnou</b> čáru, kolmo na sebe.",
+    "fotka": "Spektrum fotky je nejsilnější uprostřed: velké plochy nesou víc energie než detaily. "
+             "Kříž přes střed dělají okraje fotky, zkuste okno.",
+    "písmeno A": "Šikmé hrany písmene dají ve spektru šikmé čáry, každou kolmo na svou hranu.",
+    "cihly": "Opakovaný vzor dá mřížku jasných bodů, jako hřeben.",
+}
+
+
+def pattern(name, size, n=256):
+    y, x = np.indices((n, n)) - n // 2
+    r = np.hypot(x, y)
+    if name in PICTURES:
+        return PICTURES[name]
+    if name == "konstanta":
+        return np.full((n, n), 0.5)
+    if name == "bod":
+        return (r == 0).astype(float)
+    if name == "kosinusovka":
+        return 0.5 + 0.5 * np.cos(2 * np.pi * 2 * size * x / n)
+    if name == "šikmá kosinusovka":
+        return 0.5 + 0.5 * np.cos(2 * np.pi * (2 * size * x + size * y) / n)
+    if name == "obdélník":
+        return ((np.abs(x) < size) & (np.abs(y) < 3 * size)).astype(float)
+    if name == "kruh":
+        return (r < 3 * size).astype(float)
+    if name == "Gauss":
+        return np.exp(-r ** 2 / (2 * (2 * size) ** 2))
+    if name == "hřeben bodů":
+        T = [4, 8, 16, 32][min(3, (size - 1) // 3)]
+        return ((x % T == 0) & (y % T == 0)).astype(float)
+    if name == "Gabor":
+        return np.exp(-r ** 2 / (2 * (2 * size) ** 2)) * np.cos(2 * np.pi * 24 * x / n)
+    return (x >= 0).astype(float)                         # hrana
+
+
+def spectra(name, size, window):
+    f = pattern(name, size)
+    n = len(f)
+    if window == "Hannovo":
+        f = f * np.outer(np.hanning(n), np.hanning(n))
+    F = np.fft.fft2(f)
+    fig = Figure(figsize=(14, 4.2))
+    axes = fig.subplots(1, 3, gridspec_kw={"width_ratios": [1, 1, 1.5]})
+    panel(axes[0], f, "obrázek")
+    panel(axes[1], log_magnitude(F, thick=True), "spektrum, log |F|", vmin=0, vmax=1)
+    u = np.arange(n) - n // 2
+    axes[2].semilogy(u, np.abs(np.fft.fftshift(F))[n // 2] + 1e-3, color="#F58518")
+    axes[2].set_title("řez spektrem vodorovně přes střed, |F(u, 0)|", fontsize=10)
+    axes[2].set_xlabel("u")
+    return fig, CAPTIONS[name]
+
+
+explore(spectra, name=("obrázek", list(CAPTIONS)), size=("velikost", (3, 1, 10)),
+        window=("okno", ["žádné", "Hannovo"]))'''
+
+PROPERTIES = '''\
+# Interactive picture: what a change of the picture does to the spectrum.
+CHANGES = ["posun", "otočení", "změna měřítka", "rozmazání (konvoluce)", "násobení vlnou", "součet s vlnou",
+           "jen amplituda", "jen fáze", "amplituda z A, fáze z fotky", "amplituda z fotky, fáze z A"]
+
+
+
+def changed(f, change, amount):
+    """f after the change, and what the change was, in words."""
+    n = len(f)
+    y, x = np.indices(f.shape)
+    F = np.fft.fft2(f)
+    if change == "posun":
+        return np.roll(f, (2 * amount, 3 * amount), axis=(0, 1)), f"posun o ({3 * amount}, {2 * amount}) px"
+    if change == "otočení":
+        turned = Image.fromarray(f.astype(np.float32)).rotate(9 * amount, Image.BILINEAR)
+        return np.asarray(turned, dtype=np.float64), f"otočení o {9 * amount}°"
+    if change == "změna měřítka":
+        a = 2 ** ((amount - 5) / 5)
+        c = n / 2
+        grown = Image.fromarray(f.astype(np.float32)).transform(
+            (n, n), Image.AFFINE, (1 / a, 0, c - c / a, 0, 1 / a, c - c / a), Image.BILINEAR)
+        return np.asarray(grown, dtype=np.float64), f"měřítko {a:.2f}"
+    if change == "rozmazání (konvoluce)":
+        sigma = 0.6 * amount
+        fy, fx = np.fft.fftfreq(n)[:, None], np.fft.fftfreq(n)[None, :]
+        H = np.exp(-2 * np.pi ** 2 * sigma ** 2 * (fx ** 2 + fy ** 2))
+        return np.fft.ifft2(F * H).real, f"Gauss se σ = {sigma:.1f} px"
+    if change == "násobení vlnou":
+        return f * np.cos(2 * np.pi * 8 * amount * x / n), f"krát kosinus s u = {8 * amount}"
+    if change == "součet s vlnou":
+        return f + 0.3 * np.cos(2 * np.pi * 8 * amount * x / n), f"plus kosinus s u = {8 * amount}"
+    if change == "jen amplituda":
+        return np.fft.fftshift(np.fft.ifft2(np.abs(F)).real), "amplituda, fáze všude 0 (posunuto doprostřed)"
+    if change == "jen fáze":
+        return np.fft.ifft2(np.exp(1j * np.angle(F))).real, "fáze, amplituda všude 1"
+    P = np.fft.fft2(PICTURES["fotka"])
+    if change == "amplituda z A, fáze z fotky":
+        return np.fft.ifft2(np.abs(F) * np.exp(1j * np.angle(P))).real, "amplituda A, fáze fotky"
+    return np.fft.ifft2(np.abs(P) * np.exp(1j * np.angle(F))).real, "amplituda fotky, fáze A"
+
+
+def properties(change, amount):
+    f = PICTURES["písmeno A"]
+    g, what = changed(f, change, amount)
+    fig = Figure(figsize=(14, 7.4))
+    axes = fig.subplots(2, 4)
+    spectra = []
+    for row, (picture, title) in enumerate(((f, "písmeno A"), (g, what))):
+        F = np.fft.fft2(picture)
+        spectra.append(F)
+        strong = np.fft.ifftshift(log_magnitude(F)) > 0.4
+        lo, hi = np.percentile(picture, [0.5, 99.5])
+        panel(axes[row, 0], picture, title, vmin=lo, vmax=hi if hi > lo else lo + 1)
+        panel(axes[row, 1], log_magnitude(F, thick=True), "amplituda, log |F|", vmin=0, vmax=1)
+        panel(axes[row, 2], phase_picture(np.angle(F), strong), "fáze arg F, kde je vlna silná")
+    F, G = spectra
+    both = (np.fft.ifftshift(log_magnitude(F)) > 0.4) & (np.fft.ifftshift(log_magnitude(G)) > 0.4)
+    panel(axes[1, 2 + 1], phase_picture(np.angle(G * np.conj(F)), both), "změna fáze proti A")
+    axes[0, 3].axis("off")
+    energy = (g ** 2).sum()
+    fig.suptitle(f"Parseval: Σ|f|² = {energy:.1f}, Σ|F|² / N² = {(np.abs(np.fft.fft2(g)) ** 2).sum() / g.size:.1f}",
+                 fontsize=10, y=0.02)
+    return fig
+
+
+explore(properties, change=("změna", CHANGES), amount=("míra", (4, 0, 10)))'''
+
+SAMPLING = '''\
+# Interactive picture: sampling and aliasing.
+def zone_plate(n=512):
+    y, x = np.indices((n, n)) - n // 2
+    return 0.5 + 0.5 * np.cos(np.pi * (x ** 2 + y ** 2) / n)     # frequency grows with the distance
+
+
+def sampling(frequency, factor):
+    fig = Figure(figsize=(13, 7.6))
+    grid = fig.add_gridspec(2, 3, height_ratios=[1, 1.5], hspace=0.35)
+    ax = fig.add_subplot(grid[0, :])
+    t = np.linspace(0, 1, 2000)
+    samples = np.arange(16) / 16
+    alias = abs(frequency - 16 * round(frequency / 16))
+    ax.plot(t, np.cos(2 * np.pi * frequency * t), color="#9a9a9a", lw=1.2, label=f"vlna, {frequency} period")
+    ax.plot(samples, np.cos(2 * np.pi * frequency * samples), "o", color="#F58518", label="16 vzorků")
+    if alias != frequency:
+        ax.plot(t, np.cos(2 * np.pi * alias * t), "--", color="#4C78A8", label=f"vzorky vypadají jako {alias} period")
+    ax.legend(loc="lower left", bbox_to_anchor=(0, 1.08), ncol=3, fontsize=9, frameon=False)
+    ax.set_yticks([])
+
+    f = zone_plate()
+    n = len(f)
+    fy, fx = np.fft.fftfreq(n)[:, None], np.fft.fftfreq(n)[None, :]
+    sigma = factor / 2                                   # cuts what the smaller picture cannot hold
+    soft = np.fft.ifft2(np.fft.fft2(f) * np.exp(-2 * np.pi ** 2 * sigma ** 2 * (fx ** 2 + fy ** 2))).real
+    side = n // factor
+    panel(fig.add_subplot(grid[1, 0]), f, "zónová deska, 512 × 512", vmin=0, vmax=1)
+    panel(fig.add_subplot(grid[1, 1]), f[::factor, ::factor], f"každý {factor}. pixel, {side} × {side}",
+          vmin=0, vmax=1, interpolation="nearest")
+    panel(fig.add_subplot(grid[1, 2]), soft[::factor, ::factor], f"rozmazat, pak každý {factor}. pixel",
+          vmin=0, vmax=1, interpolation="nearest")
+    return fig
+
+
+explore(sampling, frequency=("frekvence", (5, 1, 15)), factor=("zmenšení", [4, 2, 8]))'''
+
+FILTERS = '''\
+# Interactive picture: filters as masks on the spectrum.
+FILTERS = ["dolní propust, ideální", "dolní propust, Gauss", "dolní propust, Butterworth",
+           "horní propust, Gauss", "pásmová propust, Gauss"]
+photo_grey = grey_of("imgs/4/astronaut.png", 512)
+
+
+def mask(kind, radius, n):
+    fy, fx = np.fft.fftfreq(n, 1 / n)[:, None], np.fft.fftfreq(n, 1 / n)[None, :]
+    d = np.hypot(fx, fy)                                 # distance from zero frequency, in periods per picture
+    if kind == "dolní propust, ideální":
+        return (d <= radius).astype(float)
+    if kind == "dolní propust, Gauss":
+        return np.exp(-d ** 2 / (2 * radius ** 2))
+    if kind == "dolní propust, Butterworth":
+        return 1 / (1 + (d / radius) ** 4)
+    if kind == "horní propust, Gauss":
+        return 1 - np.exp(-d ** 2 / (2 * radius ** 2))
+    return np.exp(-(d - radius) ** 2 / (2 * (radius / 3) ** 2))
+
+
+def filters(kind, radius):
+    f = photo_grey
+    H = mask(kind, radius, len(f))                       # in np.fft.fft2's order, zero frequency in the corner
+    F = np.fft.fft2(f)
+    g = np.fft.ifft2(F * H).real
+    if not kind.startswith("dolní"):
+        g = g + 0.5                                      # detail around grey
+    fig = Figure(figsize=(15, 4.1))
+    axes = fig.subplots(1, 4)
+    panel(axes[0], np.fft.fftshift(H), "maska H", vmin=0, vmax=1)
+    panel(axes[1], log_magnitude(F * H) * (np.fft.fftshift(H) > 1e-3), "spektrum krát H", vmin=0, vmax=1)
+    panel(axes[2], g, "výsledek", vmin=0, vmax=1)
+    panel(axes[3], g[150:300, 180:330], "výřez", vmin=0, vmax=1, interpolation="nearest")
+    return fig
+
+
+explore(filters, kind=("filtr", FILTERS), radius=("poloměr", (30, 2, 120)))'''
 
 
 def answer(snippet, lang="python"):
@@ -265,9 +670,9 @@ def answer(snippet, lang="python"):
 md(r"""
 # Lekce 4: Frekvenční oblast
 
-Na konci lekce budete mít filtr, který rozmazanou fotku zaostří. Rozmazání se nedá vrátit pixel po pixelu, ve spektru obrázku je to ale obyčejné násobení, a to se vrátit dá. Cestou spočítáte Fourierovu transformaci na GPU i v NumPy, naučíte se číst spektrum a rozmažete fotku přes frekvence.
+Na konci lekce budete mít filtr, který rozmazanou fotku zaostří. Rozmazání se nedá vrátit pixel po pixelu, ve spektru obrázku je to ale obyčejné násobení, a to se vrátit dá. Nejdřív si na interaktivních obrázcích ukážete, co spektrum je a jak ho číst. Pak spočítáte Fourierovu transformaci na GPU i v NumPy a fotku přes frekvence rozmažete a zaostříte.
 
-Spusťte buňku. Otevře v Sáře nový dokument v sRGB s plátnem 512 × 512, velikostí obou fotek, a fotky otevře jako vrstvy. Fotka `astronaut_blur.png` je ostrá fotka `astronaut.png` rozmazaná Gaussem.
+Spusťte obě buňky. První otevře v Sáře nový dokument s plátnem 512 × 512 a fotky jako vrstvy. Fotka `astronaut_blur.png` je ostrá fotka `astronaut.png` rozmazaná Gaussem. Druhá buňka připraví interaktivní obrázky. Ty mají kód schovaný: stačí buňku spustit a hýbat nabídkami a posuvníky nad obrázkem. Kdo chce vědět, jak se kreslí, buňku si rozbalí.
 """)
 
 code("""
@@ -281,6 +686,8 @@ doc, layer, pixels = sara.init(width=512, height=512)   # a canvas the size of t
 photo = doc.import_image("imgs/4/astronaut.png")        # a layer called "astronaut"
 blurry = doc.import_image("imgs/4/astronaut_blur.png")  # a layer called "astronaut_blur"
 """)
+
+code(TOOLS, hidden=True)
 
 md(r"""
 ### Nové funkce v této lekci
@@ -297,21 +704,21 @@ Funkce z úvodní lekce shrnuje její příloha. Sloupec Sekce říká, kde se f
 
 | Zápis | Co dělá | Sekce |
 |---|---|---|
-| `const int N = 512` | celočíselná konstanta | 2 |
-| `a % b` | zbytek po dělení celých čísel, u `ivec2` po složkách | 2, 3 |
-| `vec2` jako komplexní číslo | reálná část v `x`, imaginární v `y` | 2 |
-| `exp(x)`, `ceil(x)` | $e^x$ a zaokrouhlení nahoru | 3 |
+| `const int N = 512` | celočíselná konstanta | 4 |
+| `a % b` | zbytek po dělení celých čísel, u `ivec2` po složkách | 4, 5 |
+| `vec2` jako komplexní číslo | reálná část v `x`, imaginární v `y` | 4 |
+| `exp(x)`, `ceil(x)` | $e^x$ a zaokrouhlení nahoru | 5 |
 
 **NumPy**
 
 | Volání | Co dělá | Sekce |
 |---|---|---|
-| `np.fft.fft2(a)`, `np.fft.ifft2(F)` | dvourozměrná Fourierova transformace a zpětná transformace | 1, 3 |
+| `np.fft.fft2(a)`, `np.fft.ifft2(F)` | dvourozměrná Fourierova transformace a zpětná transformace | 1, 5 |
 | `np.fft.fftshift(F)` | přesune nulovou frekvenci doprostřed pole | 1 |
-| `np.abs(F)`, `F.real`, `np.conj(F)` | absolutní hodnota, reálná část a komplexně sdružené číslo, po prvcích | 1, 3, 4 |
+| `np.abs(F)`, `F.real`, `np.conj(F)` | absolutní hodnota, reálná část a komplexně sdružené číslo, po prvcích | 1, 5, 6 |
 | `np.log1p(x)` | $\ln(1 + x)$ po prvcích | 1 |
-| `1j` | imaginární jednotka | 2 |
-| `np.fft.fftfreq(n)` | frekvence `n` koeficientů v pořadí, v jakém je vrací `np.fft.fft2` | 3 |
+| `1j` | imaginární jednotka | 4 |
+| `np.fft.fftfreq(n)` | frekvence `n` koeficientů v pořadí, v jakém je vrací `np.fft.fft2` | 5 |
 """)
 
 md(r"""
@@ -322,19 +729,33 @@ Buňka níže spustí hotový filtr na rozmazanou fotku. Jeho kód je schovaný,
 
 code(GOAL, hidden=True)
 
-# --- 1. The spectrum ----------------------------------------------------------
+# --- 1. A picture as a sum of waves ---------------------------------------------
 md(r"""
-## 1. Spektrum
+## 1. Obrázek jako součet vln
 
-Každý obrázek se dá složit ze **základních vln**, obrázků s průběhem kosinu. Vlna má frekvenci $(u, v)$: na šířku plátna se do ní vejde $u$ period a na výšku $v$ period. Vektor $(u, v)$ míří ve směru, ve kterém se vlna mění, a jeho délka říká, jak hustě. **Fourierova transformace** pro každou frekvenci zjistí, kolik té vlny obrázek obsahuje a jak je posunutá. Pro obrázek $f$ o straně $N$ pixelů:
+Každý obrázek se dá zapsat jako součet **vln**, obrázků s průběhem kosinu. Vlna má **frekvenci** $(u, v)$: na šířku obrázku se do ní vejde $u$ period a na výšku $v$ period. Kromě frekvence má **amplitudu**, jak je silná, a **fázi**, o kolik je posunutá. **Fourierova transformace** k obrázku najde právě ty vlny, ze kterých se skládá. Je to tatáž informace, jen jinak zapsaná: převod nic neztratí a zpětná transformace vrátí původní obrázek přesně.
+
+Obrázek níže skládá fotku z několika jejích vln. Vlny jsou rozdělené podle frekvence do tří pásem: **nízké** (modře, do 6 period na obrázek), **střední** (oranžově, do 24 period) a **vysoké** (zeleně). Z každého pásma se berou jen ty nejsilnější. Posuvník `vln v pásmu` začíná na jedné vlně z každého pásma. Posouvejte ho doprava a sledujte, co které pásmo do součtu přidá a kde jeho vlny leží ve spektru vlevo.
+""")
+
+code(COMPOSE, hidden=True)
+
+md(r"""
+Nízké vlny nesou velké plochy a celkový jas, střední tvary, vysoké hrany a detaily. S pěti sty vlnami v každém pásmu, asi třemi procenty všech vln, je fotka čitelná. Tak pracuje ztrátová komprese, třeba JPEG: uloží silné vlny a slabé zahodí.
+
+### Jak transformace vlny najde
+
+Pro každou frekvenci $(u, v)$ obrázek vynásobí vlnou té frekvence, pixel po pixelu, a všechno sečte. Je to skalární součin obrázku s vlnou: čím víc se obrázek vlně podobá, tím větší součet. Pro obrázek $f$ o straně $N$ pixelů:
 
 $$F(u, v) = \sum_{x=0}^{N-1} \sum_{y=0}^{N-1} f(x, y)\, e^{-2\pi i\,(ux + vy)/N}$$
 
-Podle Eulerova vzorce je $e^{-i\varphi} = \cos\varphi - i \sin\varphi$, takže suma násobí obrázek kosinem a sinem frekvence $(u, v)$. Výsledek $F(u, v)$ je komplexní číslo: jeho absolutní hodnota $|F(u, v)|$ říká, jak silná vlna v obrázku je, jeho úhel (fáze) říká, kam je posunutá. Obrázek velikostí $|F|$ pro všechny frekvence je **spektrum**.
+Podle Eulerova vzorce je $e^{-i\varphi} = \cos\varphi - i \sin\varphi$, takže suma jsou dva součty najednou, s kosinem a se sinem téže frekvence. Kosinus sám by vlnu posunutou o čtvrt periody nenašel, jejich součin má součet nula, a tu najde sinus. Oba součty dají komplexní číslo $F(u, v)$. Jeho absolutní hodnota $|F|$ je amplituda vlny, jeho úhel $\arg F$ je její fáze.
 
-@img(waves.png, 900, Čtyři základní vlny s různými frekvencemi u a v a pod každou její spektrum, dva body souměrné kolem středu a bod uprostřed)
+@img(dot_product.png, 900, Malá fotka vynásobená kosinem a minus sinem frekvence 2 a 1, oba součiny pixel po pixelu, jejich součty jako reálná a imaginární část F a šipka komplexního čísla F s amplitudou a fází)
 
-Kernel níže nakreslí jednu vlnu.
+Obrázek $f(x, y)$, hodnoty pixelů, je **prostorová oblast**. Komplexní čísla $F(u, v)$ jsou **frekvenční oblast**. Obrázek amplitud $|F|$ pro všechny frekvence je **spektrum**.
+
+Kernel níže nakreslí do Sáry jednu vlnu. Posuvníky `u` a `v` mění frekvenci, `phase` fázi.
 """)
 
 code(WAVE)
@@ -393,28 +814,84 @@ doc.new_layer("Spectrum", spectrum(np.fft.fft2(L))).show()
 """)
 
 md(r"""
-Jak spektrum číst:
+Spektrum je komplexní a kreslit se dá po částech. Obrázek níže ukazuje všechny čtyři vedle sebe:
 
-- Blízko středu jsou velké útvary, daleko od středu jemné detaily. Spektrum fotky od středu rychle slábne, protože velké plochy nesou ve fotce víc energie než detaily.
-- Hrana v obrázku dá ve spektru čáru kolmo na hranu. Otočení obrázku otočí i spektrum.
-- Co je v obrázku úzké, je ve spektru široké, a naopak. Obdélník dá funkci $\operatorname{sinc}$ s vlnkami, Gauss dá opět Gauss.
-- Vzor, který se opakuje, dá mřížku jasných bodů. Čím delší je perioda vzoru, tím blíž jsou body u sebe.
-- Posunutí obrázku změní jen fázi, spektrum velikostí zůstane stejné.
+- **Reálná část** $\mathrm{Re}\,F$ je skalární součin obrázku s kosinem, **imaginární** $\mathrm{Im}\,F$ se sinem se znaménkem minus. Červená je kladná, modrá záporná, v logaritmu se znaménkem.
+- **Amplituda** $|F| = \sqrt{\mathrm{Re}^2 + \mathrm{Im}^2}$ je délka šipky z obrázku se skalárním součinem, **fáze** $\arg F$ její úhel.
 
-@img(pairs.png, 900, Obrázky nahoře a jejich spektra dole: úzký a široký obdélník, Gauss, otočený obdélník, opakovaný vzor a fotka)
+Kosinusovka má spektrum jen reálné, sinusovka jen imaginární. Reálná část je souměrná podle středu, imaginární má na protějších bodech opačné znaménko. Posuvník `posun` posune obrázek doprava: reálná a imaginární část se přelévají jedna do druhé a fáze se mění, ale amplituda zůstane stejná. U fotky jsou reálná i imaginární část změť znamének a čitelná je jen amplituda. Proto se jako spektrum obvykle kreslí amplituda.
+""")
 
+code(PARTS, hidden=True)
+
+# --- 2. Reading a spectrum ---------------------------------------------------------
+md(r"""
+## 2. Jak číst spektrum
+
+- **Střed** je nulová frekvence, **DC složka** $F(0, 0)$: součet všech pixelů, tedy průměrný jas krát počet pixelů.
+- **Blízko středu** jsou nízké frekvence, velké plochy a celkový tvar. **Daleko od středu** jsou vysoké, hrany, detaily a šum.
+- **Směr:** pruhy a hrany dají ve spektru body nebo čáru **kolmo** na sebe. Svislá hrana se mění podél $x$, a tak dá vodorovnou čáru.
+- **Souměrnost:** obrázek má reálná čísla, a proto je $F(-u, -v)$ komplexně sdružené s $F(u, v)$. Spektrum je souměrné podle středu a jedna kosinusovka dá dva body.
+- **Logaritmus:** DC složka je o mnoho řádů větší než ostatní, spektrum se proto kreslí jako $\ln(1 + |F|)$.
+
+Obrázek níže ukazuje dvojice obrázek a spektrum. Vyberte obrázek v nabídce a posuvníkem `velikost` ho zužujte a rozšiřujte. Graf vpravo je vodorovný řez spektrem přes střed, v logaritmu. Pod obrázkem je vysvětlení dvojice.
+""")
+
+code(SPECTRA, hidden=True)
+
+md(r"""
 > **❓ Otázka**
-> Spektrum fotky má přes střed světlou vodorovnou a svislou čáru, i když fotka žádné takové hrany nemá. Odkud se vzaly?
+> Vyberte fotku. Spektrum má přes střed světlou vodorovnou a svislou čáru, i když fotka žádné takové hrany nemá. Odkud se vzaly, a proč s Hannovým oknem zmizí?
 
 <details><summary>🔑 Odpověď</summary>
 
-Transformace počítá s obrázkem, jako by se opakoval dokola jako dlaždice: za pravým okrajem pokračuje levý, pod dolním horní. Okraje fotky na sebe nenavazují, a kde se potkají, vznikne skok, svislá hrana po celé výšce a vodorovná po celé šířce. Ty dají ve spektru čáry kolmo na ně. Zmizí, když se fotka před transformací vynásobí oknem (*window*), které k okrajům plynule klesá k nule.
+Transformace počítá s obrázkem, jako by se opakoval dokola jako dlaždice: za pravým okrajem pokračuje levý, pod dolním horní. Okraje fotky na sebe nenavazují, a kde se potkají, vznikne skok, svislá hrana po celé výšce a vodorovná po celé šířce. Ty dají ve spektru čáry kolmo na ně. Hannovo okno fotku k okrajům plynule ztlumí k nule, dlaždice pak na sebe navazují a skok zmizí.
 </details>
+
+### Vlastnosti
+
+| Vlastnost | Obrázek | Spektrum |
+|---|---|---|
+| linearita | $a f + b g$ | $a F + b G$ |
+| posun | $f(x - x_0, y - y_0)$ | $F \cdot e^{-2\pi i (u x_0 + v y_0)/N}$: amplituda stejná, mění se jen fáze |
+| otočení | o úhel $\alpha$ | spektrum se otočí o tentýž úhel |
+| změna měřítka | $f(ax, ay)$ | přibližně $\frac{1}{a^2} F(u / a, v / a)$: co se v obrázku zúží, ve spektru se roztáhne |
+| konvoluce | $f * g$ | $F \cdot G$ |
+| násobení | $f \cdot g$ | $\frac{1}{N^2}\, F * G$, konvoluce spekter |
+| oddělitelnost | $f(x, y) = g(x)\, h(y)$ | $F(u, v) = G(u)\, H(v)$. 2D transformace je 1D transformace po řádcích a pak po sloupcích |
+| Parsevalova rovnost | $\sum \lvert f \rvert^2$ | $\frac{1}{N^2} \sum \lvert F \rvert^2$, energie se zachová |
+
+Obrázek níže změní písmeno A a ukáže, co se stane se spektrem. Horní řádek je původní A, dolní změněné. Ve sloupci fáze je úhel vyjádřený barvou, šedé jsou slabé vlny, na jejichž fázi nezáleží. Poslední sloupec je rozdíl fáze změněného a původního A, tmavá barva znamená beze změny. Pod obrázkem je Parsevalova rovnost pro změněný obrázek.
 """)
 
-# --- 2. The DFT in a kernel ---------------------------------------------------
+code(PROPERTIES, hidden=True)
+
 md(r"""
-## 2. Fourierova transformace v kernelu
+Co si z obrázku odnést:
+
+- **Posun** amplitudu nezmění vůbec, jen fázi, a to úhlem, který s frekvencí rovnoměrně roste: rozdíl fází jsou rovné pruhy.
+- **Konvoluce je ve spektru násobení.** Rozmazání vynásobí spektrum Gaussem, který od středu klesá, a vysoké frekvence ztlumí. Je to nejdůležitější vlastnost lekce: filtr, který je v obrázku drahá konvoluce, je ve spektru obyčejné násobení. Stojí na ní sekce 5 a 6.
+- **Fáze nese tvar.** Obrázek s amplitudou fotky a fází písmene A vypadá jako A, a obráceně. Fáze říká, kde jsou hrany, amplituda hlavně kolik čeho v obrázku je.
+""")
+
+# --- 3. Sampling and aliasing ------------------------------------------------------
+md(r"""
+## 3. Vzorkování a aliasing
+
+Obrázek je vzorkovaný: z plynulého světla zná jen hodnotu v každém pixelu. Ve spektru to znamená, že se spektrum periodicky opakuje, a když jsou kopie příliš blízko, překryjí se. Vysoká frekvence se pak tváří jako nízká. Tomu se říká **aliasing**: moiré na proužkované košili v televizi, schody na šikmých hranách nebo kola auta ve filmu, která se točí pozpátku.
+
+**Nyquistova věta:** vzorků musí být víc než dvakrát tolik, kolik má signál period. Obrázek o $N$ pixelech unese nejvýš $N / 2$ period, střídání černá, bílá, černá. Obrázek níže nahoře vzorkuje vlnu šestnácti vzorky. Posuvníkem `frekvence` přejděte přes 8 a sledujte, jakou vlnu vzorky ukazují. Dole je zónová deska, kruhy s frekvencí rostoucí od středu, zmenšená tak, že se bere každý $k$-tý pixel.
+""")
+
+code(SAMPLING, hidden=True)
+
+md(r"""
+Zmenšení výběrem pixelů vyrobí kruhy, které v původním obrázku nejsou: frekvence nad novou Nyquistovou mezí se přeloží na nízké. Obrana je jediná, odstranit před zmenšením frekvence, které menší obrázek neunese, tedy obrázek rozmazat. Proto dobré programy obrázek před zmenšením filtrují.
+""")
+
+# --- 4. The DFT in a kernel ---------------------------------------------------
+md(r"""
+## 4. Fourierova transformace v kernelu
 
 `np.fft.fft2` počítá na CPU. Kernel na GPU může spočítat přímo vzorec ze sekce 1, pixel výstupu $(u, v)$ je jedno vlákno. Dvojitá suma se rozdělí na dvě jednoduché, nejdřív přes $x$ v každém řádku, pak přes $y$ v každém sloupci výsledku:
 
@@ -476,6 +953,8 @@ doc.new_layer("Spectrum GPU", spectrum(F_gpu)).show()
 md(r"""
 ### Rychlost
 
+Vzorec ze sekce 1 je **diskrétní Fourierova transformace** (DFT): $N$ vzorků dá $N$ frekvencí. Spočítaná přímo potřebuje pro každou z $N$ frekvencí $N$ násobení, v jednom rozměru $N^2$ operací. **FFT** je algoritmus, který dá přesně tentýž výsledek za $N \log_2 N$ operací: rozdělí vzorky na sudé a liché, spočítá dvě transformace poloviční délky a složí je, a tak dál až k délce 1.
+
 Buňka změří FFT v NumPy a oba průchody na GPU. Kernel by v hotovém filtru četl a zapisoval vrstvy na GPU, NumPy musí vrstvu nejdřív přečíst a výsledek zapsat zpátky. Proto buňka měří i čtení a zápis vrstvy, zvlášť.
 """)
 
@@ -512,11 +991,11 @@ Kernel sčítá v každém průchodu $N$ hodnot pro každý z $N^2$ pixelů, pr�
 </details>
 """)
 
-# --- 3. Blur in frequency -----------------------------------------------------
+# --- 5. Filtering in frequency ------------------------------------------------
 md(r"""
-## 3. Rozmazání ve frekvencích
+## 5. Filtrování ve frekvencích
 
-**Věta o konvoluci**: konvoluce obrázku s jádrem je ve spektru násobení. Spektrum rozmazaného obrázku je spektrum obrázku krát spektrum jádra, koeficient po koeficientu:
+Ze sekce 2 víte, že konvoluce obrázku s jádrem je ve spektru násobení (**věta o konvoluci**). Spektrum rozmazaného obrázku je spektrum obrázku krát spektrum jádra, koeficient po koeficientu:
 
 $$\mathcal{F}\{f * g\} = \mathcal{F}\{f\} \cdot \mathcal{F}\{g\}$$
 
@@ -528,6 +1007,19 @@ $f_x$ a $f_y$ jsou frekvence v periodách na pixel, $u / N$ a $v / N$, od $-0.5$
 
 @img(convolution.png, 900, Nahoře konvoluce fotky s Gaussovým jádrem, dole táž operace ve spektru jako násobení spektra fotky spektrem jádra)
 
+Rozmazání je jeden z filtrů, které spektrum násobí maskou $H$. Postup je vždy stejný: transformace obrázku, násobení maskou, zpětná transformace a reálná část. Obrázek níže zkouší několik masek:
+
+- **Dolní propust** (*low pass*) nechá nízké frekvence a výsledek je rozmazaný.
+- **Horní propust** (*high pass*), třeba $1 - H$ Gaussovy dolní propusti, nechá jen hrany a detaily.
+- **Pásmová propust** (*band pass*) nechá jen prstenec frekvencí.
+- **Ideální** dolní propust, uvnitř kruhu 1 a venku 0, udělá kolem hran vlnky (*ringing*). Ostrý okraj masky je v obrázku funkce sinc, jako obdélník v sekci 2. Proto se používají hladké masky, Gaussova nebo Butterworthova.
+
+Maska musí mít nulovou frekvenci tam, kde ji má spektrum. Obrázek masku počítá rovnou s frekvencemi z `np.fft.fftfreq`, ve stejném pořadí jako spektrum, a jen ji kreslí se středem uprostřed. Masku nakreslenou se středem uprostřed by před násobením vrátil do pořadí spektra `np.fft.ifftshift`.
+""")
+
+code(FILTERS, hidden=True)
+
+md(r"""
 Kernel níže rozmaže fotku přímo, váženým součtem okolí v lineárním RGB, jako v lekci o konvoluci. Tam jste rozmazání rozdělili na dva průchody, tady je pro jednoduchost v jednom. Soused za okrajem plátna se bere z protějšího okraje, stejně jako u transformace.
 """)
 
@@ -596,9 +1088,9 @@ Transformace bere obrázek jako dlaždici, která se opakuje dokola, a násoben�
 </details>
 """)
 
-# --- 4. Wiener deconvolution --------------------------------------------------
+# --- 6. Wiener deconvolution --------------------------------------------------
 md(r"""
-## 4. Wienerova dekonvoluce
+## 6. Wienerova dekonvoluce
 
 Když je rozmazání násobení spektra číslem $H$, mělo by jít vrátit dělením. Fotka `astronaut_blur` je fotka `astronaut` rozmazaná Gaussem se $\sigma = 2$ v lineárním RGB, s okraji dokola, a uložená v osmi bitech na kanál. Buňka její spektrum vydělí $H$ z úkolu 3:
 """)
@@ -658,9 +1150,9 @@ S malým $K$ je filtr blízko dělení $1 / H$: vrací i vysoké frekvence, kde 
 </details>
 """)
 
-# --- 5. NumPy and Krita -------------------------------------------------------
+# --- 7. NumPy and Krita -------------------------------------------------------
 md(r"""
-## 5. Do Krity
+## 7. Do Krity
 
 Kernely v této lekci sloužily ke srovnání, filtr do Krity je celý v NumPy. Má tři režimy, všechny počítají v lineárním RGB:
 
@@ -729,27 +1221,48 @@ Grain Merge sečte vrstvy a odečte 0.5. `High pass` je obrázek minus `Low pass
 md(r"""
 ## Shrnutí
 
-- Obrázek je součet vln. Fourierova transformace dá pro každou frekvenci komplexní číslo, jehož velikost říká, kolik vlny obrázek obsahuje, a úhel, kam je posunutá.
-- Spektrum se kreslí s nulovou frekvencí uprostřed (`np.fft.fftshift`) a v logaritmu. Hrany dají čáry kolmo na ně, opakované vzory body, úzké útvary široké spektrum.
-- Transformace v kernelu sčítá $N$ hodnot na pixel v každém ze dvou průchodů, práce roste s $N^3$. FFT roste s $N^2 \log N$ a pro velké obrázky vyhraje i s přenosem vrstvy na CPU a zpátky.
-- Konvoluce je ve spektru násobení. Rozmazání přes FFT trvá stejně dlouho pro každou $\sigma$, kernel s $\sigma^2$.
+- Obrázek je součet vln. Fourierova transformace dá pro každou frekvenci komplexní číslo: amplituda $|F|$ říká, kolik té vlny obrázek obsahuje, fáze $\arg F$, kam je posunutá. Převod nic neztratí.
+- $F(u, v)$ je skalární součin obrázku s vlnou, součet s kosinem a se sinem téže frekvence.
+- Spektrum se kreslí s nulovou frekvencí uprostřed (`np.fft.fftshift`) a v logaritmu.
+- Transformace v kernelu sčítá $N$ hodnot na pixel v každém ze dvou průchodů, práce roste s $N^3$. FFT dá tentýž výsledek za $N^2 \log N$ a pro velké obrázky vyhraje i s přenosem vrstvy na CPU a zpátky.
+- Filtr ve frekvencích je násobení spektra maskou. Rozmazání přes FFT trvá stejně dlouho pro každou $\sigma$, kernel s $\sigma^2$.
 - Rozmazání se dá vrátit dělením spektra jen tam, kde je signál silnější než šum. Wienerův filtr to zařídí jedním číslem $K$.
-- FFT bere obrázek jako dlaždici, takže okraje se rozmazávají s protějšími a spektrum má přes střed kříž.
+
+### Na co si dát pozor
+
+- Posun mění jen fázi, amplitudu ne.
+- Co je v obrázku úzké, je ve spektru široké, a naopak.
+- Konvoluce v obrázku je násobení ve spektru.
+- Kosinusovka dá dva body, ne jeden.
+- Aliasing nastane, když vzorků není víc než dvakrát tolik, kolik má signál period.
+- Ostrá, ideální maska dělá kolem hran vlnky.
+- Transformace bere obrázek jako dlaždici: okraje se rozmazávají s protějšími a spektrum má přes střed kříž.
+
+### Dvojice, které je dobré znát
+
+| Obrázek | Spektrum |
+|---|---|
+| konstanta | jeden bod, DC složka |
+| bod | konstanta, všechny frekvence |
+| kosinusovka | dva body souměrně kolem středu |
+| obdélník | sinc, kříž s vlnkami |
+| kruh | soustředné kroužky (Besselova funkce) |
+| Gauss | Gauss, tím užší, čím je obrázek širší |
+| hřeben bodů s roztečí $T$ | hřeben bodů s roztečí $N / T$ |
+| Gauss krát kosinus (Gabor) | dva Gaussy na frekvenci kosinu |
 
 ### Co jsme vynechali
 
-- **Okna a rozšíření okrajů.** Kříž ve spektru odstraní okno, které obrázek k okrajům plynule ztlumí. Konvoluci dokola zabrání rozšíření obrázku o odraz okrajů před transformací.
-- **Algoritmus FFT.** Cooleyho a Tukeyho algoritmus dělí transformaci délky $N$ na dvě poloviční, a tak dál až k délce 1, odtud $N \log N$. Na GPU je to $\log_2 N$ průchodů za sebou.
-- **Vzorkování a aliasing.** Zmenšený obrázek má ve spektru kopie původního spektra, a kde se překryjí, vznikne moiré. Proto se obrázek před zmenšením rozmazává.
+- **Rozšíření okrajů.** Konvoluci dokola zabrání rozšíření obrázku o odraz okrajů před transformací.
+- **FFT na GPU.** Cooleyho a Tukeyho algoritmus je na GPU $\log_2 N$ průchodů za sebou, jak to dělají knihovny VkFFT a cuFFT.
 - **Slepá dekonvoluce.** Tady jste věděli, jakým Gaussem byla fotka rozmazaná. U skutečné fotky rozmazané pohybem nebo špatným zaostřením tvar rozmazání neznáte a musí se odhadnout z fotky samotné.
 - **Fourierova transformace v kompresi.** JPEG rozloží každý blok 8 × 8 pixelů kosinovou transformací a vysoké frekvence uloží hrubě, protože je oko vidí nejméně.
 
 ### Bonusové úkoly
 
-1. **Fáze a velikost.** Složte obrázek z velikostí spektra fotky a fáze spektra cihel (`imgs/4/brick.png`), $|F_1|\, e^{i \arg F_2}$, a obráceně. `np.angle` dá úhel komplexního čísla. Který z obou obrázků poznáte, a co z toho plyne o tom, kde je ve spektru uložen tvar?
-2. **Vrubový filtr** (*notch filter*). Přičtěte k fotce vlnu z kernelu „Wave“ jako pravidelné rušení. Najděte ve spektru její dva body, vynulujte je a fotku transformujte zpátky.
-3. **Okraje bez dlaždice.** Rozšiřte kanál před `blur_fft` o odraz okrajů, `np.pad(channel, r, mode="reflect")` s `r` kolem $4\sigma$, a výsledek ořízněte. Porovnejte okraje rozmazané fotky s těmi původními.
-4. **Rozmazání pohybem.** Jádro je úsečka délky `length` pixelů pod úhlem `angle`. Nakreslete ji do pole velikosti obrázku se středem v rohu `[0, 0]` (záporné posuny jsou na konci pole), $H$ je `np.fft.fft2` toho pole. $H$ je teď komplexní a `np.conj` ve Wienerově filtru je potřeba.
+1. **Vrubový filtr** (*notch filter*). Přičtěte k fotce vlnu z kernelu „Wave“ jako pravidelné rušení. Najděte ve spektru její dva body, vynulujte je a fotku transformujte zpátky.
+2. **Okraje bez dlaždice.** Rozšiřte kanál před `blur_fft` o odraz okrajů, `np.pad(channel, r, mode="reflect")` s `r` kolem $4\sigma$, a výsledek ořízněte. Porovnejte okraje rozmazané fotky s těmi původními.
+3. **Rozmazání pohybem.** Jádro je úsečka délky `length` pixelů pod úhlem `angle`. Nakreslete ji do pole velikosti obrázku se středem v rohu `[0, 0]` (záporné posuny jsou na konci pole), $H$ je `np.fft.fft2` toho pole. $H$ je teď komplexní a `np.conj` ve Wienerově filtru je potřeba.
 """)
 
 md(r"""
