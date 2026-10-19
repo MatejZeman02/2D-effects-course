@@ -176,7 +176,7 @@ WAVE_SPECTRUM = '''\
 wave = doc.layer("Wave").read()
 F = np.fft.fft2(wave[..., 0])
 dots = np.argwhere(np.abs(F) > 1000)                # the coefficients that are not almost zero
-print("dots (v, u):", ((dots + 256) % 512 - 256).tolist())    # index N - k is frequency -k
+print("dots (u, v):", ((dots[:, ::-1] + 256) % 512 - 256).tolist())    # argwhere answers (row, column), index N - k is frequency -k
 doc.new_layer("Wave spectrum", spectrum(F)).show()'''
 
 GAUSSIAN_GIVEN = '''\
@@ -222,7 +222,7 @@ PARAMS_NP = f'''\
 PARAMS = {{
     "mode": ["Deblur", "Low pass", "High pass"],
     "sigma": ({BLUR_SIGMA}, 0.5, 8.0),
-    "noise": (0.01, 0.0, 0.1, 0.001),
+    "noise": (0.01, 0.001, 0.1, 0.001),
 }}'''
 
 APPLY_GIVEN = '''\
@@ -560,7 +560,10 @@ CAPTIONS = {
     "kosinusovka": "Jedna vlna dá ve spektru <b>dva</b> body souměrně kolem středu, a k tomu DC složku, protože "
                    "vlna jde od 0 do 1 kolem šedé. Posuvník zvyšuje frekvenci a body se vzdalují od středu.",
     "šikmá kosinusovka": "Body leží ve směru, ve kterém se vlna mění, tedy <b>kolmo na pruhy</b>.",
-    "obdélník": "Obdélník dá funkci sinc, sin(x)/x: kříž s vlnkami. Užší strana obdélníku dá širší rameno kříže.",
+    "dvě blízké kosinusovky": "Vlny s 24 a 24 + velikost periodami dají rázy, 2 cos((a + b)/2) cos((a - b)/2): "
+                              "rychlou vlnu, jejíž síla kolísá s rozdílem frekvencí. Ve spektru jsou to dva blízké "
+                              "páry bodů, v obrázku moiré.",
+    "obdélník": "Obdélník dá funkci sinc, sin(x)/x: kříž s vlnkami. Užší strana obdélníku dá delší rameno kříže s řidšími vlnkami.",
     "kruh": "Kruh dá soustředné kroužky (Besselova funkce), kruhovou obdobu funkce sinc.",
     "Gauss": "Gauss dá zase Gauss, bez vlnek. Čím širší v obrázku, tím užší ve spektru. Proto je Gauss "
              "dobrý filtr.",
@@ -590,6 +593,8 @@ def pattern(name, size, n=256):
         return 0.5 + 0.5 * np.cos(2 * np.pi * 2 * size * x / n)
     if name == "šikmá kosinusovka":
         return 0.5 + 0.5 * np.cos(2 * np.pi * (2 * size * x + size * y) / n)
+    if name == "dvě blízké kosinusovky":
+        return 0.5 + 0.25 * np.cos(2 * np.pi * 24 * x / n) + 0.25 * np.cos(2 * np.pi * (24 + size) * x / n)
     if name == "obdélník":
         return ((np.abs(x) < size) & (np.abs(y) < 3 * size)).astype(float)
     if name == "kruh":
@@ -849,7 +854,7 @@ Obrázek níže skládá fotku z několika jejích vln. Vlny jsou rozdělené po
 code(COMPOSE, hidden=True)
 
 md(r"""
-Nízké vlny nesou velké plochy a celkový jas, střední tvary, vysoké hrany a detaily. S pěti sty vlnami v každém pásmu, asi třemi procenty všech vln, je fotka čitelná. Tak pracuje ztrátová komprese, třeba JPEG: uloží silné vlny a slabé zahodí.
+Nízké vlny nesou velké plochy a celkový jas, střední tvary, vysoké hrany a detaily. S pěti sty vlnami ve středním a vysokém pásmu (nízké jich má jen 56), asi třemi procenty všech vln, je fotka čitelná. Podobný princip má ztrátová komprese: JPEG ukládá vysoké frekvence hruběji, protože je oko vidí nejméně (víc ve shrnutí, v části Co jsme vynechali).
 
 ### Jak transformace vlny najde
 
@@ -879,6 +884,8 @@ Vlna z kernelu je ve spektru jeden bod $(u, v)$ s komplexní hodnotou $c = F(u, 
 | hodnota $c$, úhel $\arg c$ | fáze | o kolik je vlna posunutá vůči počátku (levému hornímu pixelu) |
 
 Obrázek níže se překreslí, když pohnete posuvníky kernelu nad ním. Vlevo je vektor $(u, v)$ v rovině spektra, s osou $v$ dolů jako ve vykresleném spektru, a čárkovaně směr pruhů. Uprostřed je $c$ v komplexní rovině, vydělené počtem pixelů $N^2$, a čárkovaně hodnota dvojčete. Vpravo je řez vlnou kolmo na pruhy: vzdálenost dvou vrcholů je vlnová délka, $512 / \sqrt{u^2 + v^2}$ pixelů, a fáze posune první vrchol od počátku.
+
+**Součet dvou vln.** Transformace je lineární, a tak součet dvou vln se stejným $(u, v)$ je zase jedna vlna té frekvence a její $c$ je součet obou $c$, jako sčítání šipek. Se stejnou fází se amplitudy sečtou, s fází posunutou o 180° se vlny vyruší. Vlny s blízkými frekvencemi dají **rázy**, $\cos a + \cos b = 2 \cos\frac{a + b}{2} \cos\frac{a - b}{2}$: rychlou vlnu, jejíž síla pomalu kolísá. V obrázku je to moiré, v sekci 2 ho ukáže volba `dvě blízké kosinusovky`.
 """)
 
 code(UV, hidden=True)
@@ -918,7 +925,7 @@ code(SPECTRUM_GIVEN + "\n\n\n" + WAVE_SPECTRUM, solve=[(SPECTRUM_GIVEN, SOLUTION
 md(r"""
 ### ✅ Kontrola
 
-Spektrum vlny jsou tři světlé pixely, v Sáře si střed vrstvy `Wave spectrum` přibližte. Buňka vypíše jejich frekvence jako $(v, u)$. Prostřední pixel je nulová frekvence, průměrný jas vlny. Dva další leží souměrně kolem středu, $u$ pixelů vodorovně a $v$ pixelů svisle od něj. Posuňte posuvníky `u` a `v`, spusťte buňku se spektrem znovu a body se posunou. Posuvník `phase` vlnu posune, ale spektrum nezmění.
+Spektrum vlny jsou tři světlé pixely, v Sáře si střed vrstvy `Wave spectrum` přibližte. Buňka vypíše jejich frekvence $(u, v)$. Prostřední pixel je nulová frekvence, průměrný jas vlny. Dva další leží souměrně kolem středu, $u$ pixelů vodorovně a $v$ pixelů svisle od něj. Posuňte posuvníky `u` a `v`, spusťte buňku se spektrem znovu a body se posunou. Posuvník `phase` vlnu posune, ale spektrum nezmění.
 
 > **❓ Otázka**
 > Vlna má jednu frekvenci $(u, v)$. Proč má spektrum dva body, druhý v $(-u, -v)$?
@@ -942,7 +949,7 @@ Spektrum je komplexní a kreslit se dá po částech. Obrázek níže ukazuje v�
 - **Reálná část** $\mathrm{Re}\,F$ je skalární součin obrázku s kosinem, **imaginární** $\mathrm{Im}\,F$ se sinem se znaménkem minus. Červená je kladná, modrá záporná, v logaritmu se znaménkem.
 - **Amplituda** $|F| = \sqrt{\mathrm{Re}^2 + \mathrm{Im}^2}$ je délka šipky z obrázku se skalárním součinem, **fáze** $\arg F$ její úhel.
 
-Kosinusovka má spektrum jen reálné, sinusovka jen imaginární. Reálná část je souměrná podle středu, imaginární má na protějších bodech opačné znaménko. Posuvník `posun` posune obrázek doprava: reálná a imaginární část se přelévají jedna do druhé a fáze se mění, ale amplituda zůstane stejná. U fotky jsou reálná i imaginární část změť znamének a čitelná je jen amplituda. Proto se jako spektrum obvykle kreslí amplituda.
+Při posunu 0 má kosinusovka spektrum jen reálné a sinusovka kromě DC složky jen imaginární. DC složka je průměrný jas a je vždy reálná. Reálná část je souměrná podle středu, imaginární má na protějších bodech opačné znaménko. Posuvník `posun` posune obrázek doprava: reálná a imaginární část se přelévají jedna do druhé a fáze se mění, ale amplituda zůstane stejná. U fotky jsou reálná i imaginární část změť znamének a čitelná je jen amplituda. Proto se jako spektrum obvykle kreslí amplituda.
 """)
 
 code(PARTS, hidden=True)
@@ -955,9 +962,9 @@ md(r"""
 - **Blízko středu** jsou nízké frekvence, velké plochy a celkový tvar. **Daleko od středu** jsou vysoké, hrany, detaily a šum.
 - **Směr:** pruhy a hrany dají ve spektru body nebo čáru **kolmo** na sebe. Svislá hrana se mění podél $x$, a tak dá vodorovnou čáru.
 - **Souměrnost:** obrázek má reálná čísla, a proto je $F(-u, -v)$ komplexně sdružené s $F(u, v)$. Spektrum je souměrné podle středu a jedna kosinusovka dá dva body.
-- **Logaritmus:** DC složka je o mnoho řádů větší než ostatní, spektrum se proto kreslí jako $\ln(1 + |F|)$.
+- **Logaritmus:** spektrum se kreslí jako $\ln(1 + |F|)$, proč, říká sekce 1.
 
-Obrázek níže ukazuje dvojice obrázek a spektrum. Vyberte obrázek v nabídce a posuvníkem `velikost` ho zužujte a rozšiřujte. Graf vpravo je vodorovný řez spektrem přes střed, v logaritmu. Pod obrázkem je vysvětlení dvojice.
+Obrázek níže ukazuje dvojice obrázek a spektrum. Vyberte obrázek v nabídce a posuvníkem `velikost` ho zužujte a rozšiřujte. Konstanta, bod, hrana a fotky žádnou velikost nemají a posuvník je nemění. Graf vpravo je vodorovný řez spektrem přes střed, v logaritmu. Pod obrázkem je vysvětlení dvojice.
 """)
 
 code(SPECTRA, hidden=True)
@@ -977,8 +984,9 @@ Transformace počítá s obrázkem, jako by se opakoval dokola jako dlaždice: z
 |---|---|---|
 | linearita | $a f + b g$ | $a F + b G$ |
 | posun | $f(x - x_0, y - y_0)$ | $F \cdot e^{-2\pi i (u x_0 + v y_0)/N}$: amplituda stejná, mění se jen fáze |
-| otočení | o úhel $\alpha$ | spektrum se otočí o tentýž úhel |
+| otočení | o úhel $\alpha$ | spektrum se otočí přibližně o tentýž úhel. Otočený obrázek už na okrajích nenavazuje jako dlaždice a ve spektru přibude neotočený kříž, jako v otázce výše |
 | změna měřítka | $f(ax, ay)$ | přibližně $\frac{1}{a^2} F(u / a, v / a)$: co se v obrázku zúží, ve spektru se roztáhne |
+| derivace | $\partial f / \partial x$ | $\frac{2\pi i u}{N} F$: násobení frekvencí, tedy horní propust. Proto derivace a Sobel z lekce 3 zesilují šum |
 | konvoluce | $f * g$ | $F \cdot G$ |
 | násobení | $f \cdot g$ | $\frac{1}{N^2}\, F * G$, konvoluce spekter |
 | oddělitelnost | $f(x, y) = g(x)\, h(y)$ | $F(u, v) = G(u)\, H(v)$. 2D transformace je 1D transformace po řádcích a pak po sloupcích |
@@ -1001,15 +1009,17 @@ Co si z obrázku odnést:
 md(r"""
 ## 3. Vzorkování a aliasing
 
-Obrázek je vzorkovaný: z plynulého světla zná jen hodnotu v každém pixelu. Ve spektru to znamená, že se spektrum periodicky opakuje, a když jsou kopie příliš blízko, překryjí se. Vysoká frekvence se pak tváří jako nízká. Tomu se říká **aliasing**: moiré na proužkované košili v televizi, schody na šikmých hranách nebo kola auta ve filmu, která se točí pozpátku.
+Obrázek je vzorkovaný: z plynulého světla zná jen hodnotu v každém pixelu. Vzorkování je násobení plynulého obrazu hřebenem bodů s roztečí $T$, jedním pixelem. Hřeben dá ve spektru zase hřeben, a násobení je ve spektru konvoluce. Konvoluce s hřebenem nakopíruje spektrum na každý jeho bod, takže se spektrum periodicky opakuje s roztečí vzorkovací frekvence. Jakmile signál obsahuje frekvence nad polovinou této rozteče, kopie se překryjí a vysoká frekvence se tváří jako nízká. Tomu se říká **aliasing**: moiré na proužkované košili v televizi, schody na šikmých hranách nebo kola auta ve filmu, která se točí pozpátku.
 
-**Nyquistova věta:** vzorků musí být víc než dvakrát tolik, kolik má signál period. Obrázek o $N$ pixelech unese nejvýš $N / 2$ period, střídání černá, bílá, černá. Obrázek níže nahoře vzorkuje vlnu šestnácti vzorky. Posuvníkem `frekvence` přejděte přes 8 a sledujte, jakou vlnu vzorky ukazují. Dole je zónová deska, kruhy s frekvencí rostoucí od středu, zmenšená tak, že se bere každý $k$-tý pixel.
+**Nyquistova věta:** vzorků musí být víc než dvakrát tolik, kolik má signál period. Dvojka je právě ta polovina rozteče kopií. Obrázek o $N$ pixelech unese nejvýš $N / 2$ period, střídání černá, bílá, černá. Obrázek níže nahoře vzorkuje vlnu šestnácti vzorky. Posuvníkem `frekvence` přejděte přes 8 a sledujte, jakou vlnu vzorky ukazují. Dole je zónová deska, kruhy s frekvencí rostoucí od středu, zmenšená tak, že se bere každý $k$-tý pixel.
 """)
 
 code(SAMPLING, hidden=True)
 
 md(r"""
 Zmenšení výběrem pixelů vyrobí kruhy, které v původním obrázku nejsou: frekvence nad novou Nyquistovou mezí se přeloží na nízké. Obrana je jediná, odstranit před zmenšením frekvence, které menší obrázek neunese, tedy obrázek rozmazat. Proto dobré programy obrázek před zmenšením filtrují.
+
+Opačný směr, **rekonstrukce** plynulého obrazu ze vzorků, potřebuje každé zvětšení, otočení a zoom. Ideální rekonstrukce ořízne ze spektra jen prostřední kopii obdélníkovou maskou, a to je v obrázku konvoluce se sinc, s vlnkami kolem hran jako ideální maska v sekci 5. Interpolace proto sinc přibližují kratšími jádry: **nejbližší soused** je konvoluce s obdélníkem, **bilineární** interpolace s trojúhelníkem a **bikubická** s kubickým jádrem, které je sinc blíž. Lanczosovo jádro je useknutá sinc. Mezi těmito filtry volí nástroj transformace v Kritě.
 """)
 
 # --- 4. The DFT in a kernel ---------------------------------------------------
@@ -1076,7 +1086,7 @@ doc.new_layer("Spectrum GPU", spectrum(F_gpu)).show()
 md(r"""
 ### Rychlost
 
-Vzorec ze sekce 1 je **diskrétní Fourierova transformace** (DFT): $N$ vzorků dá $N$ frekvencí. Spočítaná přímo potřebuje pro každou z $N$ frekvencí $N$ násobení, v jednom rozměru $N^2$ operací. **FFT** je algoritmus, který dá přesně tentýž výsledek za $N \log_2 N$ operací: rozdělí vzorky na sudé a liché, spočítá dvě transformace poloviční délky a složí je, a tak dál až k délce 1.
+Vzorec ze sekce 1 je **diskrétní Fourierova transformace** (DFT): $N$ vzorků dá $N$ frekvencí. Spočítaná přímo potřebuje pro každou z $N$ frekvencí $N$ násobení, v jednom rozměru $N^2$ operací. Ve 2D má obrázek $N \times N$ pixelů: přímý vzorec sčítá pro každou z $N^2$ frekvencí všech $N^2$ pixelů, $N^4$ operací. Průchod po řádcích a pak po sloupcích, jako kernel výše, dá $N^3$. **FFT** je algoritmus, který dá přesně tentýž výsledek za $N \log_2 N$ operací: rozdělí vzorky na sudé a liché, spočítá dvě transformace poloviční délky a složí je, a tak dál až k délce 1. Po řádcích a sloupcích je to ve 2D $N^2 \log_2 N$.
 
 Buňka změří FFT v NumPy a oba průchody na GPU. Kernel by v hotovém filtru četl a zapisoval vrstvy na GPU, NumPy musí vrstvu nejdřív přečíst a výsledek zapsat zpátky. Proto buňka měří i čtení a zápis vrstvy, zvlášť.
 """)
@@ -1226,7 +1236,7 @@ doc.new_layer("Inverse filter", rgba(linear_to_srgb(divided))).show()
 """)
 
 md(r"""
-Vyšel šum. Uložení v osmi bitech zaokrouhlilo každý pixel až o 1/510, a to je šum na všech frekvencích stejně silný. U vysokých frekvencí je $H$ tak malé, že ve spektru rozmazané fotky zbyl skoro jen ten šum, a dělení ho zvětší tolikrát, kolikrát je $H$ menší než 1. **Wienerův filtr** dělí jen tam, kde je signál silnější než šum:
+Vyšel šum. Uložení v osmi bitech zaokrouhlilo každý pixel až o 1/510 v hodnotách sRGB, a to je šum na všech frekvencích stejně silný. U vysokých frekvencí je $H$ tak malé, že ve spektru rozmazané fotky zbyl skoro jen ten šum, a dělení ho zvětší tolikrát, kolikrát je $H$ menší než 1. **Wienerův filtr** dělí jen tam, kde je signál silnější než šum:
 
 $$\hat F = G \cdot \frac{\overline{H}}{|H|^2 + K}$$
 
