@@ -16,6 +16,9 @@ and GitHub Copilot all read this file.
   **🔑 Řešení** in the notebook. Point to those before writing your own.
 - Each notebook opens with a table of the functions it introduces, and lesson
   0 ends with a full overview of Sára's Python client.
+- The outputs saved in the notebooks come from the solved lessons, a preview
+  of how each cell should come out. A cell's output is the student's own only
+  after they run it.
 - Reply in the language the student writes in. The notebooks are in Czech, the
   code and its comments in English.
 - A **✅ Kontrola** cell compares the student's result with the expected one.
