@@ -672,7 +672,7 @@ NOISE_CAPTIONS = {
     "Perlinův": "Jedna oktáva, 8 × 8 buněk. Spektrum je prstenec kolem velikosti kopců, uvnitř slabší a "
                 "nad ním prudký pád: šum je hladký a nic většího než kopec v něm není. Kříž s pruhy "
                 "je čtvercová mřížka buněk, kterou šum skrývá jen zčásti.",
-    "Voroného": "Vzdálenost k nejbližšímu bodu, jeden bod v každé z 16 × 16 buněk. Zase prstenec u velikosti "
+    "Voroného": "Vzdálenost k nejbližšímu bodu, jeden bod v každé z 8 × 8 buněk. Zase prstenec u velikosti "
                 "buněk, nad ním ale pomalejší pokles než u Perlina, protože švy mezi buňkami jsou ostré.",
 }
 
@@ -701,7 +701,7 @@ def perlin(seed, n=256, cells=8):
     return top + sy * (bottom - top)
 
 
-def voronoi(seed, n=256, cells=16):
+def voronoi(seed, n=256, cells=8):
     """The distance to the nearest of the points, one in each cell, tiling."""
     points = np.random.default_rng(seed).uniform(0, 1, (cells, cells, 2))
     y, x = (np.indices((n, n)) + 0.5) * cells / n
@@ -738,14 +738,17 @@ def slope(f, a):
     return np.polyfit(np.log(f[keep]), np.log(a[keep]), 1)[0]
 
 
-def octaves_of(seed, octaves, gain):
-    """Perlin noise in octaves, as fBm in lesson 2: each one twice as fine and gain times as strong."""
-    return sum(gain ** i * perlin(100 * seed + i, cells=8 * 2 ** i) for i in range(octaves))
+OCTAVED = ("Perlinův", "Voroného")
 
 
-def perlin_caption(octaves, gain):
+def octaves_of(noise, seed, octaves, gain):
+    """noise in octaves, as fBm in lesson 2: each one twice as fine and gain times as strong."""
+    return sum(gain ** i * noise(100 * seed + i, cells=8 * 2 ** i) for i in range(octaves))
+
+
+def octaves_caption(kind, octaves, gain):
     if octaves == 1:
-        return NOISE_CAPTIONS["Perlinův"]
+        return NOISE_CAPTIONS[kind]
     word = "oktávy" if octaves < 5 else "oktáv"
     target = f"{np.log2(gain) - 1:.1f}".replace("-", "−")
     return (f"{octaves} {word} od 8 × 8 buněk, každá dvakrát jemnější, se silou {gain:g} té předchozí. Prstence se "
@@ -756,12 +759,12 @@ def perlin_caption(octaves, gain):
 def noises(kind, count, octaves, gain):
     pictures = []
     for seed in range(count):
-        g = octaves_of(seed, octaves, gain) if kind == "Perlinův" else NOISE_KINDS[kind](seed)
+        g = octaves_of(NOISE_KINDS[kind], seed, octaves, gain) if kind in OCTAVED else NOISE_KINDS[kind](seed)
         pictures.append(0.5 + 0.15 * (g - g.mean()) / g.std())
     amplitude = np.mean([np.abs(np.fft.fft2(f)) for f in pictures], axis=0)
     fig = Figure(figsize=(14, 4.4))
     axes = fig.subplots(1, 3, gridspec_kw={"width_ratios": [1, 1, 1.3]})
-    title = f"{kind} šum" + (f", {octaves} oktáv{'y' if octaves < 5 else ''}, gain {gain:g}" if kind == "Perlinův" and octaves > 1 else "")
+    title = f"{kind} šum" + (f", {octaves} oktáv{'y' if octaves < 5 else ''}, gain {gain:g}" if kind in OCTAVED and octaves > 1 else "")
     panel(axes[0], np.clip(pictures[0], 0, 1), title, vmin=0, vmax=1)
     panel(axes[1], log_magnitude(amplitude), f"log |F|, průměr přes {count}", vmin=0, vmax=1)
     f, a = radial(amplitude)
@@ -771,11 +774,11 @@ def noises(kind, count, octaves, gain):
     axes[2].set_xlabel("frekvence f, period na obrázek")
     axes[2].set_title("průměrná amplituda po kružnicích kolem středu", fontsize=10)
     axes[2].legend(fontsize=9)
-    return fig, perlin_caption(octaves, gain) if kind == "Perlinův" else NOISE_CAPTIONS[kind]
+    return fig, octaves_caption(kind, octaves, gain) if kind in OCTAVED else NOISE_CAPTIONS[kind]
 
 
 explore(noises, kind=("šum", list(NOISE_KINDS)), count=("průměr přes", Steps([1, 4, 16, 64])),
-        octaves=("oktávy Perlina", (1, 1, 5)), gain=("gain Perlina", Steps([0.5, 0.7, 1.0])))'''
+        octaves=("oktávy", (1, 1, 5)), gain=("gain", Steps([0.5, 0.7, 1.0])))'''
 
 PROPERTIES = '''\
 # Interactive picture: what a change of the picture does to the spectrum.
@@ -852,7 +855,20 @@ def zone_plate(n=512):
     return 0.5 + 0.5 * np.cos(np.pi * (x ** 2 + y ** 2) / n)     # frequency grows with the distance
 
 
-def sampling(frequency, factor):
+def screened_photo(n=512, pitch=4.2, angle=4):
+    """The photo taken through an insect screen: dark wires every pitch pixels, turned by angle degrees."""
+    y, x = np.indices((n, n)) + 0.5
+    a = np.radians(angle)
+    u = (x * np.cos(a) + y * np.sin(a)) / pitch
+    v = (-x * np.sin(a) + y * np.cos(a)) / pitch
+    wires = np.maximum(np.cos(np.pi * u) ** 16, np.cos(np.pi * v) ** 16)
+    return grey_of("imgs/4/astronaut.png", n) * (1 - 0.6 * wires)
+
+
+SAMPLED = {"fotka za síťkou": screened_photo(), "zónová deska": zone_plate()}
+
+
+def sampling(picture, frequency, factor):
     fig = Figure(figsize=(13, 7.6))
     grid = fig.add_gridspec(2, 3, height_ratios=[1, 1.5], hspace=0.35)
     ax = fig.add_subplot(grid[0, :])
@@ -866,13 +882,17 @@ def sampling(frequency, factor):
     ax.legend(loc="lower left", bbox_to_anchor=(0, 1.08), ncol=3, fontsize=9, frameon=False)
     ax.set_yticks([])
 
-    f = zone_plate()
+    f = SAMPLED[picture]
     n = len(f)
     fy, fx = np.fft.fftfreq(n)[:, None], np.fft.fftfreq(n)[None, :]
     sigma = factor / 2                                   # cuts what the smaller picture cannot hold
     soft = np.fft.ifft2(np.fft.fft2(f) * np.exp(-2 * np.pi ** 2 * sigma ** 2 * (fx ** 2 + fy ** 2))).real
     side = n // factor
-    panel(fig.add_subplot(grid[1, 0]), f, "zónová deska, 512 × 512", vmin=0, vmax=1)
+    if picture == "zónová deska":
+        panel(fig.add_subplot(grid[1, 0]), f, "zónová deska, 512 × 512", vmin=0, vmax=1)
+    else:
+        panel(fig.add_subplot(grid[1, 0]), f[:128, 200:328], "výřez fotky 512 × 512, pixel na pixel",
+              vmin=0, vmax=1, interpolation="nearest")
     panel(fig.add_subplot(grid[1, 1]), f[::factor, ::factor], f"každý {factor}. pixel, {side} × {side}",
           vmin=0, vmax=1, interpolation="nearest")
     panel(fig.add_subplot(grid[1, 2]), soft[::factor, ::factor], f"rozmazat, pak každý {factor}. pixel",
@@ -880,7 +900,8 @@ def sampling(frequency, factor):
     return fig
 
 
-explore(sampling, frequency=("frekvence", (5, 1, 20)), factor=("zmenšení", [4, 2, 8]))'''
+explore(sampling, picture=("obrázek", list(SAMPLED)), frequency=("frekvence", (5, 1, 20)),
+        factor=("zmenšení", [4, 2, 8]))'''
 
 FILTERS = '''\
 # Interactive picture: filters as masks on the spectrum.
@@ -1266,7 +1287,7 @@ md(r"""
 | hnědý šum | $1 / f$ | $-1$ | velké měkké skvrny, blíž fotce |
 | fotky v lekci | zhruba $1 / f^{1.5}$ | zhruba $-1.5$ | hvězda z předchozí části |
 | Perlinův šum, jedna oktáva | hrb u velikosti kopců, nad ním zhruba $1 / f^5$ | žádná přímka | hladké kopce jedné velikosti |
-| Perlinův šum, pět oktáv | $1 / f^{\,1 - \log_2 \text{gain}}$ | $\log_2(\text{gain}) - 1$ | kopce všech velikostí, jako terén |
+| Perlinův nebo Voroného šum, pět oktáv | $1 / f^{\,1 - \log_2 \text{gain}}$ | $\log_2(\text{gain}) - 1$ | kopce všech velikostí, jako terén |
 | Voroného šum | hrb u velikosti buněk, nad ním zhruba $1 / f^{2.5}$ | žádná přímka | buňky s ostrými švy |
 
 Perlinův a Voroného šum mají jinou povahu. Mají jednu velikost útvarů, kopců nebo buněk, a jejich spektrum je proto **prstenec**: slabé uvnitř, kde by byly útvary větší, a nad prstencem klesá. Perlinův šum je hladký a klesá prudce. Voroného šum má na švech mezi buňkami zlom, a zlom drží vysoké frekvence déle. Sklon v popisku grafu se u nich měří až nad hrbem.
@@ -1277,7 +1298,7 @@ code(NOISES, hidden=True)
 md(r"""
 Odtud je vidět i část E hvězdy. Šum snímače a zaokrouhlení do osmi bitů jsou skoro bílý šum, ve spektru rovné dno. Fotka k vysokým frekvencím slábne, a kde klesne pod to dno, zbyde ve spektru jen šum. Proto Wienerův filtr v sekci 6 frekvence pod úrovní šumu nezesiluje: z fotky v nich nic nezbylo.
 
-Násobení bílého šumu maskou $1 / f^\beta$ se říká **spektrální syntéza** a dělají se tak terény i mraky. Fraktální šum z lekce 2 dojde k podobnému výsledku jinou cestou. Sčítá oktávy, prstence šumu jedné velikosti, každou dvakrát jemnější a `gain`krát slabší, a prstence se poskládají vedle sebe do přímky. Vyzkoušejte to posuvníky `oktávy Perlina` a `gain Perlina` u Perlinova šumu.
+Násobení bílého šumu maskou $1 / f^\beta$ se říká **spektrální syntéza** a dělají se tak terény i mraky. Fraktální šum z lekce 2 dojde k podobnému výsledku jinou cestou. Sčítá oktávy, prstence šumu jedné velikosti, každou dvakrát jemnější a `gain`krát slabší, a prstence se poskládají vedle sebe do přímky. Vyzkoušejte to posuvníky `oktávy` a `gain` u Perlinova a Voroného šumu, na ostatní šumy nemají vliv.
 
 Sklon přímky ale není $\log_2 \text{gain}$, je o jedničku strmější. Každá další oktáva má prstenec dvakrát větší a dvakrát širší, se čtyřikrát víc koeficienty, a její energie se rozdělí mezi ně. Na jeden koeficient tak připadne amplituda ještě dvakrát menší a sklon je
 
@@ -1292,13 +1313,24 @@ md(r"""
 
 Obrázek je vzorkovaný: z plynulého světla zná jen hodnotu v každém pixelu. Vzorkování je násobení plynulého obrazu hřebenem bodů s roztečí $T$, jedním pixelem. Hřeben dá ve spektru zase hřeben, a násobení je ve spektru konvoluce. Konvoluce s hřebenem nakopíruje spektrum na každý jeho bod, takže se spektrum periodicky opakuje s roztečí vzorkovací frekvence. Jakmile signál obsahuje frekvence nad polovinou této rozteče, kopie se překryjí a vysoká frekvence se tváří jako nízká. Tomu se říká **aliasing**: moiré na proužkované košili v televizi, schody na šikmých hranách nebo kola auta ve filmu, která se točí pozpátku.
 
-**Nyquistova věta:** vzorků musí být víc než dvakrát tolik, kolik má signál period. Dvojka je právě ta polovina rozteče kopií. Obrázek o $N$ pixelech unese nejvýš $N / 2$ period, střídání černá, bílá, černá. Obrázek níže nahoře vzorkuje vlnu šestnácti vzorky. Posuvníkem `frekvence` přejděte přes 8 a sledujte, jakou vlnu vzorky ukazují. Dole je zónová deska a dva způsoby, jak ji zmenšit $k$-krát. Jak obrázky číst, je pod nimi.
+**Nyquistova věta:** vzorků musí být víc než dvakrát tolik, kolik má signál period. Dvojka je právě ta polovina rozteče kopií. Obrázek o $N$ pixelech unese nejvýš $N / 2$ period, střídání černá, bílá, černá. Obrázek níže nahoře vzorkuje vlnu šestnácti vzorky. Posuvníkem `frekvence` přejděte přes 8 a sledujte, jakou vlnu vzorky ukazují.
+
+Dole je fotka focená přes síťku proti hmyzu v okně a dva způsoby, jak ji zmenšit $k$-krát. Síťka je do fotky dokreslená: tmavé dráty každých 4.2 pixelu, pootočené o 4°. Vlevo je výřez původní fotky pixel na pixel, aby byla síťka vidět. Celá by se na obrazovce zmenšila a moiré by udělala už obrazovka.
 """)
 
 code(SAMPLING, hidden=True)
 
 md(r"""
-**Jak číst zónovou desku.** Deska je $\frac{1}{2} + \frac{1}{2}\cos(\pi r^2 / N)$, kruhy, které od středu houstnou: ve vzdálenosti $r$ pixelů od středu mají frekvenci $r / N$ period na pixel. Každé místo desky tak patří jedné frekvenci a deska je obrázek a zároveň mapa svého spektra. Uprostřed je frekvence 0, ve středu okraje, $r = N / 2$, Nyquistova mez, půl periody na pixel.
+**Jak číst fotku za síťkou.** Síťka má frekvenci $1 / 4.2 pprox 0.238$ periody na pixel, těsně pod Nyquistovou mezí 0.25 obrázku zmenšeného na polovinu.
+
+- **Každý $k$-tý pixel, $k = 4$.** Vzorkovací frekvence je $1 / 4 = 0.25$ a síťka je jen o kousek pod ní, takže vzorky trefují dráty skoro pokaždé ve stejné fázi, jako šestnáct vzorků vlny s patnácti periodami v grafu nahoře. Fáze se posouvá pomalu, o jednu periodu zhruba za 48 původních pixelů, a z toho jsou široké šikmé pruhy přes celou fotku. Šikmé jsou proto, že je síťka pootočená. To je **moiré**: rozdíl dvou blízkých frekvencí, síťky a vzorkování.
+- **$k = 8$.** Vzorkovací frekvence je 0.125 a síťka leží blízko jejího dvojnásobku, takže moiré vyjde podobné, jen hustší na malém obrázku. Rozpadá se i fotka sama: její jemné detaily jsou nad mezí 0.0625.
+- **$k = 2$.** Mez je 0.25 a síťka pod ní zůstane. Malý obrázek ji nese správně, jen ostré hrany drátů, vyšší harmonické síťky, se trochu přeloží.
+- **Vpravo**, napřed rozmazat, pak vzorkovat. Síťka se rozmaže do rovnoměrného ztmavení dřív, než se může přeložit, a fotka zůstane čistá.
+
+Totéž se stane při focení košile s jemným proužkem, monitoru nebo tištěného rastru. Zmenšení bez rozmazání v takové fotce vyrobí vzor, který ve skutečnosti není.
+
+**Jak číst zónovou desku**, druhou volbu v nabídce `obrázek`. Deska je $\frac{1}{2} + \frac{1}{2}\cos(\pi r^2 / N)$, kruhy, které od středu houstnou: ve vzdálenosti $r$ pixelů od středu mají frekvenci $r / N$ period na pixel. Každé místo desky tak patří jedné frekvenci a deska je obrázek a zároveň mapa svého spektra. Uprostřed je frekvence 0, ve středu okraje, $r = N / 2$, Nyquistova mez, půl periody na pixel.
 
 - **Vlevo**, celá deska 512 × 512. Kruhy jsou správně skoro až k okrajům. Jen u okrajů a v rozích jsou slabé falešné oblouky: frekvence tam mez dosáhne, v rozích ji přesáhne.
 - **Uprostřed**, každý $k$-tý pixel. Malý obrázek má mez $k$-krát nižší, $0.5 / k$ periody na původní pixel, a deska ji překročí už $N / (2k)$ pixelů od středu, pro $k = 4$ po 64 pixelech. Dál se kruhy přeloží na nízké frekvence. Kde frekvence desky dosáhne celé vzorkovací frekvence, $1 / k$, trefí vzorky vlnu pokaždé ve stejné fázi a vidí konstantu, stejně jako šestnáct vzorků vlny se šestnácti periodami v grafu nahoře, zkuste `frekvence` 16. Tam vznikne falešný střed s vlastními kruhy, každých $N / k$ původních pixelů, tedy $k$ středů na šířku obrázku, ty u okrajů useknuté. Jsou to kopie spektra ze začátku sekce, tady vidět přímo, protože poloha na desce je frekvence.
