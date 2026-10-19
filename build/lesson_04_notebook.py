@@ -669,7 +669,7 @@ NOISE_CAPTIONS = {
             "rovné je až v průměru.",
     "růžový": "Amplituda klesá jako 1/f<sup>0.5</sup>: hrubší zrno se slabými mráčky.",
     "hnědý": "Amplituda klesá jako 1/f: velké měkké skvrny. Blíž fotce, ale fotka klesá ještě rychleji.",
-    "Perlinův": "Jedna oktáva, 16 × 16 buněk. Spektrum je prstenec kolem velikosti kopců, uvnitř slabší a "
+    "Perlinův": "Jedna oktáva, 8 × 8 buněk. Spektrum je prstenec kolem velikosti kopců, uvnitř slabší a "
                 "nad ním prudký pád: šum je hladký a nic většího než kopec v něm není. Kříž s pruhy "
                 "je čtvercová mřížka buněk, kterou šum skrývá jen zčásti.",
     "Voroného": "Vzdálenost k nejbližšímu bodu, jeden bod v každé z 16 × 16 buněk. Zase prstenec u velikosti "
@@ -678,14 +678,14 @@ NOISE_CAPTIONS = {
 
 
 def coloured_noise(beta, seed, n=256):
-    \"\"\"White noise with its spectrum times 1/f^beta.\"\"\"
+    """White noise with its spectrum times 1/f^beta."""
     F = np.fft.fft2(np.random.default_rng(seed).standard_normal((n, n)))
     f = np.hypot(*np.meshgrid(np.fft.fftfreq(n) * n, np.fft.fftfreq(n) * n, indexing="ij"))
     return np.fft.ifft2(F / np.maximum(f, 1) ** beta).real
 
 
-def perlin(seed, n=256, cells=16):
-    \"\"\"One octave of Perlin noise: a random direction in each corner of a cell, tiling.\"\"\"
+def perlin(seed, n=256, cells=8):
+    """One octave of Perlin noise: a random direction in each corner of a cell, tiling."""
     angle = np.random.default_rng(seed).uniform(0, 2 * np.pi, (cells, cells))
     y, x = (np.indices((n, n)) + 0.5) * cells / n
     i, j = np.floor(x).astype(int), np.floor(y).astype(int)
@@ -702,7 +702,7 @@ def perlin(seed, n=256, cells=16):
 
 
 def voronoi(seed, n=256, cells=16):
-    \"\"\"The distance to the nearest of the points, one in each cell, tiling.\"\"\"
+    """The distance to the nearest of the points, one in each cell, tiling."""
     points = np.random.default_rng(seed).uniform(0, 1, (cells, cells, 2))
     y, x = (np.indices((n, n)) + 0.5) * cells / n
     i, j = np.floor(x).astype(int), np.floor(y).astype(int)
@@ -724,7 +724,7 @@ NOISE_KINDS = {
 
 
 def radial(F):
-    \"\"\"The mean |F| over each ring around zero frequency, and the rings' frequencies.\"\"\"
+    """The mean |F| over each ring around zero frequency, and the rings' frequencies."""
     n = len(F)
     fy, fx = np.meshgrid(np.fft.fftfreq(n) * n, np.fft.fftfreq(n) * n, indexing="ij")
     ring = np.hypot(fx, fy).round().astype(int).ravel()
@@ -733,20 +733,36 @@ def radial(F):
 
 
 def slope(f, a):
-    \"\"\"The slope of log a against log f above the strongest frequency, up to 100.\"\"\"
+    """The slope of log a against log f above the strongest frequency, up to 100."""
     keep = (f >= max(4, 2 * f[np.argmax(a)])) & (f <= 100)
     return np.polyfit(np.log(f[keep]), np.log(a[keep]), 1)[0]
 
 
-def noises(kind, count):
+def octaves_of(seed, octaves, gain):
+    """Perlin noise in octaves, as fBm in lesson 2: each one twice as fine and gain times as strong."""
+    return sum(gain ** i * perlin(100 * seed + i, cells=8 * 2 ** i) for i in range(octaves))
+
+
+def perlin_caption(octaves, gain):
+    if octaves == 1:
+        return NOISE_CAPTIONS["Perlinův"]
+    word = "oktávy" if octaves < 5 else "oktáv"
+    target = f"{np.log2(gain) - 1:.1f}".replace("-", "−")
+    return (f"{octaves} {word} od 8 × 8 buněk, každá dvakrát jemnější, se silou {gain:g} té předchozí. Prstence se "
+            f"poskládají vedle sebe a sklon se blíží log<sub>2</sub>(gain) − 1 = {target}. "
+            "Hnědý šum má −1, fotka asi −1.5.")
+
+
+def noises(kind, count, octaves, gain):
     pictures = []
     for seed in range(count):
-        g = NOISE_KINDS[kind](seed)
+        g = octaves_of(seed, octaves, gain) if kind == "Perlinův" else NOISE_KINDS[kind](seed)
         pictures.append(0.5 + 0.15 * (g - g.mean()) / g.std())
     amplitude = np.mean([np.abs(np.fft.fft2(f)) for f in pictures], axis=0)
     fig = Figure(figsize=(14, 4.4))
     axes = fig.subplots(1, 3, gridspec_kw={"width_ratios": [1, 1, 1.3]})
-    panel(axes[0], np.clip(pictures[0], 0, 1), f"{kind} šum", vmin=0, vmax=1)
+    title = f"{kind} šum" + (f", {octaves} oktáv{'y' if octaves < 5 else ''}, gain {gain:g}" if kind == "Perlinův" and octaves > 1 else "")
+    panel(axes[0], np.clip(pictures[0], 0, 1), title, vmin=0, vmax=1)
     panel(axes[1], log_magnitude(amplitude), f"log |F|, průměr přes {count}", vmin=0, vmax=1)
     f, a = radial(amplitude)
     photo_f, photo_a = radial(np.fft.fft2(PICTURES["fotka"]))
@@ -755,10 +771,11 @@ def noises(kind, count):
     axes[2].set_xlabel("frekvence f, period na obrázek")
     axes[2].set_title("průměrná amplituda po kružnicích kolem středu", fontsize=10)
     axes[2].legend(fontsize=9)
-    return fig, NOISE_CAPTIONS[kind]
+    return fig, perlin_caption(octaves, gain) if kind == "Perlinův" else NOISE_CAPTIONS[kind]
 
 
-explore(noises, kind=("šum", list(NOISE_KINDS)), count=("průměr přes", Steps([1, 4, 16, 64])))'''
+explore(noises, kind=("šum", list(NOISE_KINDS)), count=("průměr přes", Steps([1, 4, 16, 64])),
+        octaves=("oktávy Perlina", (1, 1, 5)), gain=("gain Perlina", Steps([0.5, 0.7, 1.0])))'''
 
 PROPERTIES = '''\
 # Interactive picture: what a change of the picture does to the spectrum.
@@ -1249,6 +1266,7 @@ md(r"""
 | hnědý šum | $1 / f$ | $-1$ | velké měkké skvrny, blíž fotce |
 | fotky v lekci | zhruba $1 / f^{1.5}$ | zhruba $-1.5$ | hvězda z předchozí části |
 | Perlinův šum, jedna oktáva | hrb u velikosti kopců, nad ním zhruba $1 / f^5$ | žádná přímka | hladké kopce jedné velikosti |
+| Perlinův šum, pět oktáv | $1 / f^{\,1 - \log_2 \text{gain}}$ | $\log_2(\text{gain}) - 1$ | kopce všech velikostí, jako terén |
 | Voroného šum | hrb u velikosti buněk, nad ním zhruba $1 / f^{2.5}$ | žádná přímka | buňky s ostrými švy |
 
 Perlinův a Voroného šum mají jinou povahu. Mají jednu velikost útvarů, kopců nebo buněk, a jejich spektrum je proto **prstenec**: slabé uvnitř, kde by byly útvary větší, a nad prstencem klesá. Perlinův šum je hladký a klesá prudce. Voroného šum má na švech mezi buňkami zlom, a zlom drží vysoké frekvence déle. Sklon v popisku grafu se u nich měří až nad hrbem.
@@ -1259,7 +1277,13 @@ code(NOISES, hidden=True)
 md(r"""
 Odtud je vidět i část E hvězdy. Šum snímače a zaokrouhlení do osmi bitů jsou skoro bílý šum, ve spektru rovné dno. Fotka k vysokým frekvencím slábne, a kde klesne pod to dno, zbyde ve spektru jen šum. Proto Wienerův filtr v sekci 6 frekvence pod úrovní šumu nezesiluje: z fotky v nich nic nezbylo.
 
-Násobení bílého šumu maskou $1 / f^\beta$ se říká **spektrální syntéza** a dělají se tak terény i mraky. Fraktální šum z lekce 2 dojde k podobnému výsledku jinou cestou. Sčítá oktávy, prstence šumu jedné velikosti, každou dvakrát jemnější a s `gain` 0.5 dvakrát slabší. Prstence se poskládají vedle sebe a jejich vrcholy klesají jako $1 / f$, jako u hnědého šumu.
+Násobení bílého šumu maskou $1 / f^\beta$ se říká **spektrální syntéza** a dělají se tak terény i mraky. Fraktální šum z lekce 2 dojde k podobnému výsledku jinou cestou. Sčítá oktávy, prstence šumu jedné velikosti, každou dvakrát jemnější a `gain`krát slabší, a prstence se poskládají vedle sebe do přímky. Vyzkoušejte to posuvníky `oktávy Perlina` a `gain Perlina` u Perlinova šumu.
+
+Sklon přímky ale není $\log_2 \text{gain}$, je o jedničku strmější. Každá další oktáva má prstenec dvakrát větší a dvakrát širší, se čtyřikrát víc koeficienty, a její energie se rozdělí mezi ně. Na jeden koeficient tak připadne amplituda ještě dvakrát menší a sklon je
+
+$$\log_2(\text{gain}) - 1$$
+
+S `gain` 0.5 z lekce 2 je to $-2$: terén je hladší než hnědý šum i než fotka. Hnědý šum, sklon $-1$, dá `gain` 1, všechny oktávy stejně silné. Sklon fotek, zhruba $-1.5$, dá `gain` asi 0.7.
 """)
 
 # --- 3. Sampling and aliasing ------------------------------------------------------
