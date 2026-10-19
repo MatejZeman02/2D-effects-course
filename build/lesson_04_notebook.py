@@ -520,9 +520,10 @@ BANDS = [("nízké", 0, 6, (0.30, 0.47, 0.66)), ("střední", 6, 24, (0.96, 0.52
          ("vysoké", 24, 1000, (0.33, 0.66, 0.31))]
 
 
-def compose(picture, count):
+def compose(picture, count, side):
     f = PICTURES[picture]
-    n = len(f)
+    n = int(side.split()[0])
+    f = f.reshape(n, len(f) // n, n, len(f) // n).mean(axis=(1, 3))     # each n x n block's mean
     F = np.fft.fft2(f)
     rows, cols = np.indices(F.shape)
     flat = (rows * n + cols).ravel()
@@ -545,24 +546,29 @@ def compose(picture, count):
         total += part
         used += len(strongest)
         shown[np.fft.fftshift(mask)] = colour
-        ys, xs = np.nonzero(np.fft.fftshift(mask))
-        axes[0].scatter(xs, ys, s=7, color=colour, linewidths=0)
+        if n > 64:                                         # a coefficient smaller than a screen pixel gets a dot
+            ys, xs = np.nonzero(np.fft.fftshift(mask))
+            axes[0].scatter(xs, ys, s=7, color=colour, linewidths=0)
         top = np.abs(part).max() or 1
         panel(axes[i + 1], part, f"{name}: {len(strongest)} z {len(band)} vln", vmin=-top, vmax=top)
         for side in "top", "bottom", "left", "right":
             axes[i + 1].spines[side].set(color=colour, linewidth=3)
-    panel(axes[0], shown, "střed spektra, vybrané vlny barevně")
-    axes[0].set_xlim(n // 2 - 64, n // 2 + 64)            # the middle quarter, where the chosen waves lie
-    axes[0].set_ylim(n // 2 + 64, n // 2 - 64)
+    if n > 64:
+        panel(axes[0], shown, "střed spektra, vybrané vlny barevně")
+        axes[0].set_xlim(n // 2 - 64, n // 2 + 64)        # the middle quarter, where the chosen waves lie
+        axes[0].set_ylim(n // 2 + 64, n // 2 - 64)
+    else:
+        panel(axes[0], shown, "spektrum, vybrané vlny barevně", interpolation="nearest")
     for _, _, high, colour in BANDS[:2]:                   # the bands' borders
         axes[0].add_patch(Circle((n // 2, n // 2), high, fill=False, color=colour, lw=1))
-    panel(axes[4], total, f"součet: {used} vln, {100 * used / len(one_of_pair):.2g} % ze všech", vmin=0, vmax=1)
-    panel(axes[5], f, "obrázek", vmin=0, vmax=1)
+    share = 100 * used / (len(one_of_pair) + 1)
+    panel(axes[4], total, f"součet: {used} vln, {share:.3g} % ze všech", vmin=0, vmax=1, interpolation="nearest")
+    panel(axes[5], f, f"obrázek {n} × {n}", vmin=0, vmax=1, interpolation="nearest")
     return fig
 
 
-explore(compose, count=("vln v pásmu", Steps([1, 2, 3, 5, 10, 20, 50, 100, 200, 500])),
-        picture=("obrázek", list(PICTURES)))'''
+explore(compose, count=("vln v pásmu", Steps([1, 2, 3, 5, 10, 20, 50, 100, 200, 500, 1000, 2000])),
+        picture=("obrázek", list(PICTURES)), side=("rozlišení", ["64 × 64", "256 × 256"]))'''
 
 SPECTRA = '''\
 # Interactive picture: pictures and their spectra.
@@ -863,12 +869,14 @@ md(r"""
 Každý obrázek se dá zapsat jako součet **vln**, obrázků s průběhem kosinu. Vlna má **frekvenci** $(u, v)$: na šířku obrázku se do ní vejde $u$ period a na výšku $v$ period. Kromě frekvence má **amplitudu**, jak je silná, a **fázi**, o kolik je posunutá. **Fourierova transformace** k obrázku najde právě ty vlny, ze kterých se skládá. Je to tatáž informace, jen jinak zapsaná: převod nic neztratí a zpětná transformace vrátí původní obrázek přesně.
 
 Obrázek níže skládá fotku z několika jejích vln. Vlny jsou rozdělené podle frekvence do tří pásem: **nízké** (modře, do 6 period na obrázek), **střední** (oranžově, do 24 period) a **vysoké** (zeleně). Z každého pásma se berou jen ty nejsilnější. Posuvník `vln v pásmu` začíná na jedné vlně z každého pásma. Posouvejte ho doprava a sledujte, co které pásmo do součtu přidá a kde jeho vlny leží ve spektru vlevo.
+
+Obrázek začíná v rozlišení 64 × 64. Spektrum má stejně koeficientů jako obrázek pixelů, takže je vidět celé a každá vlna v něm je jeden čtvereček. Vysoké vlny jsou pruhy široké pixel nebo dva, jemnější obrázek neunese. Na konci posuvníku jsou všechny vlny a součet je přesně původní obrázek, převod nic neztratil. V nabídce `rozlišení` je i 256 × 256, kde je vln šestnáctkrát víc a ve spektru je vidět jen jeho střed. První vybrané vlny bývají svislé nebo vodorovné pruhy. Patří ke kříži ve spektru, o kterém je otázka v sekci 2.
 """)
 
 code(COMPOSE, hidden=True)
 
 md(r"""
-Nízké vlny nesou velké plochy a celkový jas, střední tvary, vysoké hrany a detaily. S pěti sty vlnami ve středním a vysokém pásmu (nízké jich má jen 56), asi třemi procenty všech vln, je fotka čitelná. Podobný princip má ztrátová komprese: JPEG ukládá vysoké frekvence hruběji, protože je oko vidí nejméně (víc ve shrnutí, v části Co jsme vynechali).
+Nízké vlny nesou velké plochy a celkový jas, střední tvary, vysoké hrany a detaily. V rozlišení 256 × 256 je fotka čitelná s pěti sty vlnami ve středním a vysokém pásmu (nízké jich má jen 56), asi se třemi procenty všech vln. Podobný princip má ztrátová komprese: JPEG ukládá vysoké frekvence hruběji, protože je oko vidí nejméně (víc ve shrnutí, v části Co jsme vynechali).
 
 ### Jak transformace vlny najde
 
