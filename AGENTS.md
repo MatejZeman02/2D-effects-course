@@ -3,9 +3,8 @@
 This repository holds the notebooks and the Krita plugin template for the 2D
 part of the computer graphics course at FIT ČVUT. Whoever opened it is most
 likely a student working through the lessons. These instructions are for
-whichever coding assistant they use. Claude Code reads `CLAUDE.md` and Gemini
-CLI reads `GEMINI.md`, both of which import this file, and Codex, Cursor and
-GitHub Copilot read this file directly.
+whichever coding assistant they use. Claude Code, Gemini CLI, Codex, Cursor
+and GitHub Copilot all read this file.
 
 ## Help the student learn
 
