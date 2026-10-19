@@ -558,7 +558,7 @@ md(r"""
 
 <details><summary>🔑 Odpověď</summary>
 
-Poloměr vzrostl z 9 na 24. Jeden průchod čte $(2r + 1)^2$ sousedů, $49^2 / 19^2 \approx 6.7$krát víc, dva průchody $2(2r + 1)$, jen $98 / 38 \approx 2.6$krát víc. Naměřené poměry tomu odpovídají jen zhruba. U kernelu s málo sousedy tvoří většinu času režie, spuštění a zápis vrstvy, a GPU čte sousedy z rychlé vyrovnávací paměti (*cache*), takže čtení navíc stojí málo. Dva průchody navíc celou vrstvu `Blur X` jednou zapíšou a znovu přečtou. Při malém poloměru proto dva průchody nemusí vyhrát. Před dalšími kontrolami vraťte `sigma` ve všech třech kernelech na 3.
+Poloměr vzrostl z 9 na 24. Jeden průchod čte $(2r + 1)^2$ sousedů, $49^2 / 19^2$, asi 6.7krát víc, dva průchody $2(2r + 1)$, jen $98 / 38$, asi 2.6krát víc. Naměřené poměry tomu odpovídají jen zhruba. U kernelu s málo sousedy tvoří většinu času režie, spuštění a zápis vrstvy, a GPU čte sousedy z rychlé vyrovnávací paměti (*cache*), takže čtení navíc stojí málo. Dva průchody navíc celou vrstvu `Blur X` jednou zapíšou a znovu přečtou. Při malém poloměru proto dva průchody nemusí vyhrát. Před dalšími kontrolami vraťte `sigma` ve všech třech kernelech na 3.
 </details>
 """)
 
