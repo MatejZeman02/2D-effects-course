@@ -5,6 +5,7 @@ Run it after the builders, which write the notebooks empty, with Sara running:
 
     python build/fill_outputs.py          # every lesson
     python build/fill_outputs.py 4 5      # lessons 4 and 5
+    python build/fill_outputs.py 4b       # lesson 4's optional notebook
 
 It runs `lesson_NN_*_solution.ipynb` top to bottom in the course folder, then copies each cell's
 outputs into the same cell of `lesson_NN_*.ipynb`, whose task cells keep their stubs. A saved widget
@@ -15,6 +16,7 @@ A lesson with a failing cell is left as it was.
 import base64
 import io
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -93,9 +95,9 @@ def fill(lesson):
 
 
 def main():
-    wanted = {f"{int(n):02d}" for n in sys.argv[1:]}
+    wanted = {"{:02d}{}".format(int(m[1]), m[2]) for m in (re.fullmatch(r"(\d+)(\w*)", n) for n in sys.argv[1:])}
     lessons = sorted(p for p in COURSE.glob("lesson_*.ipynb")
-                     if not p.stem.endswith("_solution") and (not wanted or p.name[7:9] in wanted))
+                     if not p.stem.endswith("_solution") and (not wanted or p.name.split("_")[1] in wanted))
     for lesson in lessons:
         fill(lesson)
 

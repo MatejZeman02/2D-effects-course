@@ -1521,6 +1521,7 @@ md(r"""
 - **Rozšíření okrajů.** Konvoluci dokola zabrání rozšíření obrázku o odraz okrajů před transformací.
 - **FFT na GPU.** Cooleyho a Tukeyho algoritmus je na GPU $\log_2 N$ průchodů za sebou, jak to dělají knihovny VkFFT a cuFFT.
 - **Slepá dekonvoluce.** Tady jste věděli, jakým Gaussem byla fotka rozmazaná. U skutečné fotky rozmazané pohybem nebo špatným zaostřením tvar rozmazání neznáte a musí se odhadnout z fotky samotné.
+- **Komplexní obraz.** Nepovinný notebook `lesson_04b_complex_image.ipynb` dá komplexní číslo každému pixelu, barvě v OKLabu a gradientu. Násobení pak otáčí odstíny, a spektrum takového obrazu souměrné není.
 - **Fourierova transformace v kompresi.** JPEG rozloží každý blok 8 × 8 pixelů kosinovou transformací a vysoké frekvence uloží hrubě, protože je oko vidí nejméně.
 
 ### Bonusové úkoly

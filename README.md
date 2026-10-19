@@ -13,7 +13,7 @@ English.
 
 | Path | What it holds |
 |---|---|
-| `lesson_NN_*.ipynb` | the lessons, one notebook each |
+| `lesson_NN_*.ipynb` | the lessons, one notebook each, and `lesson_04b_complex_image.ipynb`, an optional notebook after lesson 4 |
 | `lib/` | the Python client for Sára (`sara.py`, `sara_notebook.py`, `sara_live.py`, `sara_params.py`) and the JupyterLab extension that highlights `%%gmacs` cells |
 | `imgs/<n>/` | the pictures and test images of lesson `n` |
 | `krita/` | the Krita plugin template `pga_filter`, its manual and its tests |
@@ -170,7 +170,8 @@ The unit tests run in plain Python with `python -m pytest krita/tests`.
 > the next build overwrites any edit made in the notebook itself. The build
 > writes the notebooks without outputs. With Sára running,
 > `python build/fill_outputs.py` then runs every solved lesson and copies its
-> outputs into the notebooks, `python build/fill_outputs.py 4` just lesson 4.
+> outputs into the notebooks, `python build/fill_outputs.py 4` just lesson 4
+> and `python build/fill_outputs.py 4b` its optional notebook.
 
 ## Licence
 
