@@ -978,6 +978,21 @@ md(r"""
 Transformace počítá s obrázkem, jako by se opakoval dokola jako dlaždice: za pravým okrajem pokračuje levý, pod dolním horní. Okraje fotky na sebe nenavazují, a kde se potkají, vznikne skok, svislá hrana po celé výšce a vodorovná po celé šířce. Ty dají ve spektru čáry kolmo na ně. Hannovo okno fotku k okrajům plynule ztlumí k nule, dlaždice pak na sebe navazují a skok zmizí.
 </details>
 
+### Rozsah a tvar spektra
+
+Obrázek o $W \times H$ pixelech má spektrum o $W \times H$ koeficientech: stejně čísel ve stejném obdélníku. Proto převod nic neztratí a nic nepřidá. Nejde ale o přiřazení jedna k jedné, koeficient na nějakém místě nepatří pixelu na stejném místě. Každý koeficient je součet přes všechny pixely a každý pixel je součet všech vln. Stejný je jen počet a tvar, informace je jen rozložená jinak.
+
+Které frekvence ve spektru jsou, určuje rozlišení:
+
+- **Nejnižší** nenulová frekvence je jedna perioda na celý obrázek, $u = 1$. Pomalejší vlna by na dlaždici nenavazovala a transformace ji složí z několika jiných, jako fotku s okraji, které na sebe nenavazují.
+- **Nejvyšší** je $W / 2$ period na šířku a $H / 2$ na výšku, sousední pixely střídavě tmavé a světlé. To je Nyquistova mez ze sekce 3. Indexy proto jdou od $-W / 2$ do $W / 2 - 1$ a od $-H / 2$ do $H / 2 - 1$, jemnější vlnu obrázek neunese.
+
+Pásma v sekci 1 a filtry v sekci 5 měří vzdálenost od středu, kruhem, ale spektrum je obdélník. Ani tím se nic neztratí. Kruh až po Nyquistovu mez se do spektra vejde celý, okraje se ho dotknou. Rohy za ním jsou šikmé vlny, které jsou ve vodorovném i svislém směru blízko meze, a jejich hustota pruhů je až $\sqrt{2}$krát vyšší. Jsou to nejjemnější šikmé detaily.
+
+U obdélníkového obrázku záleží na jednotkách. Index $u$ počítá periody na šířku, $v$ na výšku. Když je obrázek dvakrát širší než vysoký, leží stejná hustota pruhů vodorovně na dvakrát větším indexu než svisle a kruh stejné hustoty je v indexech elipsa. Přepočet na **periody na pixel**, $u / W$ a $v / H$, dělá `np.fft.fftfreq`. V těchto jednotkách jde každé spektrum od $-0.5$ do $0.5$ v obou směrech a kruh je kruh. Proto masky filtrů v této lekci počítají s `np.fft.fftfreq`, ne s indexy, a fungují na obrázku jakéhokoli tvaru. Obrázky v lekci jsou čtverce, tam oba zápisy splývají.
+
+@img(spectrum_shape.png, 900, Fotka 512 krát 256 pixelů, její spektrum jako obdélník 512 krát 256 koeficientů s elipsami stejné hustoty pruhů 0.25 a 0.5 periody na pixel, a totéž spektrum v periodách na pixel jako čtverec od minus 0.5 do 0.5, kde jsou elipsy kruhy)
+
 ### Vlastnosti
 
 | Vlastnost | Obrázek | Spektrum |

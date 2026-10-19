@@ -114,6 +114,47 @@ def dot_product():
     save(fig, "dot_product.png")
 
 
+def spectrum_shape():
+    """A wide photo, its spectrum as W x H indices and the same spectrum in periods per pixel."""
+    L = lightness(load("astronaut.png"))[N // 4:3 * N // 4]
+    h, w = L.shape
+    S = log_spectrum(L)
+    fig = plt.figure(figsize=(14, 3.9))
+    grid = fig.add_gridspec(1, 3, width_ratios=[2, 2, 1.15], wspace=0.25)
+    ax = fig.add_subplot(grid[0])
+    grey(ax, L)
+    ax.set_title(f"obrázek W × H = {w} × {h} pixelů", fontsize=11)
+    turn = np.linspace(0, 2 * np.pi, 200)
+    ax = fig.add_subplot(grid[1])
+    ax.imshow(S, cmap="gray", extent=(-w / 2 - 0.5, w / 2 - 0.5, h / 2 - 0.5, -h / 2 - 0.5))
+    for f, colour in ((0.25, ORANGE), (0.5, BLUE)):
+        ax.plot(f * w * np.cos(turn), f * h * np.sin(turn), color=colour, lw=1.5)
+    ax.text(0.25 * w * 0.72, -0.25 * h * 0.72, " 0.25", color=ORANGE, fontsize=10, va="bottom")
+    ax.text(0.5 * w * 0.72, -0.5 * h * 0.72, " 0.5", color=BLUE, fontsize=10, va="bottom")
+    ax.text(w / 2 - 4, h / 2 - 4, "roh: 0.71", color="white", fontsize=9, ha="right", va="bottom")
+    ax.set_xlim(-w / 2 - 0.5, w / 2 - 0.5)
+    ax.set_ylim(h / 2 - 0.5, -h / 2 - 0.5)
+    ax.set_xticks([-w // 2, 0, w // 2 - 1])
+    ax.set_yticks([-h // 2, 0, h // 2 - 1])
+    ax.set_xlabel("u, period na šířku", fontsize=10)
+    ax.set_ylabel("v, period na výšku", fontsize=10)
+    ax.set_title(f"spektrum, {w} × {h} koeficientů, indexy (u, v)", fontsize=11)
+    ax = fig.add_subplot(grid[2])
+    ax.imshow(S, cmap="gray", extent=(-0.5, 0.5, 0.5, -0.5), aspect="auto")
+    for f, colour in ((0.25, ORANGE), (0.5, BLUE)):
+        ax.plot(f * np.cos(turn), f * np.sin(turn), color=colour, lw=1.5)
+        ax.text(f * 0.72, -f * 0.72, f" {f}", color=colour, fontsize=10, va="bottom")
+    ax.set_aspect("equal")
+    ax.set_xlim(-0.5, 0.5)
+    ax.set_ylim(0.5, -0.5)
+    ax.set_xticks([-0.5, 0, 0.5])
+    ax.set_yticks([-0.5, 0, 0.5])
+    ax.set_xlabel("u / W, period na pixel", fontsize=10)
+    ax.set_ylabel("v / H, period na pixel", fontsize=10)
+    ax.set_title("totéž v periodách na pixel", fontsize=11)
+    save(fig, "spectrum_shape.png")
+
+
 def shift_layout():
     """fft2's order of the coefficients, zero frequency in the corner, and fftshift's, zero in the middle."""
     colours = {"A": "#c6dbef", "B": "#fdd0a2", "C": "#c7e9c0", "D": "#dadaeb"}
@@ -201,6 +242,7 @@ def wiener_curves():
 def main():
     Image.fromarray(blurred_photo(load("astronaut.png"))).save(OUT / "astronaut_blur.png", optimize=True)
     dot_product()
+    spectrum_shape()
     shift_layout()
     convolution()
     wiener_curves()
