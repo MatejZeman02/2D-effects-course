@@ -752,7 +752,7 @@ def sampling(frequency, factor):
     return fig
 
 
-explore(sampling, frequency=("frekvence", (5, 1, 15)), factor=("zmenšení", [4, 2, 8]))'''
+explore(sampling, frequency=("frekvence", (5, 1, 20)), factor=("zmenšení", [4, 2, 8]))'''
 
 FILTERS = '''\
 # Interactive picture: filters as masks on the spectrum.
@@ -1115,13 +1115,21 @@ md(r"""
 
 Obrázek je vzorkovaný: z plynulého světla zná jen hodnotu v každém pixelu. Vzorkování je násobení plynulého obrazu hřebenem bodů s roztečí $T$, jedním pixelem. Hřeben dá ve spektru zase hřeben, a násobení je ve spektru konvoluce. Konvoluce s hřebenem nakopíruje spektrum na každý jeho bod, takže se spektrum periodicky opakuje s roztečí vzorkovací frekvence. Jakmile signál obsahuje frekvence nad polovinou této rozteče, kopie se překryjí a vysoká frekvence se tváří jako nízká. Tomu se říká **aliasing**: moiré na proužkované košili v televizi, schody na šikmých hranách nebo kola auta ve filmu, která se točí pozpátku.
 
-**Nyquistova věta:** vzorků musí být víc než dvakrát tolik, kolik má signál period. Dvojka je právě ta polovina rozteče kopií. Obrázek o $N$ pixelech unese nejvýš $N / 2$ period, střídání černá, bílá, černá. Obrázek níže nahoře vzorkuje vlnu šestnácti vzorky. Posuvníkem `frekvence` přejděte přes 8 a sledujte, jakou vlnu vzorky ukazují. Dole je zónová deska, kruhy s frekvencí rostoucí od středu, zmenšená tak, že se bere každý $k$-tý pixel.
+**Nyquistova věta:** vzorků musí být víc než dvakrát tolik, kolik má signál period. Dvojka je právě ta polovina rozteče kopií. Obrázek o $N$ pixelech unese nejvýš $N / 2$ period, střídání černá, bílá, černá. Obrázek níže nahoře vzorkuje vlnu šestnácti vzorky. Posuvníkem `frekvence` přejděte přes 8 a sledujte, jakou vlnu vzorky ukazují. Dole je zónová deska a dva způsoby, jak ji zmenšit $k$krát. Jak obrázky číst, je pod nimi.
 """)
 
 code(SAMPLING, hidden=True)
 
 md(r"""
-Zmenšení výběrem pixelů vyrobí kruhy, které v původním obrázku nejsou: frekvence nad novou Nyquistovou mezí se přeloží na nízké. Obrana je jediná, odstranit před zmenšením frekvence, které menší obrázek neunese, tedy obrázek rozmazat. Proto dobré programy obrázek před zmenšením filtrují.
+**Jak číst zónovou desku.** Deska je $\frac{1}{2} + \frac{1}{2}\cos(\pi r^2 / N)$, kruhy, které od středu houstnou: ve vzdálenosti $r$ pixelů od středu mají frekvenci $r / N$ period na pixel. Každé místo desky tak patří jedné frekvenci a deska je obrázek a zároveň mapa svého spektra. Uprostřed je frekvence 0, ve středu okraje, $r = N / 2$, Nyquistova mez, půl periody na pixel.
+
+- **Vlevo**, celá deska 512 × 512. Kruhy jsou správně skoro až k okrajům. Jen u okrajů a v rozích jsou slabé falešné oblouky: frekvence tam mez dosáhne, v rozích ji přesáhne.
+- **Uprostřed**, každý $k$-tý pixel. Malý obrázek má mez $k$krát nižší, $0.5 / k$ periody na původní pixel, a deska ji překročí už $N / (2k)$ pixelů od středu, pro $k = 4$ po 64 pixelech. Dál se kruhy přeloží na nízké frekvence. Kde frekvence desky dosáhne celé vzorkovací frekvence, $1 / k$, trefí vzorky vlnu pokaždé ve stejné fázi a vidí konstantu, stejně jako šestnáct vzorků vlny se šestnácti periodami v grafu nahoře, zkuste `frekvence` 16. Tam vznikne falešný střed s vlastními kruhy, každých $N / k$ původních pixelů, tedy $k$ středů na šířku obrázku, ty u okrajů useknuté. Jsou to kopie spektra ze začátku sekce, tady vidět přímo, protože poloha na desce je frekvence.
+- **Vpravo**, napřed rozmazat Gaussem se $\sigma = k / 2$ pixelu, pak vzít každý $k$-tý pixel. Rozmazání ztlumí frekvence, které malý obrázek neunese, dřív, než se přeloží. Zbude střed desky a dál rovná šeď. Detail se ztratil, ale menší obrázek by ho stejně neunesl, a nic falešného nepřibylo. Slabé zbytky kruhů nahoře a dole jsou frekvence, které Gauss jen ztlumil: na nové mezi propustí ještě asi 30 %. Silnější rozmazání je odstraní, ale vezme i víc skutečného detailu.
+
+Posuvníkem `zmenšení` zkuste $k = 2$ a $k = 8$. Falešných středů je vždy $k$ na šířku a pravý obrázek si nechá tím menší kus středu, čím je $k$ větší.
+
+Obrana proti aliasingu je tedy jediná: před zmenšením odstranit frekvence, které menší obrázek neunese, tedy obrázek rozmazat. Proto dobré programy obrázek před zmenšením filtrují.
 
 Opačný směr, **rekonstrukce** plynulého obrazu ze vzorků, potřebuje každé zvětšení, otočení a zoom. Ideální rekonstrukce ořízne ze spektra jen prostřední kopii obdélníkovou maskou, a to je v obrázku konvoluce se sinc, s vlnkami kolem hran jako ideální maska v sekci 5. Interpolace proto sinc přibližují kratšími jádry: **nejbližší soused** je konvoluce s obdélníkem, **bilineární** interpolace s trojúhelníkem a **bikubická** s kubickým jádrem, které je sinc blíž. Lanczosovo jádro je useknutá sinc. Mezi těmito filtry volí nástroj transformace v Kritě.
 """)
