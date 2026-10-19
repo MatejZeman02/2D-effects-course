@@ -373,6 +373,19 @@ def signed_log(a):
     return s / max(np.abs(s).max(), 1e-9)
 
 
+# Magenta and green of equal luminance, 0.5 each in linear RGB, that mix to grey.
+MAGENTA = np.array([1.0, 0.301, 1.0])
+GREEN = np.array([0.0, 0.699, 0.0])
+
+
+def both_parts(F):
+    """Re F's share of the energy |F|^2 in magenta, Im F's in green, mixed, as bright as log |F|."""
+    F = np.fft.fftshift(F)
+    share = F.real ** 2 / np.maximum(np.abs(F) ** 2, 1e-30)
+    linear = np.fft.fftshift(log_magnitude(F))[..., None] * (share[..., None] * MAGENTA + (1 - share[..., None]) * GREEN)
+    return np.where(linear <= 0.0031308, 12.92 * linear, 1.055 * linear ** (1 / 2.4) - 0.055)
+
+
 def parts(name, shift):
     f = wave(name) if name in ("kosinusovka", "sinusovka") else PICTURES[name]
     f = np.roll(f, shift, axis=1)
@@ -380,18 +393,19 @@ def parts(name, shift):
     strong = np.fft.ifftshift(log_magnitude(F)) > 0.4
     views = [(signed_log(np.fft.fftshift(F.real)), "reálná část Re F", {"cmap": "RdBu_r", "vmin": -1, "vmax": 1}),
              (signed_log(np.fft.fftshift(F.imag)), "imaginární část Im F", {"cmap": "RdBu_r", "vmin": -1, "vmax": 1}),
+             (both_parts(F), "Re purpurově, Im zeleně, dohromady", {}),
              (log_magnitude(F), "amplituda log |F|", {"vmin": 0, "vmax": 1}),
              (phase_picture(np.angle(F), strong), "fáze arg F, kde je vlna silná", {})]
     zoom = name in ("kosinusovka", "sinusovka")
     middle = slice(128 - 8, 128 + 9) if zoom else slice(None)
-    fig = Figure(figsize=(17, 3.8))
-    axes = fig.subplots(1, 5)
+    fig = Figure(figsize=(12, 8))
+    axes = fig.subplots(2, 3).ravel()
     panel(axes[0], f, f"{name}, posun o {shift} px", vmin=0, vmax=1)
     for ax, (a, title, keys) in zip(axes[1:], views):
         panel(ax, a[middle, middle], title + (", střed" if zoom else ""), interpolation="nearest", **keys)
     import matplotlib
     turn = matplotlib.cm.ScalarMappable(matplotlib.colors.Normalize(-180, 180), "twilight")
-    fig.colorbar(turn, ax=axes[4], ticks=[-180, -90, 0, 90, 180], format="%d°", fraction=0.046, pad=0.04)
+    fig.colorbar(turn, ax=axes[5], ticks=[-180, -90, 0, 90, 180], format="%d°", fraction=0.046, pad=0.04)
     return fig
 
 
@@ -944,9 +958,10 @@ doc.new_layer("Spectrum", spectrum(np.fft.fft2(L))).show()
 """)
 
 md(r"""
-Spektrum je komplexní a kreslit se dá po částech. Obrázek níže ukazuje všechny čtyři vedle sebe:
+Spektrum je komplexní a kreslit se dá po částech. Obrázek níže ukazuje všechny vedle sebe:
 
 - **Reálná část** $\mathrm{Re}\,F$ je skalární součin obrázku s kosinem, **imaginární** $\mathrm{Im}\,F$ se sinem se znaménkem minus. Červená je kladná, modrá záporná, v logaritmu se znaménkem.
+- **Obě části dohromady:** jas je amplituda, odstín poměr obou částí. Purpurová je podíl reálné části na energii vlny, $\mathrm{Re}^2 / |F|^2$, zelená podíl imaginární, $\mathrm{Im}^2 / |F|^2$. Obě barvy jsou stejně světlé a smíchané napůl dají šedou. Purpurový bod je vlna typu kosinus, zelený typu sinus, šedý obojí stejně, tedy fáze 45°, 135° a tak dál. Znaménko se v barvě ztratí, to nese fáze.
 - **Amplituda** $|F| = \sqrt{\mathrm{Re}^2 + \mathrm{Im}^2}$ je délka šipky z obrázku se skalárním součinem, **fáze** $\arg F$ její úhel.
 
 Při posunu 0 má kosinusovka spektrum jen reálné a sinusovka kromě DC složky jen imaginární. DC složka je průměrný jas a je vždy reálná. Reálná část je souměrná podle středu, imaginární má na protějších bodech opačné znaménko. Posuvník `posun` posune obrázek doprava: reálná a imaginární část se přelévají jedna do druhé a fáze se mění, ale amplituda zůstane stejná. U fotky jsou reálná i imaginární část změť znamének a čitelná je jen amplituda. Proto se jako spektrum obvykle kreslí amplituda.
