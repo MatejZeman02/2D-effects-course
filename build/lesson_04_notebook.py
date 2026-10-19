@@ -1321,7 +1321,7 @@ Dole je fotka focená přes síťku proti hmyzu v okně a dva způsoby, jak ji z
 code(SAMPLING, hidden=True)
 
 md(r"""
-**Jak číst fotku za síťkou.** Síťka má frekvenci $1 / 4.2 pprox 0.238$ periody na pixel, těsně pod Nyquistovou mezí 0.25 obrázku zmenšeného na polovinu.
+**Jak číst fotku za síťkou.** Síťka má frekvenci $1 / 4.2 \approx 0.238$ periody na pixel, těsně pod Nyquistovou mezí 0.25 obrázku zmenšeného na polovinu.
 
 - **Každý $k$-tý pixel, $k = 4$.** Vzorkovací frekvence je $1 / 4 = 0.25$ a síťka je jen o kousek pod ní, takže vzorky trefují dráty skoro pokaždé ve stejné fázi, jako šestnáct vzorků vlny s patnácti periodami v grafu nahoře. Fáze se posouvá pomalu, o jednu periodu zhruba za 48 původních pixelů, a z toho jsou široké šikmé pruhy přes celou fotku. Šikmé jsou proto, že je síťka pootočená. To je **moiré**: rozdíl dvou blízkých frekvencí, síťky a vzorkování.
 - **$k = 8$.** Vzorkovací frekvence je 0.125 a síťka leží blízko jejího dvojnásobku, takže moiré vyjde podobné, jen hustší na malém obrázku. Rozpadá se i fotka sama: její jemné detaily jsou nad mezí 0.0625.

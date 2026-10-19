@@ -33,6 +33,8 @@ WIDGET = "application/vnd.jupyter.widget-view+json"
 STATE = "application/vnd.jupyter.widget-state+json"
 BOXES = {"VBoxModel", "HBoxModel", "BoxModel", "GridBoxModel"}
 LARGE = 200_000        # bytes of PNG past which a JPEG is tried, for photos
+# Put above each widget saved as a still, where its controls were, so nobody looks for them.
+STILL_NOTE = '<i style="opacity: 0.7">Uložený náhled. Posuvníky a nabídky se objeví, až buňku spustíte.</i>'
 
 
 def picture(png):
@@ -82,7 +84,10 @@ def fill(lesson):
         for output in done.outputs:
             data = output.get("data", {})
             if WIDGET in data:
-                outputs += still(data[WIDGET]["model_id"], models)
+                shown = still(data[WIDGET]["model_id"], models)
+                if shown and not any(o.get("data", {}).get("text/html") == STILL_NOTE for o in outputs):
+                    outputs.append(nbformat.v4.new_output("display_data", data={"text/html": STILL_NOTE}))
+                outputs += shown
             elif "image/png" in data:
                 outputs.append(picture(base64.b64decode(data["image/png"])))
             else:
