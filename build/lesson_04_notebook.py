@@ -55,7 +55,7 @@ const float TAU = 6.28318530718
 
 
 def pixel(ivec2 at) -> vec4:
-    float t = TAU * float(u * at.x + v * at.y) / 512.0 + radians(phase)
+    float t = TAU * (u * at.x + v * at.y) / 512.0 + radians(phase)
     return vec4(vec3(0.5 + 0.5 * cos(t)), 1.0)"""
 
 SHOWN = """\
@@ -79,23 +79,23 @@ const float TAU = 6.28318530718
 # of row y, the real part in red and the imaginary part in green.
 def pixel(ivec2 at) -> vec4:
     vec2 total = vec2(0.0)
-    for x in range(0, N):
+    for x in range(N):
         # whole turns dropped while still an int, so cos and sin get a small angle
-        float angle = -TAU * float((at.x * x) % N) / float(N)
-        total += src(ivec2(x, at.y)).r * vec2(cos(angle), sin(angle))
+        float angle = -TAU * ((at.x * x) % N) / N
+        total += src[ivec2(x, at.y)].r * vec2(cos(angle), sin(angle))
     return shown(total / float(N))"""
 
 COLUMNS_GIVEN = """\
 def pixel(ivec2 at) -> vec4:
     # TODO: the DFT of column at.x of the rows' DFT, whose values are complex
-    return shown(src(at).rb)"""
+    return shown(src[at].rb)"""
 
 SOLUTION_COLUMNS = """\
 def pixel(ivec2 at) -> vec4:
     vec2 total = vec2(0.0)
-    for y in range(0, N):
-        vec2 a = src(ivec2(at.x, y)).rb
-        float angle = -TAU * float((at.y * y) % N) / float(N)
+    for y in range(N):
+        vec2 a = src[ivec2(at.x, y)].rb
+        float angle = -TAU * ((at.y * y) % N) / N
         vec2 w = vec2(cos(angle), sin(angle))
         total += vec2(a.x * w.x - a.y * w.y, a.x * w.y + a.y * w.x)
     return shown(total / float(N))"""
@@ -130,7 +130,7 @@ def pixel(ivec2 at) -> vec4:
         for dx in range_inclusive(-r, r):
             float k = exp(-float(dx * dx + dy * dy) / (2.0 * sigma * sigma))
             ivec2 p = (at + ivec2(dx, dy) + N) % N
-            total += k * srgb_to_linear_srgb(src(p).rgb)
+            total += k * srgb_to_linear_srgb(src[p].rgb)
             weight += k
     return vec4(linear_srgb_to_srgb(total / weight), 1.0)"""
 
@@ -1382,7 +1382,7 @@ Nedokončený kernel výsledek prvního průchodu jen opíše, takže spektrum v
 <details><summary>💡 Nápověda</summary>
 
 1. Cyklus je stejný jako v prvním průchodu, jen jde přes `y` a frekvence je `at.y`.
-2. Hodnotu prvního průchodu přečte `src(ivec2(at.x, y)).rb`, reálnou část z červeného kanálu a imaginární z modrého.
+2. Hodnotu prvního průchodu přečte `src[ivec2(at.x, y)].rb`, reálnou část z červeného kanálu a imaginární z modrého.
 3. Vlnu si uložte do `vec2 w` a násobení podle vzorce napište po složkách: výsledek je `vec2(reálná část, imaginární část)`.
 </details>
 

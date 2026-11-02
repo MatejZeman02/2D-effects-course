@@ -56,7 +56,7 @@ uniform float s: hint_range(0, 2) = {STRETCH}
 
 
 def pixel(ivec2 at) -> vec4:
-    vec3 lab = linear_srgb_to_oklab(srgb_to_linear_srgb(src(at).rgb))
+    vec3 lab = linear_srgb_to_oklab(srgb_to_linear_srgb(src[at].rgb))
     vec2 z = lab.yz                  # the pixel's complex number, a in x and b in y
 {HUE_STUB}
     vec3 rgb = clamp(oklab_to_linear_srgb(lab), vec3(0.0), vec3(1.0))
