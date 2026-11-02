@@ -45,28 +45,28 @@ def code(text, hidden=False, solve=()):
 
 # --- The kernels ------------------------------------------------------------------
 BOX = """\
-%%gmacs "coffee" -> "Box blur" halo=32
-uniform int radius: hint_range(0, 32) = 4
+%%gmacs "coffee" -> "Box blur"
+uniform int radius: hint_range(0, 32), hint_reach(32) = 4
 
 
 def pixel(ivec2 at) -> vec4:
     vec4 total = vec4(0.0)
     for dy in range_inclusive(-radius, radius):
         for dx in range_inclusive(-radius, radius):
-            total += src(at + ivec2(dx, dy))
+            total += src[at + ivec2(dx, dy)]
     int side = 2 * radius + 1
-    return total / float(side * side)"""
+    return total / (side * side)"""
 
 CONV_STUB = """\
     # TODO: the 3 x 3 neighbours of at, each times its weight, summed
-    return src(at)"""
+    return src[at]"""
 
 SOLUTION_CONV = """\
     vec3 total = vec3(0.0)
-    for j in range(0, 3):
-        for i in range(0, 3):
-            total += weights[j * 3 + i] * src(at + ivec2(i - 1, j - 1)).rgb
-    return vec4(total, src(at).a)"""
+    for j in range(3):
+        for i in range(3):
+            total += weights[j * 3 + i] * src[at + ivec2(i - 1, j - 1)].rgb
+    return vec4(total, src[at].a)"""
 
 CONV = f"""\
 %%gmacs "coffee" -> "Convolution"
@@ -94,13 +94,13 @@ def pixel(ivec2 at) -> vec4:
     for dy in range_inclusive(-r, r):
         for dx in range_inclusive(-r, r):
             float k = exp(-float(dx * dx + dy * dy) / (2.0 * sigma * sigma))
-            total += k * srgb_to_linear_srgb(src(at + ivec2(dx, dy)).rgb)
+            total += k * srgb_to_linear_srgb(src[at + ivec2(dx, dy)].rgb)
             weight += k
     return vec4(linear_srgb_to_srgb(total / weight), 1.0)"""
 
 BLUR_X_STUB = """\
     # TODO: the Gaussian sum along the row, divided by the sum of the weights
-    return vec4(srgb_to_linear_srgb(src(at).rgb), 1.0)"""
+    return vec4(srgb_to_linear_srgb(src[at].rgb), 1.0)"""
 
 SOLUTION_BLUR_X = """\
     int r = int(ceil(3.0 * sigma))
@@ -108,7 +108,7 @@ SOLUTION_BLUR_X = """\
     float weight = 0.0
     for dx in range_inclusive(-r, r):
         float k = exp(-float(dx * dx) / (2.0 * sigma * sigma))
-        total += k * srgb_to_linear_srgb(src(at + ivec2(dx, 0)).rgb)
+        total += k * srgb_to_linear_srgb(src[at + ivec2(dx, 0)].rgb)
         weight += k
     return vec4(total / weight, 1.0)"""
 
@@ -139,7 +139,7 @@ def pixel(ivec2 at) -> vec4:
     float weight = 0.0
     for dy in range_inclusive(-r, r):
         float k = exp(-float(dy * dy) / (2.0 * sigma * sigma))
-        total += k * src(at + ivec2(0, dy)).rgb
+        total += k * src[at + ivec2(0, dy)].rgb
         weight += k
     return vec4(linear_srgb_to_srgb(total / weight), 1.0)"""
 
@@ -155,7 +155,7 @@ SOLUTION_FETCH = """\
         q = min(max(p, -1 - p), 2 * SIZE - 1 - p)
     else:
         q = p - SIZE * ivec2(floor(vec2(p) / vec2(SIZE)))
-    return src(q)"""
+    return src[q]"""
 
 SHIFT = (160, 96)             # the edge kernel's opening shift, dx and dy
 
@@ -173,7 +173,7 @@ def fetch(ivec2 p) -> vec4:
     if mode == 0:
         if p.x < 0 or p.y < 0 or p.x >= SIZE.x or p.y >= SIZE.y:
             return vec4(0.0, 0.0, 0.0, 1.0)
-        return src(p)
+        return src[p]
 {FETCH_STUB}
 
 
@@ -206,7 +206,7 @@ def blur_x_shared():
     int first = int(group_id.x) * GROUP - R_MAX
     for i in range(int(local_id.x), GROUP + 2 * R_MAX, GROUP):
         ivec2 p = clamp(ivec2(first + i, pixel.y), ivec2(0), size - 1)
-        row[i] = srgb_to_linear_srgb(image_load(src, p).rgb)
+        row[i] = srgb_to_linear_srgb(src[p].rgb)
     # Step 2: wait until every thread of the group has written its part.
     barrier()
     # Step 3: the Gaussian sum, read from shared memory.
@@ -217,7 +217,7 @@ def blur_x_shared():
         float k = exp(-float(dx * dx) / (2.0 * sigma * sigma))
         total += k * row[int(local_id.x) + R_MAX + dx]
         weight += k
-    image_store(dst, pixel, vec4(total / weight, 1.0))"""
+    dst[pixel] = vec4(total / weight, 1.0)"""
 
 SOBEL_STUB = """\
     # TODO: Sobel's two sums of light over the 3 x 3 neighbours, g.x across and g.y down
@@ -239,7 +239,7 @@ uniform bool direction = false
 
 
 def light(ivec2 p) -> float:
-    return linear_srgb_to_oklab(srgb_to_linear_srgb(src(p).rgb)).x
+    return linear_srgb_to_oklab(srgb_to_linear_srgb(src[p].rgb)).x
 
 
 def shade(vec2 g) -> vec3:
@@ -384,7 +384,9 @@ Funkce z úvodní lekce shrnuje její příloha. Sloupec Sekce říká, kde se f
 
 | Zápis | Co dělá | Sekce |
 |---|---|---|
-| `halo=32` na prvním řádku buňky | kernel smí číst až 32 pixelů za okrajem vrstvy | 1 |
+| `hint_reach(32)` na řádku posuvníku `int` | kernel smí číst až 32 pixelů za okrajem vrstvy a Sára čte jen tolik, kolik drží posuvník | 1 |
+| `halo=32` na prvním řádku buňky | totéž pevným číslem, pro kernel, jehož dosah nedrží jeden celočíselný posuvník | 2 |
+| `dst[pixel] = v` | zápis barvy do cílové vrstvy v celém kernelu, místo `image_store` | 4 |
 | `uniform float weights[9]` | matice 3 × 3 jako mřížka políček pod buňkou, čtená po řádcích | 1 |
 | `min`, `max`, `clamp` na `ivec2`, `floor` na `vec2` a převod `ivec2(...)` | po složkách | 3 |
 | `kernel`, `image`, `params:` | celý kernel místo funkce `pixel`, s obrázky a parametry | 4 |
@@ -419,7 +421,7 @@ $$g(x, y) = \sum_{j=-r}^{r} \sum_{i=-r}^{r} w(i, j)\, f(x + i, y + j)$$
 
 Přísně vzato konvoluce jádro otáčí o 180°, $f(x - i, y - j)$, a vzorec nahoře je korelace. Pro souměrná jádra, jako je rozmazání, vyjdou stejně.
 
-Nejjednodušší jádro má všechny váhy stejné, $1 / (2r + 1)^2$, a dá **průměr okolí** (*box blur*). Kernel níže čte okolí až 32 pixelů daleko. Slovo `halo=32` na prvním řádku buňky říká Sáře, kolik pixelů za okrajem vrstvy kernel čte. Bez něj čte jen 16 a dál dostane průhlednou černou.
+Nejjednodušší jádro má všechny váhy stejné, $1 / (2r + 1)^2$, a dá **průměr okolí** (*box blur*). Kernel níže čte okolí až 32 pixelů daleko. Řádek posuvníku `radius` nese `hint_reach(32)`, což říká Sáře, kolik pixelů za okrajem vrstvy kernel nejvýš čte. Sára pak přidá okraj podle toho, kde posuvník stojí, a při `radius` 4 čte jen 4 pixely za okraj. Bez `hint_reach` čte jen 16 a dál dostane průhlednou černou.
 """)
 
 code(BOX)
@@ -489,6 +491,8 @@ Průměr okolí dělá z jasných bodů hranaté skvrny, protože vzdálený sou
 $$w(i, j) = e^{-\frac{i^2 + j^2}{2\sigma^2}}$$
 
 Váha ve vzdálenosti $3\sigma$ je $e^{-4.5}$, asi setina té prostřední, a vzdálenější váhy kernel vynechá. Rozmazání míchá světlo, a proto počítá v lineárním RGB, jako míchání barev v lekci o barevných prostorech.
+
+Poloměr tu už není celočíselný posuvník, kernel ho počítá z `sigma`, a tak mu `hint_reach` dosah neřekne. Řekne ho první řádek buňky, `halo=32`: kernel čte nejvýš 32 pixelů za okrajem vrstvy.
 """)
 
 code(GAUSS_2D)
@@ -580,7 +584,7 @@ Sára sama čte za okrajem plátna nejbližší pixel, tedy Clamp, dokud nejde d
 
 ### 🎯 Úkol 3: pravidla okraje
 
-Doplňte do `fetch` pravidla Clamp, Mirror a Wrap. Každé z pozice `p` mimo plátno spočítá pozici `q` uvnitř a vrátí `src(q)`. Pravidlo Zero je hotové jako příklad. Výchozí pravidlo je Wrap, a nedokončený kernel je proto celý černý, dokud funkci nedopíšete. Zero uvidíte, když `mode` přepnete.
+Doplňte do `fetch` pravidla Clamp, Mirror a Wrap. Každé z pozice `p` mimo plátno spočítá pozici `q` uvnitř a vrátí `src[q]`. Pravidlo Zero je hotové jako příklad. Výchozí pravidlo je Wrap, a nedokončený kernel je proto celý černý, dokud funkci nedopíšete. Zero uvidíte, když `mode` přepnete.
 
 <details><summary>💡 Nápověda</summary>
 
