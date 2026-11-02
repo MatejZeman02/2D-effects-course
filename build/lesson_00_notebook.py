@@ -66,7 +66,7 @@ md(r"""
 
 | Co | Kde |
 |---|---|
-| Sára | rozbalený zip z kurzu (Windows nebo Linux) |
+| Sára | zip z kurzu (Windows nebo Linux), rozbalený do složky `Sara` vedle notebooků |
 | Python, JupyterLab, NumPy, ipywidgets, Matplotlib a zvýraznění syntaxe gmacs | `pip install -r requirements.txt` ve složce s notebookem, před spuštěním JupyterLab |
 | Krita 6 | [krita.org](https://krita.org/) |
 | plugin `pga_filter` | `pga_filter-windows.zip` nebo `pga_filter-linux.zip` ze stránky [Releases](https://github.com/MatejZeman02/2D-effects-course/releases/latest) tohoto repozitáře |
@@ -118,13 +118,19 @@ Přehled toho, co lekce používá, s odkazem na sekci, kde se funkce objeví po
 | `np.where(podmínka, a, b)` | po prvcích vybere `a`, kde podmínka platí, jinak `b` | 7 |
 | `rgb @ M.T` | vynásobí maticí $M$ barvu každého pixelu | 7 |
 | `np.cbrt(x)` | třetí odmocnina po prvcích, i ze záporných čísel | 7 |
+
+**Numba, volitelně**
+
+| Volání | Co dělá | Sekce |
+|---|---|---|
+| `njit(funkce)` | přeloží funkci v Pythonu do strojového kódu, první volání ji teprve překládá | 3 |
 """)
 
 # --- 1. Sara ------------------------------------------------------------------
 md(r"""
 ## 1. Spuštění Sáry a připojení
 
-Notebook se Sárou komunikuje přes místní spojení (*agent door*). Ve výchozím stavu je vypnuté, Sáru proto spusťte jedním z těchto způsobů:
+Notebook se Sárou komunikuje přes místní spojení (*agent door*). Ve výchozím stavu je vypnuté. Nejpohodlnější je nechat ji spustit notebook, návod je hned pod tabulkou. Jinak ji spusťte jedním z těchto způsobů:
 
 | Systém | Spuštění |
 |---|---|
@@ -133,6 +139,40 @@ Notebook se Sárou komunikuje přes místní spojení (*agent door*). Ve výchoz
 | Sára už běží | v menu **Modules › Local Server** zaškrtněte spojení |
 
 Na Linuxu s X11 místo Waylandu vynechte `--display-driver wayland`. Bez něj Sára na Waylandu běží přes XWayland, nezjistí měřítko obrazovky a velikost rozhraní jen odhadne.
+
+### Notebook spustí Sáru sám
+
+Když `sara.init()` žádnou běžící Sáru nenajde, spustí ji sám se zapnutým spojením. Hledá ji na dvou místech:
+
+1. **Program `sara` v systémové proměnné `PATH`**, návod je níže. Hodí se, když Sáru používáte i mimo kurz.
+2. **Složka vedle notebooků, jejíž jméno začíná na `Sara`.** Rozbalte zip Sáry přímo do naklonovaného repozitáře, do složky `Sara`, nebo nechte složku, kterou vytvoří rozbalení zipu. Sára tam může ležet přímo, nebo o jednu složku hlouběji. Git takovou složku ignoruje, do vašeho repozitáře se nedostane. Nic dalšího nastavovat nemusíte.
+
+Když jich najde víc, spustí tu nejnovější. Na Linuxu musí mít `sara.x86_64` právo ke spuštění, které některé rozbalovací programy zahodí. Vrátí ho `chmod +x Sara/sara.x86_64`.
+
+<details><summary>Sára v <code>PATH</code></summary>
+
+**Windows.** Rozbalte zip Sáry do stálé složky, třeba `Sara` ve vaší domovské složce, ať v ní leží `sara.exe`. V PowerShellu pak tuto složku přidejte do `PATH` svého účtu:
+
+```powershell
+[Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";$HOME\Sara", "User")
+```
+
+Stejně to jde v okně **Proměnné prostředí** (najde ho hledání ve Start menu), řádek `Path` v horní části pro váš účet.
+
+**Linux.** Rozbalte zip do `~/sara`, ať v ní leží `sara.x86_64`, a ve složce `~/.local/bin` vytvořte krátký spouštěč `sara`:
+
+```bash
+mkdir -p ~/.local/bin
+printf '#!/bin/sh\nexec "$HOME/sara/sara.x86_64" --display-driver wayland "$@"\n' > ~/.local/bin/sara
+chmod +x ~/.local/bin/sara
+```
+
+Na X11 v něm vynechte `--display-driver wayland`. Ubuntu i Fedora mají `~/.local/bin` v `PATH` samy, Ubuntu po novém přihlášení, pokud složka předtím neexistovala.
+
+Na obou systémech pak zavřete a znovu otevřete JupyterLab nebo VS Code, i terminál, ze kterého jste je spustili, ať novou `PATH` vidí. Ověříte to v novém terminálu příkazem `where.exe sara` na Windows nebo `which sara` na Linuxu, který vypíše cestu k Sáře.
+</details>
+
+Když Sára neběží, první buňka níže ji otevře a vypíše `Starting Sara with its door…`. Když už běží bez spojení, notebook druhou nespustí, spojení pak zapněte v menu **Modules › Local Server**.
 
 Spusťte buňku níže. `sara.init()` se připojí k Sáře, otevře v ní nový dokument v sRGB ve výchozí velikosti (1920 × 1080), zaregistruje příkaz `%%gmacs` (sekce 4) a vrátí tři hodnoty: dokument `doc`, vrstvu vybranou v Sáře `layer` a její obsah jako pole čísel `pixels`.
 
@@ -345,7 +385,44 @@ print(f"about {whole / t_numpy:.0f} times faster than the loop")
 """)
 
 md(r"""
-NumPy je rychlejší, protože cyklus přes pixely běží v předkompilovaném kódu v C. Inverze se do 33 ms nejspíš vejde. Efekt, který pro každý pixel čte desítky sousedů, bude ale úměrně pomalejší.
+### Numba: stejný cyklus, přeložený
+
+Knihovna Numba přeloží funkci v Pythonu do strojového kódu. Stačí ji obalit funkcí `njit` a cyklus z `invert_loop` poběží bez přepisu do výrazů NumPy. Numba není v `requirements.txt` a Krita ji nemá, ve filtru pro Kritu ji proto nepoužijete. Kdo ji chce vyzkoušet, nainstaluje ji v aktivním prostředí příkazem `pip install numba`. Bez ní buňka čas jen odhadne podle měření na autorově počítači.
+""")
+
+code("""
+try:
+    from numba import njit
+except ImportError:
+    njit = None
+
+if njit is not None:
+    invert_numba = njit(invert_loop)     # the same loop, compiled to machine code
+
+    start = time.perf_counter()
+    invert_numba(pixels)                 # the first call compiles the function
+    t_compile = time.perf_counter() - start
+
+    times = []
+    for _ in range(5):
+        start = time.perf_counter()
+        invert_numba(pixels)
+        times.append(time.perf_counter() - start)
+    t_numba = min(times)
+    print(f"Numba, first call with compiling: {t_compile * 1000:.0f} ms")
+    print(f"Numba, whole canvas: {t_numba * 1000:.1f} ms")
+else:
+    t_numba = t_numpy / 3.4              # Numba 0.68 was 3.4 times faster than NumPy on an i7-10700K
+    print("Numba is not installed, so this is an estimate.")
+    print(f"Numba, whole canvas: about {t_numba * 1000:.1f} ms")
+print(f"NumPy, whole canvas: {t_numpy * 1000:.1f} ms")
+""")
+
+md(r"""
+> **ℹ️ Poznámka**
+> První volání trvá déle, Numba v něm funkci teprve překládá. Inverze skoro nic nepočítá, jen čte a zapisuje paměť. NumPy si navíc vytvoří dočasné pole `1.0 - img[..., :3]` velikosti celého obrázku, a proto je přeložený cyklus rychlejší. Víc jader (`njit(parallel=True)`) tu skoro nepomůže, procesor čeká na paměť.
+
+NumPy i Numba jsou rychlejší než cyklus v Pythonu, protože pixely prochází předkompilovaný strojový kód. Inverze se do 33 ms nejspíš vejde. Efekt, který pro každý pixel čte desítky sousedů, bude ale úměrně pomalejší.
 
 Grafická karta dá každému pixelu vlastní vlákno (*thread*) a tisíce vláken běží současně. Spouštějí se po skupinách (*workgroups*), v Sáře po 8 × 8 = 64 vláknech, takže se plátno rozdělí na dlaždice 8 × 8:
 
