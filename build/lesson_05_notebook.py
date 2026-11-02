@@ -57,7 +57,7 @@ uniform float k: hint_range(1.1, 3) = {K}
 
 
 def light(ivec2 p) -> float:
-    return linear_srgb_to_oklab(srgb_to_linear_srgb(src(p).rgb)).x
+    return linear_srgb_to_oklab(srgb_to_linear_srgb(src[p].rgb)).x
 
 
 # Two Gaussian blurs of the lightness at once: sigma into red, k sigma into
@@ -70,7 +70,7 @@ def pixel(ivec2 at) -> vec4:
     vec2 weight = vec2(0.0)
     for dy in range_inclusive(-r2, r2):
         for dx in range_inclusive(-r2, r2):
-            float d2 = float(dx * dx + dy * dy)
+            float d2 = dx * dx + dy * dy
             vec2 w = exp(-d2 / (2.0 * vec2(sigma * sigma, wide * wide)))
             if abs(dx) > r1 or abs(dy) > r1:
                 w.x = 0.0
@@ -93,7 +93,7 @@ uniform float gain: hint_range(1, 50) = 10.0
 
 
 def pixel(ivec2 at) -> vec4:
-    vec4 b = src(at)
+    vec4 b = src[at]
 {DOG_STUB}"""
 
 XDOG_STUB = """\
@@ -115,14 +115,14 @@ uniform float phi: hint_range(0, 100) = {PHI}
 
 
 def pixel(ivec2 at) -> vec4:
-    vec4 b = src(at)
+    vec4 b = src[at]
 {XDOG_STUB}"""
 
 TOON_STUB = """\
     # TODO: the lightness rounded to levels steps, then all of lab darkened by the ink"""
 
 SOLUTION_TOON = """\
-    float n = float(levels - 1)
+    float n = levels - 1
     lab.x = floor(clamp(lab.x, 0.0, 1.0) * n + 0.5) / n
     lab *= ink"""
 
@@ -141,17 +141,16 @@ params:
     int levels: hint_range(2, 12)
 
 
-@workgroup_size(8, 8)
 def toon():
-    vec3 lab = linear_srgb_to_oklab(srgb_to_linear_srgb(image_load(src, pixel).rgb))
-    float ink = image_load(lines, pixel).r
+    vec3 lab = linear_srgb_to_oklab(srgb_to_linear_srgb(src[pixel].rgb))
+    float ink = lines[pixel].r
 {TOON_STUB}
     vec3 rgb = clamp(oklab_to_linear_srgb(lab), vec3(0.0), vec3(1.0))
-    image_store(dst, pixel, vec4(linear_srgb_to_srgb(rgb), 1.0))"""
+    dst[pixel] = vec4(linear_srgb_to_srgb(rgb), 1.0)"""
 
 QUADRANT_STUB = """\
     # TODO: the mean colour of the (radius + 1)^2 pixels, and the variance of their luminance
-    return vec4(srgb_to_linear_srgb(src(at).rgb), 1.0)"""
+    return vec4(srgb_to_linear_srgb(src[at].rgb), 1.0)"""
 
 SOLUTION_QUADRANT = """\
     vec3 total = vec3(0.0)
@@ -159,12 +158,12 @@ SOLUTION_QUADRANT = """\
     float s2 = 0.0
     for dy in range_inclusive(0, radius):
         for dx in range_inclusive(0, radius):
-            vec3 c = srgb_to_linear_srgb(src(at + towards * ivec2(dx, dy)).rgb)
+            vec3 c = srgb_to_linear_srgb(src[at + towards * ivec2(dx, dy)].rgb)
             float l = dot(c, vec3(0.2126, 0.7152, 0.0722))
             total += c
             s1 += l
             s2 += l * l
-    float n = float((radius + 1) * (radius + 1))
+    float n = (radius + 1) * (radius + 1)
     return vec4(total / n, s2 / n - (s1 / n) * (s1 / n))"""
 
 KUWAHARA = f"""\
