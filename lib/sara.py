@@ -14,11 +14,13 @@
     layer.show(max_size=None)          # the same at full size
     sara.bench(doc.layer("cells"))     # the GPU time and round trip of the kernel that wrote it
     sara.live(apply, PARAMS)           # a NumPy function with sliders, see sara_live.py
+    doc.documents()                    # every painting open in Sara, the front one marked
+    doc.front("study.sad")             # brings that one forward, see sara_documents.py
     doc.layers()                       # the stack bottom first, a dict a layer
     copy = layer.duplicate()           # the copy is a Layer and is selected, duplicate("Ink blurred") names it
     copy.opacity = 0.5                 # copy.visible too, both leave the selection alone
     copy.delete()                      # one undo step, and layer.select() picks a layer
-    sara.check(layer, mine)            # how far the layer is from an array, printed and answered
+    sara.check(layer, mine)            # how far the layer is from an array, printed, see sara_measure.py
 
 One file, the standard library and NumPy, so it is copied into a student's own
 folder rather than installed. It speaks the door's HTTP itself, on one
@@ -41,19 +43,22 @@ import os
 import selectors
 import shutil
 import socket
-import statistics
 import struct
 import subprocess
 import sys
 import tempfile
 import threading
 import time
+import weakref
 import zlib
 from http.client import HTTPConnection, HTTPException
 from pathlib import Path
-from typing import Callable, NamedTuple
+from typing import TYPE_CHECKING, Callable
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from sara_measure import Difference, Timing
 
 # The way in this Python has: a Windows CPython has no `AF_UNIX`.
 TRANSPORT = "unix" if hasattr(socket, "AF_UNIX") else "tcp"
@@ -80,6 +85,10 @@ RED, PLAIN = "\x1b[0;31m", "\x1b[0m"
 STARTED: list[subprocess.Popen] = []
 # The document `init()` answered, which `layer_of` falls back to until it closes.
 _held: Document | None = None
+# The Door of each known file this process has connected to, so a second `init` or `connect` shares the
+# connection of the first, the door serving one client and a second connection of this process being
+# refused as another notebook's. Weak, so a door nothing holds any more closes and frees the Sara.
+_doors: weakref.WeakValueDictionary[str, Door] = weakref.WeakValueDictionary()
 
 
 class SaraError(RuntimeError):
@@ -88,6 +97,18 @@ class SaraError(RuntimeError):
     def __init__(self, message: str = "", said: dict | None = None) -> None:
         super().__init__(message)
         self.said = said
+
+
+class DoorBusyError(SaraError):
+    """Another process holds the door, which serves one client."""
+
+
+class SaraRestartedError(SaraError):
+    """The Sara behind the known file is not the one this door was attached to, so the document it
+    made is gone and a call would land in another Sara's default document."""
+
+    def __init__(self) -> None:
+        super().__init__("Sara was restarted since this document was opened, so its connection is not to be trusted. Run sara.init() again to open a new document.")
 
 
 class NoDoorError(SaraError):
@@ -125,17 +146,40 @@ def door_file(platform: str | None = None) -> Path:
     return base / "app_userdata" / "Sara" / DOOR_FILE_NAME
 
 
+def log_file(door_path: str | Path | None = None, platform: str | None = None) -> Path:
+    """The known run log file, `user://logs/godot.log` or `<settings-dir>/data/logs/godot.log`."""
+    return (Path(door_path) if door_path is not None else door_file(platform)).parent / "logs" / "godot.log"
+
+
 def connect(path: str | Path | None = None, *, start: bool = True) -> Document:
     """The document of the Sara whose door the known file, or *path*, names. With no door to reach,
     the Sara on the `PATH` is started with its door when no Sara runs and *start* is left on."""
     known = Path(path) if path is not None else door_file()
     try:
-        return Document(Door(known))
+        return Document(_door_for(known))
     except NoDoorError as error:
         if not start:
             raise
         found = error
     return Document(_start(known, found))
+
+
+def _door_for(known: Path) -> Door:
+    """The Door this process holds to the Sara *known* names, made when it holds none, attached again
+    when Sara closed it meanwhile. Documents share it, so a later `init` locks nothing out."""
+    key = str(known.expanduser().resolve())
+    door = _doors.get(key)
+    if door is None:
+        door = Door(known)
+        _doors[key] = door
+    else:
+        try:
+            door.ensure()
+        except SaraRestartedError:
+            # A Sara opened since, which is what a new `init` or `connect` is asked to reach.
+            door = Door(known)
+            _doors[key] = door
+    return door
 
 
 def _start(known: Path, found: NoDoorError) -> Door:
@@ -152,7 +196,7 @@ def _start(known: Path, found: NoDoorError) -> Door:
     deadline = time.monotonic() + START_BOUND_S
     while True:
         try:
-            return Door(known)
+            return _door_for(known)
         except SaraError:
             # A file from the last run names a dead door, and a file being written may not parse yet.
             pass
@@ -217,8 +261,11 @@ def init(
 ) -> tuple[Document, Layer, np.ndarray]:
     """What a lesson opens with: connect, and answer the document, the layer selected in Sara and
     its pixels, the whole canvas as `(h, w, 4)`. Inside IPython `%%gmacs` is registered on that document.
-    The document is a new sRGB one at the size File > New offers, which **replaces the one open in
-    Sara**, so `layer.read()` hands back the numbers a picture holds and not Sara's own Oklab ones.
+    The document is a new sRGB one at the size File > New offers, which replaces the one open in Sara,
+    the tab in front, so `layer.read()` hands back the numbers a picture holds and not Sara's own Oklab ones.
+    Every other painting open in a tab of its own is left exactly as it stands, name, pixels, history and
+    all, and `documents()` lists them, so a second `init()` costs the painter the tab they were on and
+    nothing else.
     `width=512, height=512` sizes it instead, both or neither, named so that NumPy's `(h, w)` order
     is never confused with a picture's width by height.
     `attach=True` keeps the document already open and answers its selected layer instead.
@@ -368,6 +415,8 @@ class Door:
         self.path = path
         self._next_id = 0
         self.conn: HTTPConnection | None = None
+        # The token of the Sara this door first attached to, which a Sara opened since does not carry.
+        self._minted: str | None = None
         # A slider's debounce sends from a timer thread, and the release runs on one of its own.
         self._lock = threading.RLock()
         self._release: threading.Timer | None = None
@@ -390,12 +439,13 @@ class Door:
 
     def _attach(self) -> None:
         """Connects and attaches, trying again while another client holds Sara, as one that went idle
-        lets go within `RELEASE_S`, and raising `HELD` when it is still held past `HELD_WAIT_S`."""
+        lets go within `RELEASE_S`, and raising `HELD`, or the door's own 409 sentence, when it is still
+        held past `HELD_WAIT_S`."""
         deadline = time.monotonic() + HELD_WAIT_S
         while True:
             try:
                 return self._attach_once()
-            except _HeldError:
+            except (_HeldError, DoorBusyError):
                 if time.monotonic() > deadline:
                     raise
                 time.sleep(0.25)
@@ -410,7 +460,10 @@ class Door:
             written = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError) as error:
             raise SaraError(f"{path} does not say where Sara listens ({error})") from error
-        self.token = str(written.get("token") or "")
+        token = str(written.get("token") or "")
+        if self._minted is not None and token and token != self._minted:
+            raise SaraRestartedError()
+        self.token = token
         unix = TRANSPORT == "unix" and bool(written.get("socket"))
         if not self.token or not (unix or written.get("port")):
             raise SaraError(f"{path} names no way in this Python can use ({TRANSPORT})")
@@ -430,15 +483,22 @@ class Door:
                 self._hang_up()
                 raise _HeldError(HELD) from error.__cause__
             raise
+        self._minted = self.token
+
+    def ensure(self) -> None:
+        """Attaches again when the connection was closed, by `close` or by Sara, and leaves a live one."""
+        with self._lock:
+            if self.conn is None or self._closed():
+                self._attach()
 
     def send(self, step: dict) -> dict:
         """Sends *step* and answers the app's reply, raising on a refusal."""
         return self.batch([step])[0]
 
     def batch(self, steps: list[dict]) -> list[dict]:
-        """Sends *steps* as one request and answers their replies in order, raising on a refusal. A
-        connection Sara closed meanwhile is attached again first, and a request that never went out is
-        sent once more. One that went out and was not answered may have run, so it raises instead."""
+        """Sends *steps*, a caller's relative file made its own, as one request and answers the replies in order, raising
+        on a refusal. A dropped connection is attached again and an unsent request sent once more, one sent unanswered raises, as it may have run."""
+        steps = __import__("sara_paths").absolute_files(steps)
         with self._lock:
             if self._release is not None:
                 self._release.cancel()
@@ -484,6 +544,9 @@ class Door:
         except (OSError, ValueError, HTTPException) as error:
             self._hang_up()
             raise SaraError(f"Sara hung up with a step outstanding, which may have run ({error!r})") from error
+        if reply.status == 409 and isinstance(answers, dict):
+            self._hang_up()
+            raise DoorBusyError(str(answers.get("error") or "another client holds Sara's door"))
         if reply.status != 200 or not isinstance(answers, list):
             self._hang_up()
             raise SaraError(f"Sara answered {reply.status}: {answers}")
@@ -524,6 +587,10 @@ class Door:
                 self._release.cancel()
                 self._release = None
             self._hang_up()
+
+    @property
+    def log_path(self) -> Path:
+        return log_file(self.path)
 
 
 def _lines(answer: dict) -> list[str]:
@@ -625,6 +692,31 @@ class Document:
             self.kernels[said["into"]] = dict(kept, into=said["into"])
             (self.in_place.add if said.get("in_place") else self.in_place.discard)(said["into"])
         return said
+
+    def brush_field(self, name: str, source: str, engine: str = "noise") -> dict:
+        """Registers *source*, a `.gmacs` text holding `def brush_field(float along, float across,
+        float half_width, vec3 numbers, vec2 offset) -> vec2`, as the brush field *name* of *engine*,
+        or replaces the field of that name, and answers the verdict, `field` the id a `brush` step's
+        `texture_field` names. Sara keeps it as `brush-fields/<engine>/<name>.gmacs` in its folder,
+        so the painter's Texture row lists it after the notebook is closed. A function that does not
+        compile raises with the compiler's line naming the file and the line."""
+        said = self.door.verdict({"brush_field": {"name": name, "source": source, "engine": engine}})
+        if not isinstance(said, dict) or not said.get("ok", False):
+            raise SaraError(f"{VERDICT}brush_field {said}")
+        return said
+
+    def documents(self) -> list[dict]:
+        """Every painting open in Sara, in tab order, one dict each, as `sara_documents.py` says."""
+        import sara_documents
+
+        return sara_documents.documents(self.door)
+
+    def front(self, name: str) -> dict:
+        """Brings the open painting called *name* forward, so every other call acts on it, as
+        `sara_documents.py` says. The name is the one `documents()` answers."""
+        import sara_documents
+
+        return sara_documents.front(self.door, name)
 
     def undo(self, steps: int = 1) -> None:
         """Takes back *steps* steps of the app's history."""
@@ -783,82 +875,28 @@ class Layer:
         self._act(opacity=float(value))
 
 
-class Timing(NamedTuple):
-    """A kernel's GPU time, its dispatch alone, and the round trip Python saw, in milliseconds."""
-
-    gpu_ms: float | None
-    round_trip_ms: float
-
-    def line(self, unknown: str = "") -> str:
-        """The two as a cell shows them, `GPU 0.21 ms, round trip 38 ms`, with *unknown*, the app's
-        reason, where there is no GPU time."""
-        gpu = f"GPU {_ms(self.gpu_ms)} ms" if self.gpu_ms is not None else f"GPU time not known ({unknown})"
-        return f"{gpu}, round trip {self.round_trip_ms:.0f} ms"
-
-
-def _ms(value: float) -> str:
-    """Two decimals, and two figures for a kernel under a tenth of a millisecond."""
-    return f"{value:.2f}" if value >= 0.1 else f"{value:.2g}"
-
-
 def bench(layer: Layer | str | int, runs: int = 20) -> Timing:
-    """Reruns the kernel that last wrote *layer*, a Layer or its name or index, with its values, *runs*
-    times, a request each so each has its round trip, prints the medians of both times and answers them.
-    The reruns write what the kernel wrote already, so they leave no undo step. A kernel that read the
-    layer it wrote changes it each time, and its reruns are one step called "Bench <name>"."""
-    layer = layer_of(layer)
-    # A kernel is kept under the name it wrote, so an index is looked up in the stack.
-    name = layer.key if isinstance(layer.key, str) else layer._entry()["name"]
-    step = layer.document.kernels.get(name)
-    if step is None:
-        raise SaraError(f"no kernel has written {name!r} since connect(), run its cell and name its layer")
-    in_place = name in layer.document.in_place
-    said = []
-    for n in range(max(1, int(runs))):
-        # An in-place rerun records once, the first, and the step undoes and redoes all of them.
-        record = dict(step, step=f"Bench {step['name']}") if in_place and n == 0 else dict(step, history=False)
-        said.append(layer.document.kernel(record))
-    gpu = [s["gpu_ms"] for s in said if s.get("gpu_ms") is not None]
-    medians = Timing(statistics.median(gpu) if gpu else None, statistics.median(s["round_trip_ms"] for s in said))
-    print(f"{medians.line(said[-1].get('gpu_unknown', ''))} (median of {len(said)})")
-    return medians
+    """Reruns the kernel that last wrote *layer* *runs* times, prints the medians and answers them, as `sara_measure.py` says."""
+    import sara_measure
 
-
-class Difference(NamedTuple):
-    """How far a layer is from an array: the largest difference of a channel, the pixel it is in as
-    `(x, y)`, None where nothing differs, and the per cent of pixels past the tolerance."""
-
-    largest: float
-    where: tuple[int, int] | None
-    percent: float
+    return sara_measure.bench(layer, runs)
 
 
 def check(layer: Layer | str | int, array: np.ndarray, tolerance: float = 0.01) -> Difference:
-    """Reads *layer*, a Layer or its name or index, and prints how far it is from *array*, `(h, w, 4)`, `(h, w, 3)` for the colour
-    alone or `(h, w)` for a grey, and answers the same. Feedback rather than a grade, so it never
-    raises on a difference: a pixel on a level boundary that rounds the other way on the GPU is a
-    whole level off, and the share past *tolerance* says that it is one pixel in thousands."""
-    mine = np.asarray(array, dtype=np.float32)
-    if mine.ndim == 2:
-        mine = mine[..., None]
-    pixels = layer_of(layer).read()
-    if mine.ndim != 3 or mine.shape[:2] != pixels.shape[:2] or mine.shape[2] not in (1, 3, 4):
-        raise ValueError(f"the layer is {pixels.shape[1]} by {pixels.shape[0]}, the array's shape {np.shape(array)}")
-    channels = 3 if mine.shape[2] == 1 else mine.shape[2]
-    # A NaN on either side is as far as can be, never quietly equal.
-    apart = np.nan_to_num(np.abs(pixels[..., :channels] - mine), nan=np.inf).max(axis=2)
-    largest = float(apart.max())
-    y, x = np.unravel_index(int(apart.argmax()), apart.shape)
-    found = Difference(largest, (int(x), int(y)) if largest > 0 else None, 100.0 * float(np.mean(apart > tolerance)))
-    at = f" at x {found.where[0]}, y {found.where[1]}" if found.where else ""
-    said = f"largest difference {_figures(largest)}{at}, {_figures(found.percent)} %"
-    print(f"{said} of pixels differ by more than {_figures(tolerance)}")
-    return found
+    """Prints how far *layer* is from *array* and answers the same, as `sara_measure.py` says."""
+    import sara_measure
+
+    return sara_measure.check(layer, array, tolerance)
 
 
-def _figures(value: float) -> str:
-    """Two significant figures with no exponent, so one pixel in two million reads `0.000048 %`."""
-    return np.format_float_positional(value, precision=2, fractional=False, trim="-")
+def __getattr__(name: str) -> type:
+    """`sara.Timing` and `sara.Difference`, the answers of `bench` and `check`, read from `sara_measure.py`
+    at their first use, so that importing the client never needs it."""
+    if name in ("Timing", "Difference"):
+        import sara_measure
+
+        return getattr(sara_measure, name)
+    raise AttributeError(f"module 'sara' has no attribute {name!r}")
 
 
 class Picture:

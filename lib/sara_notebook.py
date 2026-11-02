@@ -26,6 +26,16 @@ which the app wraps into a kernel called `pixels`:
     def pixel(ivec2 at) -> vec4:
         return floor(src(at) * levels + 0.5) / levels
 
+A cell whose line is `field <name>` holds a brush field instead, the function
+`def brush_field(float along, float across, float half_width, vec3 numbers, vec2 offset) -> vec2`,
+which `doc.brush_field` registers as the noise brush's field *name*, or replaces,
+so the next stroke whose `brush` step names it as `texture_field` paints through it:
+
+    %%gmacs field ripples
+    def brush_field(float along, float across, float half_width, vec3 numbers, vec2 offset) -> vec2:
+        float needed = 0.5 + 0.5 * sin((along + offset.x) / 6.0)
+        return vec2(needed, 1.0 - needed)
+
 The first line names the layer to read, the layer to write, which a new layer
 named after the kernel is when the line names none, and the values of the
 parameters. A word `<image>=<layer>` names a layer for each further readonly
@@ -48,7 +58,8 @@ compiled kernel answers becomes a slider, its range from the
 `uniform` line, the way a Godot shader declares one, opening at the default the
 app answers, which is the `uniform` line's own value in the short form, and
 moving one reruns the kernel, debounced so a drag sends at most one request a
-frame, and setting one from code, `cell.sliders["scale"].value = 24.0`, reruns
+frame and a move that comes while a run is in flight waits for the next, only the
+newest values running, and setting one from code, `cell.sliders["scale"].value = 24.0`, reruns
 it at once. The `# range <min> <max>` comment that came first is still read, so a
 saved cell keeps its sliders. An `int` with a `hint_enum("<label>", ...)` is a
 drop-down of its labels instead, the kernel getting the picked entry's index as
@@ -75,6 +86,7 @@ import html
 import math
 import re
 import shlex
+import sys
 import threading
 import time
 from typing import Any, Callable, NamedTuple
@@ -222,7 +234,12 @@ def declared(source: str) -> set[str]:
     A local variable in a function's body is no parameter, so only the block
     under `params:` is read, up to the first line that is not indented.
     """
-    found: set[str] = set()
+    return set(kinds(source))
+
+
+def kinds(source: str) -> dict[str, str]:
+    """The type each params or `uniform` line declares, by the parameter's name."""
+    found: dict[str, str] = {}
     inside = False
     for line in source.splitlines():
         if line.strip() == "params:":
@@ -232,7 +249,7 @@ def declared(source: str) -> set[str]:
             inside = False
         match = _UNIFORM_LINE.match(line) or (_PARAM_LINE.match(line) if inside else None)
         if match is not None:
-            found.add(match.group(2))
+            found[match.group(2)] = match.group(1)
     return found
 
 
@@ -322,10 +339,15 @@ def choices(source: str) -> dict[str, list[str]]:
 
 
 class Debounce:
-    """Sends the latest values at most once a frame, the rest of a drag waits for the next.
+    """Runs the latest values at most once a frame, on a worker thread of its own, and never queues a stale one.
 
-    A call with *at_once* sends now whatever the last send's time, and drops a
-    send the timer still held, as its values are older."""
+    A widget's observer runs on the kernel's thread, and a send that takes a second there leaves the rest of a
+    drag waiting in the kernel's message queue, each move then arriving long after the last send and sending at
+    once. So a move only replaces the values that wait and returns, the worker sends them when the frame has
+    passed and no send is in flight, and what is sent when a long send ends is the newest values alone.
+
+    A call with *at_once* sends now, on the caller's thread, whatever the last send's time, after the send in
+    flight if there is one, and takes the values the worker still held, as they are older."""
 
     def __init__(self, send: Callable[[dict], None], interval: float = FRAME_S, clock: Callable[[], float] = time.monotonic) -> None:
         self.send = send
@@ -333,35 +355,53 @@ class Debounce:
         self.clock = clock
         self.last = -interval
         self.pending: dict | None = None
-        self.timer: threading.Timer | None = None
+        self.worker: threading.Thread | None = None
+        # Held for the length of a send, which a let go orders itself after, and the short one for the fields.
         self.lock = threading.Lock()
+        self._state = threading.Lock()
 
     def __call__(self, values: dict, at_once: bool = False) -> None:
-        with self.lock:
+        with self._state:
             self.pending = dict(values)
-            wait = self.last + self.interval - self.clock()
-            if at_once:
-                wait = 0.0
-            elif self.timer is not None:
-                return
-            if wait > 0:
-                self.timer = threading.Timer(wait, self.flush)
-                self.timer.daemon = True
-                self.timer.start()
+            if not at_once:
+                if self.worker is None:
+                    self.worker = threading.Thread(target=self._work, daemon=True)
+                    self.worker.start()
                 return
         self.flush()
 
+    def _work(self) -> None:
+        """The worker: sends what waits once the frame has passed, until nothing waits."""
+        try:
+            while True:
+                with self._state:
+                    if self.pending is None:
+                        self.worker = None
+                        return
+                    wait = self.last + self.interval - self.clock()
+                if wait > 0:
+                    time.sleep(wait)
+                self.flush()
+        except BaseException:
+            with self._state:
+                self.worker = None
+            raise
+
     def flush(self) -> None:
-        """Sends what waits, now: the timer's call, and a value set from code."""
+        """Sends what waits, now: the worker's call, and a value set from code. It waits for a send in flight."""
         with self.lock:
-            if self.timer is not None:
-                self.timer.cancel()
-                self.timer = None
-            values, self.pending = self.pending, None
-            if values is None:
-                return
-            self.last = self.clock()
+            with self._state:
+                values, self.pending = self.pending, None
+                if values is None:
+                    return
+                self.last = self.clock()
             self.send(values)
+
+    def settle(self) -> None:
+        """Returns when the worker has sent everything that waited, which a test and a script call before a read."""
+        worker = self.worker
+        if worker is not None:
+            worker.join()
 
 
 class Cell:
@@ -375,11 +415,20 @@ class Cell:
                 "halo is taken by the cell, whose `halo=` word sets how far the kernel reads past its rectangle, "
                 "so the kernel's parameter called halo needs another name"
             )
+        known = declared(source)
+        unknown = sorted(set(self.line.values) - known)
+        if unknown:
+            raise ValueError(
+                f"the %%gmacs line sets {', '.join(unknown)}, which the kernel does not declare, "
+                f"its parameters are {', '.join(sorted(known)) or 'none'}"
+            )
         self.source = source
         self.name = kernel_name(source)
         self.into = self.line.into
         self.values: dict[str, Any] = dict(self.line.values)
-        # An `Image` and no `Output` (L8 of plan 33). The `Output` likely lost the same start-up race `warm_up` takes.
+        # The slider takes only its range, so a value past it is held to it before the first picture is made.
+        self.clamped: list[str] = self._fit()
+        # An `Image` and no `Output`: VS Code's Jupyter 2025.9.1 cannot load that widget's module.
         self.picture = ipywidgets.Image(format="png")
         self.timing = ipywidgets.Label()
         self.sliders: dict[str, ipywidgets.Widget] = {}
@@ -390,6 +439,31 @@ class Cell:
         # The row each tagged colour shows, the picker or the picker and its alpha.
         self.colours: dict[str, ipywidgets.Widget] = {}
         self._debounce = Debounce(self.rerun)
+
+    def _fit(self) -> list[str]:
+        """Holds each number the line set to its slider's range, and says what it moved.
+
+        `build` clamps the same way but runs after the first picture, which
+        would then be made at a value its slider cannot show.
+        """
+        given, labelled, said = ranges(self.source), choices(self.source), []
+        for name, kind in kinds(self.source).items():
+            value = self.values.get(name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                continue
+            integer = kind in INT_TYPES
+            if kind != "float" and not integer:
+                continue
+            if name in labelled:
+                # A drop-down takes the index of one of its entries.
+                low, high = 0, len(labelled[name]) - 1
+            else:
+                low, high, _ = given.get(name, Range(*(INT_RANGE if integer else FLOAT_RANGE)))
+            held = min(max(value, low), high)
+            if held != value:
+                self.values[name] = int(held) if integer else float(held)
+                said.append(f"{name}={value:g} is outside the range {low:g} to {high:g} its control takes, so it ran at {held:g}")
+        return said
 
     def run(self) -> dict:
         """Sends the kernel with the current values, keeps the layer it wrote and says what it cost."""
@@ -547,6 +621,10 @@ class Cell:
         self.picture.value = self.document.layer(said.get("into", self.into)).show().data
 
 
+## The first word of a `%%gmacs` line whose body is a brush field rather than a kernel.
+FIELD_WORD = "field"
+
+
 @magics_class
 class GmacsMagics(Magics):
     """The `%%gmacs` magic, on the document `use()` gave or the Sara `sara.connect()` reaches."""
@@ -558,14 +636,21 @@ class GmacsMagics(Magics):
     def gmacs(self, line: str, cell: str) -> Cell | None:
         if GmacsMagics.document is None:
             GmacsMagics.document = sara.connect()
-        run = Cell(GmacsMagics.document, line, cell)
-        try:
-            said = run.run()
-        except sara.SaraError as error:
-            # A widget of the controls module and no `print`, so every message a cell makes is one line
-            # of widgets that VS Code draws (L8 of plan 33). Nothing was built yet, so it has no timing line to go to.
-            display(ipywidgets.HTML(f'<pre style="white-space: pre-wrap">{html.escape(str(error))}</pre>'))
+        words = line.split()
+        if words[:1] == [FIELD_WORD]:
+            if len(words) != 2:
+                raise ValueError(f"a %%gmacs field line names the field and nothing else, not {line!r}")
+            said = GmacsMagics.document.brush_field(words[1], cell)
+            print(f"the noise brush paints through {said['field']} once a brush step names it as its texture_field")
             return None
+        run = Cell(GmacsMagics.document, line, cell)
+        # A refused kernel or a layer the document lacks raises the `SaraError`, so IPython marks the cell failed
+        # and Run All stops on it. `sara.init` registers the handler that shows the app's line, red and once,
+        # as the cell's error output, so no widget repeats it. A refusal after a slider move is no cell running
+        # and stays in the line under the sliders.
+        for line in run.clamped:
+            print(line, file=sys.stderr)
+        said = run.run()
         widget = run.build(said.get("params", []))
         run.show(said)
         display(widget)

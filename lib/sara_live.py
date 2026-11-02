@@ -209,7 +209,7 @@ class Live:
 
     def show(self, layer: sara.Layer) -> None:
         """Draws the written layer under the widgets, replacing the last, in `show()`'s small form, as the PNG
-        of an `Image` widget, which VS Code draws where it fails on an `Output` (L8 of plan 33)."""
+        of an `Image` widget, which VS Code draws where it fails on an `Output`."""
         self.picture.value = layer.show().data
 
 

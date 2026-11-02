@@ -71,7 +71,7 @@ md(r"""
 | Krita 6 | [krita.org](https://krita.org/) |
 | plugin `pga_filter` | `pga_filter-windows.zip` nebo `pga_filter-linux.zip` ze stránky [Releases](https://github.com/MatejZeman02/2D-effects-course/releases/latest) tohoto repozitáře |
 
-Vedle notebooku nechte složku `lib` se soubory `sara.py`, `sara_notebook.py`, `sara_live.py` a `sara_params.py`, které notebook načítá, a s balíčkem pro zvýraznění gmacs, a složku `imgs` s obrázky.
+Vedle notebooku nechte složku `lib` se soubory `sara*.py` (`sara.py` a jeho pomocné soubory), které notebook načítá, a s balíčkem pro zvýraznění gmacs, a složku `imgs` s obrázky.
 """)
 
 # --- Functions -----------------------------------------------------------------
@@ -1089,7 +1089,7 @@ md(r"""
 md(r"""
 ## Příloha: přehled funkcí
 
-Funkce, které notebook používá, jsou v souborech `sara.py`, `sara_notebook.py` a `sara_live.py` ve složce `lib`. Podrobný popis každé ukáže `help(...)`, například `help(doc.new_layer)`.
+Funkce, které notebook používá, jsou v souborech `sara.py`, `sara_notebook.py` a `sara_live.py` ve složce `lib`, vedle nich leží pomocné soubory `sara_measure.py`, `sara_documents.py`, `sara_paths.py` a `sara_params.py`. Podrobný popis každé ukáže `help(...)`, například `help(doc.new_layer)`.
 
 **Modul `sara`**
 
