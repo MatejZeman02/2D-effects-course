@@ -153,7 +153,7 @@ uniform int dither: hint_enum({DITHERS}) = 0
 
 
 def pixel(ivec2 at) -> vec4:
-    vec4 c = src(at)
+    vec4 c = src[at]
     float t = posterise(to_lab(c.rgb).x, steps, threshold(at))
     return vec4(gradient(t), c.a)"""
 
@@ -375,7 +375,7 @@ uniform int space: hint_enum("sRGB", "Linear", "OKLab") = 0
 
 
 def blend(vec3 a, vec3 b, float t) -> vec3:
-    # a, b and the result are sRGB, as src() and the colour pickers give them
+    # a, b and the result are sRGB, as src[at] and the colour pickers give them
     if space == 1:
         return a                  # TODO: mix the amounts of light
     if space == 2:
@@ -384,7 +384,7 @@ def blend(vec3 a, vec3 b, float t) -> vec3:
 
 
 def pixel(ivec2 at) -> vec4:
-    vec4 c = src(at)
+    vec4 c = src[at]
     float t = linear_srgb_to_oklab(srgb_to_linear_srgb(c.rgb)).x
     return vec4(blend(dark, light, t), c.a)
 """, solve=[(BLEND_STUB, BLEND_SOLVED)])
@@ -445,7 +445,7 @@ def gradient(float t) -> vec3:
 
 
 def pixel(ivec2 at) -> vec4:
-    vec4 c = src(at)
+    vec4 c = src[at]
     return vec4(gradient(to_lab(c.rgb).x), c.a)
 """, solve=[(GRADIENT_STUB, SOLUTION_GRADIENT)])
 
@@ -541,7 +541,7 @@ def posterise(float t, int n, float d) -> float:
 
 
 def pixel(ivec2 at) -> vec4:
-    vec4 c = src(at)
+    vec4 c = src[at]
     float L = posterise(linear_srgb_to_oklab(srgb_to_linear_srgb(c.rgb)).x, steps, threshold(at))
     vec3 grey = linear_srgb_to_srgb(oklab_to_linear_srgb(vec3(L, 0.0, 0.0)))
     return vec4(grey, c.a)
