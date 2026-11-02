@@ -227,3 +227,7 @@ krita/tests/dialog.png
 
 # Personal Claude Code settings, the shared ones are .claude/settings.json
 .claude/settings.local.json
+
+# Sara unzipped into the clone, which sara.init() starts by itself
+/[Ss]ara*/
+/SARA*/

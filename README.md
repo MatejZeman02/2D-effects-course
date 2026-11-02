@@ -58,7 +58,11 @@ English.
    run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, or use
    `cmd` and `.venv\Scripts\activate.bat` instead.
 
-3. Start Sára with its agent door (`sara-with-door.cmd` on Windows,
+3. Unzip Sára into a folder called `Sara` in this clone, which git ignores,
+   and `sara.init()` starts it with its agent door whenever none runs. It
+   also starts a `sara` on your `PATH`, and lesson 0's first section shows
+   how to put it there on each system. Otherwise start Sára with its agent
+   door yourself (`sara-with-door.cmd` on Windows,
    `./sara.x86_64 --display-driver wayland -- --agent-door` on Linux). On an
    X11 desktop leave out `--display-driver wayland`. Without it on Wayland,
    Sára runs under XWayland and has to guess its interface scale.

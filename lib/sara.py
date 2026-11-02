@@ -28,7 +28,8 @@ connection it keeps: it reads the file Sara writes when its door listens,
 connects over the Unix socket where Python has one and the loopback port
 otherwise, which is Windows, and posts each step with the file's token as a
 Bearer. With no door to reach and no Sara running, it starts the `sara` on the
-`PATH` with its door and waits for it, and otherwise raises a guide to opening
+`PATH` with its door and waits for it, or with none there the Sara unzipped into
+a folder beside the notebook, and otherwise raises a guide to opening
 the door, which a notebook shows without a traceback. Its first request says it attaches, so
 closing hangs up without `quit` and Sara stays open. Sara drops a client idle
 for ten minutes, and the next call attaches again, reading the file afresh. A
@@ -79,6 +80,9 @@ HELD_WAIT_S = RELEASE_S + 3.0
 START_BOUND_S = 60.0
 # The names a running Sara's process goes by, the Linux build behind its wrapper and the Windows one.
 PROCESS_NAMES = ("sara.x86_64", "sara.exe")
+# A folder beside the notebook whose name starts with this, read case-blind, is where `connect` looks for a Sara
+# not on the `PATH`, the binary in it or one folder down, as Windows' Extract All leaves a zip.
+BESIDE_PREFIX = "sara"
 # The error colour IPython's own tracebacks use, and the colour after it.
 RED, PLAIN = "\x1b[0;31m", "\x1b[0m"
 # The Saras `connect` started, kept so a child that outlives the call is never collected while it runs.
@@ -183,15 +187,16 @@ def _door_for(known: Path) -> Door:
 
 
 def _start(known: Path, found: NoDoorError) -> Door:
-    """Starts `sara` from the `PATH` detached with `-- --agent-door` and attaches once its door
+    """Starts the Sara `_program` finds detached with `-- --agent-door` and attaches once its door
     answers. A Sara that runs is never given a second one beside it, and nor is one that cannot be
-    told from none, so both raise *found*, as does a `PATH` with no `sara` on it. A stale known file
+    told from none, so both raise *found*, as does finding no Sara at all. A stale known file
     counts as no Sara, since the Sara that wrote it is looked for by its process and not by the file."""
-    program = shutil.which("sara")
-    if program is None or _sara_runs() is not False:
+    command = _program()
+    if command is None or _sara_runs() is not False:
         raise found
+    program = command[0]
     print("Starting Sara with its door…", flush=True)
-    child = subprocess.Popen([program, "--", "--agent-door"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **_detached())
+    child = subprocess.Popen([*command, "--", "--agent-door"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **_detached())
     STARTED.append(child)
     deadline = time.monotonic() + START_BOUND_S
     while True:
@@ -206,6 +211,23 @@ def _start(known: Path, found: NoDoorError) -> Door:
         if time.monotonic() > deadline:
             raise NoDoorError(f"Sara started from {program} opened no door in {START_BOUND_S:g} s.") from None
         time.sleep(0.25)
+
+
+def _program(folder: Path | None = None, platform: str | None = None) -> list[str] | None:
+    """The command that starts Sara: the `sara` on the `PATH`, or else the newest binary in a folder of
+    *folder*, the notebook's by default, named from `BESIDE_PREFIX`, or one folder down. No wrapper picks
+    Wayland for it, so a Wayland desktop gets it asked for. None when there is neither."""
+    if found := shutil.which("sara"):
+        return [found]
+    windows = (platform or sys.platform).startswith("win")
+    name = "sara.exe" if windows else "sara.x86_64"
+    here = folder if folder is not None else Path.cwd()
+    candidates = (*here.glob(f"*/{name}"), *here.glob(f"*/*/{name}"))
+    binaries = [path for path in candidates if path.relative_to(here).parts[0].lower().startswith(BESIDE_PREFIX) and path.is_file() and (windows or os.access(path, os.X_OK))]
+    if not binaries:
+        return None
+    binary = str(max(binaries, key=lambda path: path.stat().st_mtime))
+    return [binary, "--display-driver", "wayland"] if not windows and os.environ.get("WAYLAND_DISPLAY") else [binary]
 
 
 def _detached() -> dict:
