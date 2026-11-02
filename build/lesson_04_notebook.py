@@ -63,7 +63,7 @@ SHOWN = """\
 # the brightest channel, is only for the eye: c is too small to see, so green is
 # log |c|, as a spectrum is drawn.
 def shown(vec2 c) -> vec4:
-    float scale = float(N * N)
+    float scale = N * N
     return vec4(c.x, log(1.0 + length(c) * scale) / log(1.0 + scale), c.y, 1.0)"""
 
 DFT_ROWS = f"""\
@@ -83,7 +83,7 @@ def pixel(ivec2 at) -> vec4:
         # whole turns dropped while still an int, so cos and sin get a small angle
         float angle = -TAU * ((at.x * x) % N) / N
         total += src[ivec2(x, at.y)].r * vec2(cos(angle), sin(angle))
-    return shown(total / float(N))"""
+    return shown(total / N)"""
 
 COLUMNS_GIVEN = """\
 def pixel(ivec2 at) -> vec4:
@@ -98,7 +98,7 @@ def pixel(ivec2 at) -> vec4:
         float angle = -TAU * ((at.y * y) % N) / N
         vec2 w = vec2(cos(angle), sin(angle))
         total += vec2(a.x * w.x - a.y * w.y, a.x * w.y + a.y * w.x)
-    return shown(total / float(N))"""
+    return shown(total / N)"""
 
 DFT_COLUMNS = f"""\
 %%gmacs "DFT rows" -> "DFT"
