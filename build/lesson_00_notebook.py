@@ -103,6 +103,11 @@ Přehled toho, co lekce používá, s odkazem na sekci, kde se funkce objeví po
 | `srgb_to_linear_srgb`, `linear_srgb_to_srgb` | dekódování a kódování sRGB, knihovna `linear_srgb_color_space` | 5 |
 | `linear_srgb_to_oklab`, `oklab_to_linear_srgb` | převody mezi lineárním RGB a OKLabem, knihovna `oklab_color_space` | 5 |
 | `dot(a, b)` | skalární součin dvou vektorů | 6 |
+| `image_size(sa_target)` | velikost výsledné vrstvy v pixelech | 9 |
+| `uint`, `^`, `>>`, `&` | celé číslo bez znaménka a bitové operace, ze kterých je hash | 9 |
+| `sin`, `cos`, `radians`, `exp2` | goniometrické funkce, stupně na radiány, $2^x$ | 9 |
+| `length(v)`, `floor(x)` | délka vektoru, zaokrouhlení dolů | 9 |
+| `for i in range(n):`, `break` | cyklus v kernelu, zápis jako v Pythonu | 9 |
 
 **NumPy**
 
@@ -1105,6 +1110,140 @@ def apply(img, amount):
 </details>
 """)
 
+# --- 9. Showcase --------------------------------------------------------------
+md(r"""
+## 9. Co dalšího kernel umí
+
+Dosud kernel jen přepočítával barvu, kterou přečetl ze zdrojové vrstvy. Funkce `pixel` ale dostává i pozici `at` a barvu z ní může vyrobit sama, bez čtení `src`. Ukázky v této sekci zdrojovou vrstvu nečtou vůbec, `"color_chart"` v hlavičce buňky jen určí velikost výsledku. Tu kernel zjistí voláním `image_size(sa_target)`, kde `sa_target` je výsledná vrstva.
+
+Spusťte je a vyzkoušejte posuvníky.
+
+### Bílý šum z hashe
+
+GPU nemá funkci `random()`, každé vlákno ale zná svou pozici. **Hash** promíchá bity čísla tak, že ze sousedních vstupů vyjdou nesouvisející výstupy. Z pozice pixelu a semínka `seed` tak vznikne číslo, které vypadá náhodně, a přitom vyjde při každém spuštění stejně. `uint` je celé číslo bez znaménka, `^` je bitový XOR a `>>` posun bitů doprava. Přetečení při násobení je tu záměr. Šumu a hashům se podrobně věnuje lekce 2.
+""")
+
+code("""
+%%gmacs "color_chart" -> "White noise"
+uniform int seed: hint_range(0, 100) = 0
+
+def hash(uint x) -> uint:
+    x ^= x >> 16u
+    x *= 2146121005u
+    x ^= x >> 15u
+    x *= 2221713035u
+    x ^= x >> 16u
+    return x
+
+def pixel(ivec2 at) -> vec4:
+    uint h = hash(uint(at.x) + 1973u * hash(uint(at.y) + 9277u * uint(seed)))
+    float v = float(h >> 8u) / 16777216.0     # the top 24 bits as a number from 0 to 1
+    return vec4(vec3(v), 1.0)
+""")
+
+md(r"""
+### Šachovnice
+
+Souřadnice se nejdřív posunou tak, aby počátek ležel ve středu obrázku, a otočí se o úhel `angle`. `floor` pak určí, ve kterém čtverci pixel leží, a součet čísla sloupce a řádku rozhodne o barvě. `& 1` je bitový AND s jedničkou, tedy zbytek po dělení dvěma.
+""")
+
+code("""
+%%gmacs "color_chart" -> "Checkers"
+uniform float cell: hint_range(4, 200) = 60.0
+uniform float angle: hint_range(0, 90) = 30.0
+
+def pixel(ivec2 at) -> vec4:
+    vec2 p = vec2(at) - vec2(image_size(sa_target)) / 2.0
+    float a = radians(angle)
+    vec2 q = vec2(cos(a) * p.x + sin(a) * p.y, -sin(a) * p.x + cos(a) * p.y) / cell
+    ivec2 square = ivec2(floor(q))
+    float v = float((square.x + square.y) & 1)
+    return vec4(vec3(v), 1.0)
+""")
+
+md(r"""
+### Plazma
+
+Součet několika sinusovek s různými směry a frekvencemi dá plynulé vlny. Kosinus posunutý pro každý kanál jinak, `vec3(0.0, 2.1, 4.2)`, pak z jednoho čísla udělá barevnou paletu. Posuvník `shift` vlny posouvá, zkuste s ním pomalu táhnout.
+""")
+
+code("""
+%%gmacs "color_chart" -> "Plasma"
+uniform float scale: hint_range(20, 400) = 160.0
+uniform float shift: hint_range(0, 6.28) = 0.0
+
+def pixel(ivec2 at) -> vec4:
+    vec2 p = vec2(at) / scale
+    float v = sin(p.x + shift) + sin(p.y * 1.3 - shift) + sin((p.x + p.y) * 0.7) + sin(length(p - vec2(6.0, 3.0)) * 1.5)
+    vec3 colour = 0.5 + 0.5 * cos(v + vec3(0.0, 2.1, 4.2))
+    return vec4(colour, 1.0)
+""")
+
+md(r"""
+### Mandelbrotova množina
+
+Každý pixel je komplexní číslo $c$, reálná část vodorovně, imaginární svisle. Kernel opakuje $z \leftarrow z^2 + c$ od $z = 0$ a počítá, po kolika krocích $|z|$ přesáhne 2. Body, kde se to do `iterations` kroků nestane, patří do množiny a jsou černé, ostatní obarví počet kroků. Cyklus `for i in range(n):` a `break` se píšou jako v Pythonu.
+
+Posuvník `zoom` přibližuje k bodu na okraji množiny, každý dílek dvakrát. S větším přiblížením zvyšte i `iterations`, jinak se okraj rozmaže do černé.
+""")
+
+code("""
+%%gmacs "color_chart" -> "Mandelbrot"
+uniform float zoom: hint_range(0, 12) = 0.0
+uniform int iterations: hint_range(16, 512) = 128
+
+def pixel(ivec2 at) -> vec4:
+    vec2 size = vec2(image_size(sa_target))
+    vec2 c = (vec2(at) - size / 2.0) / size.y * 3.0 / exp2(zoom) + vec2(-0.743643887, 0.131825904)
+    vec2 z = vec2(0.0)
+    int n = 0
+    for i in range(iterations):
+        if dot(z, z) > 4.0:
+            break
+        z = vec2(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + c     # z squared plus c
+        n += 1
+    if n == iterations:
+        return vec4(0.0, 0.0, 0.0, 1.0)
+    float t = float(n) / float(iterations)
+    vec3 colour = 0.5 + 0.5 * cos(6.2832 * (sqrt(t) * 3.0 + vec3(0.0, 0.33, 0.67)))
+    return vec4(colour, 1.0)
+""")
+
+md(r"""
+### 🎯 Úkol 7: kruhové vlny
+
+Doplňte kernel tak, aby nakreslil soustředné vlny kolem středu obrázku, jako když hodíte kámen do vody. Vzdálenost pixelu od středu už kernel počítá do `r`. Doplňte jas `v` od 0 do 1, který se se vzdáleností vlní s délkou vlny `wavelength`. Posuvník `phase` vlny posouvá.
+
+Máte-li hotovo, nakreslete místo vln cokoli vlastního: spirálu, terč s barevnými kruhy, vlny přes šachovnici nebo šum, který se s posuvníkem mění.
+
+<details><summary>💡 Nápověda</summary>
+
+1. `sin(x)` vrací hodnoty od −1 do 1 a opakuje se po $2\pi$, tedy po 6.2832.
+2. Na vzdálenost `r` připadá `r / wavelength` vln, jedna vlna na každou délku `wavelength` je tedy `sin(6.2832 * r / wavelength)`. Fázi odečtěte od argumentu.
+3. Rozsah −1 až 1 převede na 0 až 1 výraz `0.5 + 0.5 * x`.
+</details>
+
+<details><summary>🔑 Řešení</summary>
+
+```python
+float v = 0.5 + 0.5 * sin(6.2832 * r / wavelength - phase)
+```
+</details>
+""")
+
+code("""
+%%gmacs "color_chart" -> "Ripples"
+uniform float wavelength: hint_range(4, 200) = 40.0
+uniform float phase: hint_range(0, 6.28) = 0.0
+
+def pixel(ivec2 at) -> vec4:
+    vec2 centre = vec2(image_size(sa_target)) / 2.0
+    float r = length(vec2(at) - centre)
+    # TODO: a brightness from 0 to 1 that waves with r
+    float v = 0.5
+    return vec4(vec3(v), 1.0)
+""", solve=[("# TODO: a brightness from 0 to 1 that waves with r\n    float v = 0.5\n", "float v = 0.5 + 0.5 * sin(6.2832 * r / wavelength - phase)\n")])
+
 # --- Summary ------------------------------------------------------------------
 md(r"""
 ## Shrnutí
@@ -1114,6 +1253,7 @@ md(r"""
 - Cyklus přes pixely v Pythonu je pomalý. NumPy počítá s celým polem najednou, GPU dává každému pixelu vlastní vlákno.
 - Kernel v buňce `%%gmacs` je funkce `pixel(ivec2 at) -> vec4`. `src[at]` čte zdrojovou vrstvu, `uniform` s `hint_range` je posuvník. Jeho výkon popisuje čas GPU z `sara.bench`.
 - **gmacs je dialekt GLSL** s odsazením místo závorek. Zbytek kernelu kolem vaší funkce doplní Sára.
+- Kernel nemusí zdrojovou vrstvu číst. Z pozice `at` sám vyrobí šum, vzor i fraktál.
 - Průměr kanálů není dobrá šedá. Hodnoty v sRGB je potřeba dekódovat a světlost $L$ z OKLabu odpovídá tomu, jak světlost vnímá oko.
 - Efekt pro Kritu je **`PARAMS` a `apply(img, ...)`** v NumPy, šablona `pga_filter` ho spustí beze změny.
 
