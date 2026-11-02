@@ -130,7 +130,7 @@ Checking that a kernel compiles, which touches no layer:
 source = """uniform float levels: hint_range(2, 16) = 4.0
 
 def pixel(ivec2 at) -> vec4:
-    return floor(src(at) * levels + 0.5) / levels
+    return floor(src[at] * levels + 0.5) / levels
 """
 with sara.connect() as doc:
     said = doc.kernel({"source": source, "name": "pixels", "run": False})
@@ -151,15 +151,16 @@ Python's block syntax. It reads the layer "Source" and writes the layer
 
 - Blocks go by indentation, four spaces, with no braces and no semicolons.
 - GLSL's types, constructors, swizzles and built-in functions are unchanged:
-  `vec4 c = src(at)`, `c.rgb`, `mix`, `clamp`, `floor`, `fract`, `dot`.
+  `vec4 c = src[at]`, `c.rgb`, `mix`, `clamp`, `floor`, `fract`, `dot`.
 - A function is `def blend(vec3 a, vec3 b, float t) -> vec3:`. Control flow is
   `if`, `elif`, `else`, `while`, `and`, `or`, `not` and
-  `for i in range(a, b):`.
+  `for i in range(n):`, `for i in range(a, b):` and `for i in range_inclusive(a, b):`.
 - A constant is GLSL's without the semicolon,
   `const float A[16] = float[16](...)`.
 - The lessons use the short pixel form: `uniform` lines, then
-  `def pixel(ivec2 at) -> vec4:` returning the colour of one pixel. `src(at)`
-  reads the source layer.
+  `def pixel(ivec2 at) -> vec4:` returning the colour of one pixel. `src[at]`
+  reads the source layer. A whole `kernel` reads and writes its images the same
+  way, `src[p]` and `dst[p] = v`, in place of `image_load` and `image_store`.
 - Each `uniform` becomes a widget under the cell:
   - `uniform float amount: hint_range(0, 1) = 1.0` is a slider, and with
     `int` it moves in whole numbers
@@ -168,6 +169,10 @@ Python's block syntax. It reads the layer "Source" and writes the layer
   - `uniform vec3 c: source_color = vec3(1.0, 0.5, 0.2)` is a colour picker
     handing the kernel sRGB numbers
   - `uniform bool b = false` is a checkbox
+- A kernel that reads past the layer's edge says how far. On the line of one
+  `int` slider, `hint_reach(32)` makes the reach follow the slider, and
+  `halo=32` on the `%%gmacs` line fixes it for the other kernels. With neither,
+  Sára reads 16 pixels past the edge and transparent black beyond.
 - Sára's libraries are imported by name, one per line, right under the
   `%%gmacs` line and above the `uniform` lines. An import pastes the whole
   library into the kernel, so there is no `from ... import`, and a name the
