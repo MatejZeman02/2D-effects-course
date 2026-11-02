@@ -60,7 +60,7 @@ uniform float stops: hint_range(-8, 8) = 0.0
 
 # The layer holds linear light. Exposure scales it by 2^stops, the screen cuts it at 1.
 def pixel(ivec2 at) -> vec4:
-    vec3 c = src(at).rgb * exp2(stops)
+    vec3 c = src[at].rgb * exp2(stops)
     return vec4(linear_srgb_to_srgb(clamp(c, vec3(0.0), vec3(1.0))), 1.0)"""
 
 TONE_STUB = """\
@@ -88,7 +88,7 @@ def tone(vec3 x) -> vec3:
 
 
 def pixel(ivec2 at) -> vec4:
-    vec3 c = src(at).rgb * exp2(stops)
+    vec3 c = src[at].rgb * exp2(stops)
     return vec4(linear_srgb_to_srgb(tone(c)), 1.0)"""
 
 LOG_STUB = """\
@@ -96,7 +96,7 @@ LOG_STUB = """\
     return vec4(0.0, 0.0, 0.0, 1.0)"""
 
 SOLUTION_LOG = """\
-    float y = dot(src(at).rgb, vec3(0.2126, 0.7152, 0.0722))
+    float y = dot(src[at].rgb, vec3(0.2126, 0.7152, 0.0722))
     return vec4(vec3(log(DELTA + y)), 1.0)"""
 
 LOG_LUMINANCE = f"""\
@@ -119,7 +119,7 @@ uniform float exposure: hint_range(0, 16) = 1.0
 
 # The exposure comes from the cell above, written into the first line by {{exposure}}.
 def pixel(ivec2 at) -> vec4:
-    return vec4(linear_srgb_to_srgb(aces(src(at).rgb * exposure)), 1.0)"""
+    return vec4(linear_srgb_to_srgb(aces(src[at].rgb * exposure)), 1.0)"""
 
 BRIGHT = f"""\
 %%gmacs "HDR" -> "Bright"
@@ -128,7 +128,7 @@ uniform float threshold: hint_range(0, 16) = {THRESHOLD}
 
 # Only the light above the threshold, its colour kept: what is bright enough to glow.
 def pixel(ivec2 at) -> vec4:
-    vec3 c = src(at).rgb
+    vec3 c = src[at].rgb
     float y = dot(c, vec3(0.2126, 0.7152, 0.0722))
     return vec4(c * max(y - threshold, 0.0) / max(y, 0.0001), 1.0)"""
 
@@ -144,7 +144,7 @@ def pixel(ivec2 at) -> vec4:
     float weight = 0.0
     for dx in range_inclusive(-r, r):
         float k = exp(-float(dx * dx) / (2.0 * sigma * sigma))
-        total += k * src(at + ivec2(dx, 0)).rgb
+        total += k * src[at + ivec2(dx, 0)].rgb
         weight += k
     return vec4(total / weight, 1.0)"""
 
@@ -159,7 +159,7 @@ def pixel(ivec2 at) -> vec4:
     float weight = 0.0
     for dy in range_inclusive(-r, r):
         float k = exp(-float(dy * dy) / (2.0 * sigma * sigma))
-        total += k * src(at + ivec2(0, dy)).rgb
+        total += k * src[at + ivec2(0, dy)].rgb
         weight += k
     return vec4(total / weight, 1.0)"""
 
@@ -188,12 +188,11 @@ params:
 {ACES_GLSL}
 
 
-@workgroup_size(8, 8)
 def glow():
-    vec3 c = image_load(src, pixel).rgb
-    vec3 glow = image_load(bloom, pixel).rgb
+    vec3 c = src[pixel].rgb
+    vec3 glow = bloom[pixel].rgb
 {COMPOSITE_STUB}
-    image_store(dst, pixel, vec4(linear_srgb_to_srgb(mapped), 1.0))"""
+    dst[pixel] = vec4(linear_srgb_to_srgb(mapped), 1.0)"""
 
 FIT_STUB = """\
     # TODO: lightness at most 1, then the largest share of the chroma that lands inside the cube
@@ -206,7 +205,7 @@ SOLUTION_FIT = """\
     lab.x = min(lab.x, 1.0)
     float lo = 0.0
     float hi = 1.0
-    for i in range(0, 16):
+    for i in range(16):
         float mid = 0.5 * (lo + hi)
         if inside(oklab_to_linear_srgb(vec3(lab.x, mid * lab.yz))):
             lo = mid
@@ -227,7 +226,7 @@ uniform int mode: hint_enum("Per channel", "Clip", "OKLab") = 2
 
 
 def inside(vec3 c) -> bool:
-    return all(greaterThanEqual(c, vec3(0.0))) and all(lessThanEqual(c, vec3(1.0)))
+    return all(greater_than_equal(c, vec3(0.0))) and all(less_than_equal(c, vec3(1.0)))
 
 
 def fit(vec3 c) -> vec3:
@@ -236,7 +235,7 @@ def fit(vec3 c) -> vec3:
 
 
 def pixel(ivec2 at) -> vec4:
-    vec3 c = src(at).rgb * exposure
+    vec3 c = src[at].rgb * exposure
     if mode == 0:
         return vec4(linear_srgb_to_srgb(aces(c)), 1.0)
     # the luminance through the curve, the colour scaled with it, so its ratios stay
@@ -492,7 +491,7 @@ Funkce z úvodní lekce shrnuje její příloha. Sloupec Sekce říká, kde se f
 |---|---|---|
 | `exp2(x)`, `log(x)` | $2^x$ a přirozený logaritmus | 1, 2 |
 | `{exposure}` na prvním řádku buňky | hodnota proměnné Pythonu, kterou IPython do řádku dosadí | 2 |
-| `greaterThanEqual(a, b)`, `all(v)` | porovnání vektorů po složkách a zda platí všude | 4 |
+| `greater_than_equal(a, b)`, `all(v)` | porovnání vektorů po složkách a zda platí všude | 4 |
 | `-> bool` | funkce, která vrací pravdu nebo nepravdu | 4 |
 
 **Sára a NumPy**
