@@ -97,7 +97,7 @@ Přehled toho, co lekce používá, s odkazem na sekci, kde se funkce objeví po
 | Zápis | Co dělá | Sekce |
 |---|---|---|
 | `uniform float x: hint_range(0, 1) = 1.0` | parametr kernelu s posuvníkem | 4 |
-| `src(at)` | barva zdrojové vrstvy v pixelu `at` | 4 |
+| `src[at]` | barva zdrojové vrstvy v pixelu `at` | 4 |
 | `vec3`, `vec4`, `c.rgb`, `c.a` | vektory a jejich složky, jako v GLSL | 4 |
 | `mix(a, b, t)` | lineární přechod z `a` do `b` podle `t` od 0 do 1 | 4 |
 | `srgb_to_linear_srgb`, `linear_srgb_to_srgb` | dekódování a kódování sRGB, knihovna `linear_srgb_color_space` | 5 |
@@ -373,7 +373,7 @@ code("""
 uniform float amount: hint_range(0, 1) = 1.0
 
 def pixel(ivec2 at) -> vec4:
-    vec4 c = src(at)
+    vec4 c = src[at]
     return vec4(mix(c.rgb, 1.0 - c.rgb, amount), c.a)
 """)
 
@@ -384,7 +384,7 @@ Pod buňkou se objeví posuvník `amount` a náhled nové vrstvy. Posuvník měn
 |---|---|
 | `uniform float amount: hint_range(0, 1) = 1.0` | parametr kernelu s výchozí hodnotou 1.0. `hint_range(0, 1)` z něj udělá posuvník od 0 do 1, stejně jako v shaderech Godotu |
 | `def pixel(ivec2 at) -> vec4:` | funkce, kterou GPU zavolá **pro každý pixel zvlášť**. `at` je pozice pixelu `(x, y)`, výsledek je jeho nová barva RGBA |
-| `vec4 c = src(at)` | přečte pixel na pozici `at` ze zdrojové vrstvy (`color_chart`) |
+| `vec4 c = src[at]` | přečte pixel na pozici `at` ze zdrojové vrstvy (`color_chart`) |
 | `c.rgb`, `c.a` | barevné kanály a alfa, stejný swizzle jako v GLSL |
 | `mix(c.rgb, 1.0 - c.rgb, amount)` | přechod mezi původní a invertovanou barvou |
 
@@ -456,7 +456,7 @@ code("""
 uniform float amount: hint_range(0, 1) = 1.0
 
 def pixel(ivec2 at) -> vec4:
-    vec4 c = src(at)
+    vec4 c = src[at]
     float y = 0.0                 # TODO: mean of the three channels
     vec3 grey = vec3(y)
     return vec4(mix(c.rgb, grey, amount), c.a)
@@ -522,7 +522,7 @@ import oklab_color_space
 uniform float amount: hint_range(0, 1) = 1.0
 
 def pixel(ivec2 at) -> vec4:
-    vec4 c = src(at)
+    vec4 c = src[at]
     vec3 lab = linear_srgb_to_oklab(srgb_to_linear_srgb(c.rgb))   # lab.x is L, lab.yz are a and b
     # TODO: scale a and b by (1 - amount), keep L
     vec3 rgb = linear_srgb_to_srgb(oklab_to_linear_srgb(lab))
@@ -554,7 +554,7 @@ Fragment shader z OpenGL dostane jeden fragment vzniklý rasterizací trojúheln
 
 @img(fragment_vs_compute.png, 900, OpenGL pipeline a compute kernel)
 
-Funkce `pixel(ivec2 at) -> vec4` se fragment shaderu podobá, dostane pozici a vrátí barvu. `src()` ale přečte **libovolný** pixel vrstvy, nejen ten na pozici `at`. To později využije rozostření i detekce hran.
+Funkce `pixel(ivec2 at) -> vec4` se fragment shaderu podobá, dostane pozici a vrátí barvu. Hranatá závorka `src[p]` ale přečte **libovolný** pixel vrstvy, nejen ten na pozici `at`. To později využije rozostření i detekce hran.
 
 ### Rozdíly proti GLSL
 
@@ -563,9 +563,11 @@ Funkce `pixel(ivec2 at) -> vec4` se fragment shaderu podobá, dostane pozici a v
 | `{ … }` a středníky | odsazení o 4 mezery, dvojtečka na konci řádku |
 | `float f(vec3 c) { … }` | `def f(vec3 c) -> float:` |
 | `&&`, `\|\|`, `!` | `and`, `or`, `not` |
-| `for (int i = 0; i < n; i++)` | `for i in range(0, n):` |
+| `for (int i = 0; i < n; i++)` | `for i in range(n):` |
+| `for (int i = 1; i <= n; i++)` | `for i in range_inclusive(1, n):` |
 | `switch` / `case` / `default` | `match` / `case` / `case _` |
-| `imageLoad`, `imageStore`, `imageSize` | `image_load`, `image_store`, `image_size` |
+| `imageLoad(img, p)`, `imageStore(img, p, v)` | `img[p]`, `img[p] = v` |
+| `imageSize` | `image_size` |
 | `ivec2(gl_GlobalInvocationID.xy)` | `pixel` |
 | `#include` | `import` |
 | `// komentář` | `# komentář` |
@@ -580,7 +582,7 @@ md(r"""
 uniform float amount: hint_range(0, 1) = 1.0
 
 def pixel(ivec2 at) -> vec4:
-    vec4 c = src(at)
+    vec4 c = src[at]
     return vec4(mix(c.rgb, 1.0 - c.rgb, amount), c.a)
 ```
 """)
@@ -672,9 +674,11 @@ Překlad proběhne jen při spuštění buňky. Pohyb posuvníkem pošle Sáře 
 
 ### Krátký tvar a celý kernel
 
-Krátký tvar s funkcí `pixel` stačí, když jedna vrstva vstupuje, jedna vystupuje a barva pixelu závisí na něm a na jeho sousedech. `src()` mimo vrstvu vrací průhlednou černou, okraje proto hlídat nemusíte. V buňce můžete psát pomocné funkce, cykly, podmínky a struktury a načítat knihovny přes `import`.
+Krátký tvar s funkcí `pixel` stačí, když jedna vrstva vstupuje, jedna vystupuje a barva pixelu závisí na něm a na jeho sousedech. `src[p]` mimo vrstvu vrací průhlednou černou, okraje proto hlídat nemusíte. V buňce můžete psát pomocné funkce, cykly, podmínky a struktury a načítat knihovny přes `import`.
 
 Do buňky jde napsat i celý kernel, jako ten v rozbalovacím bloku výše. Umí vše, co compute shader v GLSL 450, třeba sdílenou paměť skupiny (*shared memory*), `barrier()` a atomické operace. Parametry (`uniform`) se předávají jako push constants, dohromady nejvýš 128 bajtů, což stačí na desítky posuvníků.
+
+V celém kernelu se obrázek čte i zapisuje hranatými závorkami: `src[p]` čte pixel `p`, `dst[p] = v` do něj zapíše. Vygenerovaný kernel výše je napsaný ještě s `image_load(img, p)` a `image_store(img, p, v)`, ty fungují dál a znamenají totéž.
 """)
 
 # --- 7. NumPy -----------------------------------------------------------------
@@ -1031,7 +1035,7 @@ md(r"""
 - Obrázek je pole tvaru **(výška, šířka, 4)**. V NumPy se indexuje `pixels[y, x]`, v kernelu `(x, y)`.
 - Příkazy jdou mezi notebookem a Sárou přes místní spojení, pixely přes dočasný soubor `.npy`.
 - Cyklus přes pixely v Pythonu je pomalý. NumPy počítá s celým polem najednou, GPU dává každému pixelu vlastní vlákno.
-- Kernel v buňce `%%gmacs` je funkce `pixel(ivec2 at) -> vec4`. `src(at)` čte zdrojovou vrstvu, `uniform` s `hint_range` je posuvník. Jeho výkon popisuje čas GPU z `sara.bench`.
+- Kernel v buňce `%%gmacs` je funkce `pixel(ivec2 at) -> vec4`. `src[at]` čte zdrojovou vrstvu, `uniform` s `hint_range` je posuvník. Jeho výkon popisuje čas GPU z `sara.bench`.
 - **gmacs je dialekt GLSL** s odsazením místo závorek. Zbytek kernelu kolem vaší funkce doplní Sára.
 - Průměr kanálů není dobrá šedá. Hodnoty v sRGB je potřeba dekódovat a světlost $L$ z OKLabu odpovídá tomu, jak světlost vnímá oko.
 - Efekt pro Kritu je **`PARAMS` a `apply(img, ...)`** v NumPy, šablona `pga_filter` ho spustí beze změny.
@@ -1072,7 +1076,7 @@ code("""
 uniform float width: hint_range(2, 64, 1) = 16.0
 
 def pixel(ivec2 at) -> vec4:
-    vec4 c = src(at)
+    vec4 c = src[at]
     int stripe = at.x / int(width)
     # TODO: return odd stripes inverted
     return c
@@ -1135,7 +1139,7 @@ Funkce, které notebook používá, jsou v souborech `sara.py`, `sara_notebook.p
 | `%%gmacs "Zdroj" -> "Cíl"` | spustí kernel nad vrstvou „Zdroj“ a zapíše výsledek do vrstvy „Cíl“, kterou vytvoří, pokud neexistuje |
 | `uniform float x: hint_range(0, 1) = 0.5` | parametr kernelu s posuvníkem od 0 do 1. Třetí číslo nastaví krok: `hint_range(0, 1, 0.1)` |
 | `def pixel(ivec2 at) -> vec4:` | funkce pro jeden pixel |
-| `src(at)` | barva zdrojové vrstvy na pozici `at`, mimo vrstvu průhledná černá |
+| `src[at]` | barva zdrojové vrstvy na pozici `at`, mimo vrstvu průhledná černá |
 | `import oklab_color_space` | načte knihovnu Sáry |
 """)
 

@@ -90,7 +90,7 @@ for s in ("top", "right"):
     bx.spines[s].set_visible(False)
 
 fig.text(0.6, 0.15, f"NumPy:   pixels[{PY}, {PX}]   (nejdřív řádek y, pak sloupec x)", fontsize=11.5, family="monospace")
-fig.text(0.6, 0.07, f"kernel:  src(ivec2({PX}, {PY}))   (nejdřív x, pak y)", fontsize=11.5, family="monospace")
+fig.text(0.6, 0.07, f"kernel:  src[ivec2({PX}, {PY})]   (nejdřív x, pak y)", fontsize=11.5, family="monospace")
 fig.text(0.6, 0.90, "tvar pole: (výška, šířka, 4)", fontsize=12, weight="bold")
 save(fig, "image_as_array.png")
 
