@@ -80,8 +80,7 @@ HELD_WAIT_S = RELEASE_S + 3.0
 START_BOUND_S = 60.0
 # The names a running Sara's process goes by, the Linux build behind its wrapper and the Windows one.
 PROCESS_NAMES = ("sara.x86_64", "sara.exe")
-# A folder beside the notebook whose name starts with this, read case-blind, is where `connect` looks for a Sara
-# not on the `PATH`, the binary in it or one folder down, as Windows' Extract All leaves a zip.
+# Where `connect` looks for a Sara not on the `PATH`: a folder beside the notebook named from this, read case-blind.
 BESIDE_PREFIX = "sara"
 # The error colour IPython's own tracebacks use, and the colour after it.
 RED, PLAIN = "\x1b[0;31m", "\x1b[0m"
@@ -214,14 +213,13 @@ def _start(known: Path, found: NoDoorError) -> Door:
 
 
 def _program(folder: Path | None = None, platform: str | None = None) -> list[str] | None:
-    """The command that starts Sara: the `sara` on the `PATH`, or else the newest binary in a folder of
-    *folder*, the notebook's by default, named from `BESIDE_PREFIX`, or one folder down. No wrapper picks
-    Wayland for it, so a Wayland desktop gets it asked for. None when there is neither."""
+    """The command that starts Sara: the `sara` on the `PATH`, or else the newest binary in a folder of *folder* named from
+    `BESIDE_PREFIX`, or one down, with Wayland asked for as no wrapper does. None when there is neither."""
     if found := shutil.which("sara"):
         return [found]
     windows = (platform or sys.platform).startswith("win")
     name = "sara.exe" if windows else "sara.x86_64"
-    here = folder if folder is not None else Path.cwd()
+    here = folder if folder is not None else Path.cwd()  # the notebook's own folder
     candidates = (*here.glob(f"*/{name}"), *here.glob(f"*/*/{name}"))
     binaries = [path for path in candidates if path.relative_to(here).parts[0].lower().startswith(BESIDE_PREFIX) and path.is_file() and (windows or os.access(path, os.X_OK))]
     if not binaries:
@@ -259,18 +257,22 @@ def _sara_runs(platform: str | None = None) -> bool | None:
 
 
 def _is_sara(pid: str) -> bool:
-    """Whether Linux process *pid* is an exported Sara, or a Godot the editor runs Sara's project in."""
+    """Whether Linux process *pid* is an exported Sara, or a Godot the editor runs Sara's project in, keeping its user
+    folder where this Python looks: one with its own `XDG_DATA_HOME` or `--settings-dir` is an agent's no notebook reaches."""
     try:
         name = Path(f"/proc/{pid}/comm").read_text(encoding="utf-8").strip()
-        if not name.startswith("godot"):
-            return name in PROCESS_NAMES
         args = Path(f"/proc/{pid}/cmdline").read_bytes().decode("utf-8", "replace").split("\0")
-        if "--remote-debug" not in args or "--path" not in args[:-1]:
+        if name.startswith("godot"):
+            project = Path(args[args.index("--path") + 1].replace("%20", " ")) / "project.godot" if "--path" in args[:-1] else None
+            if "--remote-debug" not in args or project is None or 'config/name="Sara"' not in project.read_text(encoding="utf-8"):
+                return False
+        elif name not in PROCESS_NAMES:
             return False
-        project = Path(args[args.index("--path") + 1].replace("%20", " ")) / "project.godot"
-        return 'config/name="Sara"' in project.read_text(encoding="utf-8")
+        environ = Path(f"/proc/{pid}/environ").read_bytes().decode("utf-8", "replace").split("\0")
     except OSError:
         return False
+    data = next((line.split("=", 1)[1] for line in environ if line.startswith("XDG_DATA_HOME=")), "")
+    return data == os.environ.get("XDG_DATA_HOME", "") and not any(arg.startswith("--settings-dir") for arg in args)
 
 
 def init(
