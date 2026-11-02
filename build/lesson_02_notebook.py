@@ -144,7 +144,7 @@ def fbm(vec2 p) -> float:
     float total = 0.0
     float weight = 0.0
     float amplitude = 1.0
-    for i in range(0, octaves):
+    for i in range(octaves):
         total += amplitude * value_noise(p)
         weight += amplitude
         amplitude *= gain
@@ -157,7 +157,7 @@ def fbm(vec2 p) -> float:
     float total = 0.0
     float weight = 0.0
     float amplitude = 1.0
-    for i in range(0, octaves):
+    for i in range(octaves):
         total += amplitude * value_noise(p)
         weight += amplitude
         amplitude *= 0.5
@@ -441,7 +441,7 @@ Funkce z úvodní lekce shrnuje její příloha. Sloupec Sekce říká, kde se f
 | `uint h`, `1597334677u` | celé číslo bez znaménka, 32 bitů. Výsledek, který se nevejde, přeteče a pokračuje od nuly | 1 |
 | `h ^ g`, `h >> 16u`, `h & 65535u` | bitové operace: XOR, posun doprava, AND | 1 |
 | `ivec2(floor(p))`, `float(h)`, `uint(x)` | převody mezi typy, `ivec2(floor(p))` je buňka mřížky, ve které leží bod `p` | 1 |
-| `for i in range(0, octaves):` | cyklus, jehož mez je parametr | 2 |
+| `for i in range(octaves):` | cyklus, jehož mez je parametr | 2 |
 | `p *= 2.0`, `total += x` | zkrácené přiřazení jako v Pythonu | 2 |
 | `for dy in range_inclusive(-1, 1):` | cyklus včetně horní meze: -1, 0, 1 | 3 |
 | `elif` | další podmínka | 3 |
