@@ -58,6 +58,8 @@ from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 
+import sara_start
+
 if TYPE_CHECKING:
     from sara_measure import Difference, Timing
 
@@ -84,8 +86,8 @@ PROCESS_NAMES = ("sara.x86_64", "sara.exe")
 BESIDE_PREFIX = "sara"
 # The error colour IPython's own tracebacks use, and the colour after it.
 RED, PLAIN = "\x1b[0;31m", "\x1b[0m"
-# The Saras `connect` started, kept so a child that outlives the call is never collected while it runs.
-STARTED: list[subprocess.Popen] = []
+# The process ids of the Saras `connect` started, none of them a child of this Python.
+STARTED = sara_start.STARTED
 # The document `init()` answered, which `layer_of` falls back to until it closes.
 _held: Document | None = None
 # The Door of each known file this process has connected to, so a second `init` or `connect` shares the
@@ -186,8 +188,8 @@ def _door_for(known: Path) -> Door:
 
 
 def _start(known: Path, found: NoDoorError) -> Door:
-    """Starts the Sara `_program` finds detached with `-- --agent-door` and attaches once its door
-    answers. A Sara that runs is never given a second one beside it, and nor is one that cannot be
+    """Starts the Sara `_program` finds with `-- --agent-door` through `sara_start.launch`, no process of this
+    Python's, and attaches once its door answers. A Sara that runs is never given a second one beside it, and nor is one that cannot be
     told from none, so both raise *found*, as does finding no Sara at all. A stale known file
     counts as no Sara, since the Sara that wrote it is looked for by its process and not by the file."""
     command = _program()
@@ -195,8 +197,10 @@ def _start(known: Path, found: NoDoorError) -> Door:
         raise found
     program = command[0]
     print("Starting Sara with its door…", flush=True)
-    child = subprocess.Popen([*command, "--", "--agent-door"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **_detached())
-    STARTED.append(child)
+    try:
+        pid = sara_start.launch([*command, "--", "--agent-door"])
+    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+        raise NoDoorError(f"Sara could not be started from {program}: {error}") from None
     deadline = time.monotonic() + START_BOUND_S
     while True:
         try:
@@ -204,9 +208,8 @@ def _start(known: Path, found: NoDoorError) -> Door:
         except SaraError:
             # A file from the last run names a dead door, and a file being written may not parse yet.
             pass
-        ended = child.poll()
-        if ended:
-            raise NoDoorError(f"Sara started from {program} ended with {ended} and opened no door.") from None
+        if not sara_start.alive(pid):
+            raise NoDoorError(f"Sara started from {program} ended and opened no door.") from None
         if time.monotonic() > deadline:
             raise NoDoorError(f"Sara started from {program} opened no door in {START_BOUND_S:g} s.") from None
         time.sleep(0.25)
@@ -226,13 +229,6 @@ def _program(folder: Path | None = None, platform: str | None = None) -> list[st
         return None
     binary = str(max(binaries, key=lambda path: path.stat().st_mtime))
     return [binary, "--display-driver", "wayland"] if not windows and os.environ.get("WAYLAND_DISPLAY") else [binary]
-
-
-def _detached() -> dict:
-    """What `Popen` takes for a child that outlives this Python and its notebook."""
-    if sys.platform.startswith("win"):
-        return {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
-    return {"start_new_session": True}
 
 
 def _sara_runs(platform: str | None = None) -> bool | None:
@@ -285,11 +281,11 @@ def init(
 ) -> tuple[Document, Layer, np.ndarray]:
     """What a lesson opens with: connect, and answer the document, the layer selected in Sara and
     its pixels, the whole canvas as `(h, w, 4)`. Inside IPython `%%gmacs` is registered on that document.
-    The document is a new sRGB one at the size File > New offers, which replaces the one open in Sara,
-    the tab in front, so `layer.read()` hands back the numbers a picture holds and not Sara's own Oklab ones.
-    Every other painting open in a tab of its own is left exactly as it stands, name, pixels, history and
-    all, and `documents()` lists them, so a second `init()` costs the painter the tab they were on and
-    nothing else.
+    The document is a new sRGB one at the size File > New offers, so `layer.read()` hands back the numbers
+    a picture holds and not Sara's own Oklab ones. It lands where File > New lands: in the tab in front when
+    that is untouched, and otherwise in a new tab beside it. Every painting already open is left exactly as
+    it stands, name, pixels, history and all, and `documents()` lists them, so a second `init()` after the
+    first one painted opens a tab of its own and the first one's tab stays open.
     `width=512, height=512` sizes it instead, both or neither, named so that NumPy's `(h, w)` order
     is never confused with a picture's width by height.
     `attach=True` keeps the document already open and answers its selected layer instead.
@@ -329,7 +325,7 @@ def _canvas_size(width: int | None, height: int | None, attach: bool) -> list[in
 
 
 def _open_srgb_document(document: Document, size: list[int] | str = "default") -> None:
-    """Replaces the document open in Sara with a new sRGB one at *size*, File > New's when "default", which
+    """Opens a new sRGB document at *size*, File > New's when "default", where File > New would, which
     the `document` step's verdict says it made, a canvas it found nowhere to put it in being a verdict as well."""
     said = document.door.verdict({"document": "srgb", "size": size})
     if not isinstance(said, str) or not said.startswith("srgb, a new "):
