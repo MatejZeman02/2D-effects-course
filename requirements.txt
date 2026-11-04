@@ -2,4 +2,5 @@ numpy==2.5.1  # the NumPy the Krita plugin carries, NUMPY in build/krita_templat
 jupyterlab>=4
 ipywidgets>=8
 matplotlib>=3.8
+numba>=0.68  # lesson 0 times a compiled loop with it, Krita has no Numba
 ./lib/jupyterlab_gmacs_syntax-0.1.2-py3-none-any.whl

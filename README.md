@@ -14,7 +14,7 @@ English.
 | Path | What it holds |
 |---|---|
 | `lesson_NN_*.ipynb` | the lessons, one notebook each, and `lesson_04b_complex_image.ipynb`, an optional notebook after lesson 4 |
-| `lib/` | the Python client for Sára (`sara.py` and the `sara_*.py` files beside it) and the JupyterLab extension that highlights `%%gmacs` cells |
+| `lib/` | the Python client for Sára (`sara.py` and the `sara_*.py` files beside it) and the JupyterLab and VS Code extensions that highlight `%%gmacs` cells |
 | `imgs/<n>/` | the pictures and test images of lesson `n` |
 | `krita/` | the Krita plugin template `pga_filter`, its manual and its tests |
 | `build/` | the scripts that generate the notebooks, their pictures and the plugin zips |
@@ -71,14 +71,20 @@ English.
 
 ## The notebooks in VS Code
 
-1. Install two extensions, both by Microsoft: **Python** and **Jupyter**.
+1. Install two extensions, both by Microsoft, **Python** and **Jupyter**, and
+   the gmacs highlighter from `lib/`.
    Jupyter brings **Jupyter Notebook Renderers** along, which draws the
    sliders and pictures. From a terminal:
 
    ```bash
    code --install-extension ms-python.python
    code --install-extension ms-toolsai.jupyter
+   code --install-extension lib/gmacs-syntax-1.2.2.vsix
    ```
+
+   The third line, run from the repository's folder, installs the
+   highlighting of `%%gmacs` cells (see [Highlighting gmacs
+   cells](#highlighting-gmacs-cells)).
 
 2. Open the repository's folder with **File > Open Folder**, not a single
    notebook, so VS Code finds `.venv`.
@@ -137,15 +143,19 @@ jupyter labextension list
 which lists `jupyterlab-gmacs-syntax` as enabled. It works in JupyterLab 4 and
 Jupyter Notebook 7, and needs no Node and no rebuild.
 
-VS Code does not load JupyterLab extensions, so it has its own. Download
-`gmacs-syntax-<version>.vsix` from its
-[releases page](https://github.com/MatejZeman02/gmacs-acompute-syntax-highlighting-vs-code-extension/releases/latest),
-install it once with the version you downloaded, then run **Developer: Reload
+VS Code does not load JupyterLab extensions, so it has its own, and
+`requirements.txt` cannot install it. It is in `lib/` as a `.vsix` file.
+Install it once from the root of this repository, then run **Developer: Reload
 Window**:
 
 ```bash
-code --install-extension gmacs-syntax-1.2.0.vsix
+code --install-extension lib/gmacs-syntax-1.2.2.vsix
 ```
+
+**Extensions** in VS Code then lists **gmacs syntax**. A `git pull` that brings
+a newer `.vsix` into `lib/` means installing that one the same way. Its source
+and older versions are on the extension's
+[releases page](https://github.com/MatejZeman02/gmacs-acompute-syntax-highlighting-vs-code-extension/releases/latest).
 
 VS Code installs **Godot Tools** alongside it, whose shader grammar colours the
 GLSL inside a kernel. The classic Notebook 6 colours gmacs cells as Python. The

@@ -41,7 +41,7 @@ and GitHub Copilot all read this file.
 | Path | What it is | Edit it? |
 |---|---|---|
 | `lesson_NN_*.ipynb` | the lessons | work in a copy, see the tip below |
-| `lib/` | Sára's Python client and the JupyterLab highlighter, copied from Sára's releases | no, `git pull` replaces it |
+| `lib/` | Sára's Python client and the JupyterLab and VS Code highlighters, copied from Sára's and the highlighter's releases | no, `git pull` replaces it |
 | `krita/pga_filter/effect.py` | the effect the Krita plugin runs | yes, the only file of the plugin to edit |
 | `krita/pga_filter/` (the rest) | the plugin template | no |
 | `imgs/` | the pictures and test images | no |
@@ -221,6 +221,33 @@ Python's block syntax. It reads the layer "Source" and writes the layer
 
 - The plugin's manual is `krita/pga_filter/Manual.html`. The zips to import in
   Krita are on the repository's releases page.
+
+## Setting up for the student
+
+When the student asks you to install or set up what the course needs, do every
+step of the README's **Getting started**, and in VS Code its **The notebooks
+in VS Code** as well, not only `pip install`:
+
+1. A `.venv` made with Python 3.13 in the repository's folder, then
+   `pip install -r requirements.txt` in it. Check `python --version` inside it
+   says 3.13.
+2. In VS Code, the extensions `ms-python.python` and `ms-toolsai.jupyter`, and
+   the gmacs highlighter from this repository, which no package manager
+   installs:
+
+   ```bash
+   code --install-extension lib/gmacs-syntax-1.2.2.vsix
+   ```
+
+   Use the `.vsix` that is in `lib/`, never a download. Then ask the student to
+   run **Developer: Reload Window**.
+3. Sára unzipped into a folder `Sara` beside the notebooks. You cannot get the
+   zip yourself, it is handed out in the course, so check the folder and ask
+   for it if it is missing.
+
+Then tell the student plainly, in a short list, what you did, what you could
+not do and what is left for them (the Sára zip, the window reload, picking
+`.venv` as the kernel). Never say everything is set up while a step is left.
 
 ## Running things
 
