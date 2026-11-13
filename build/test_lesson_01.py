@@ -6,6 +6,7 @@ The kernels need Sara and are not run here. What runs is the NumPy half: the
 helpers cell, the given cells unfinished and the solutions, on the shipped
 test picture, with PARAMS read by the Krita template's own parser.
 """
+import re
 import sys
 from pathlib import Path
 
@@ -157,3 +158,27 @@ def test_dither_keeps_the_mean(defaults):
 
     assert abs(blocks(dithered) - blocks(ramp)).max() < 0.07
     assert abs(blocks(rounded) - blocks(ramp)).max() > 0.45
+
+
+def test_dithering_too_late_gives_the_bands_back():
+    """A value rounded already stays on its level whatever the threshold, so too_late shows the bands of Off."""
+    n = 16
+    q = np.floor(np.linspace(0, 0.5, 2001) * (n - 1) + 0.5) / (n - 1)
+    for d in np.linspace(0.001, 0.999, 60):
+        assert np.array_equal(np.floor(q * (n - 1) + d) / (n - 1), q), d
+
+
+def test_a_quarter_zoom_shows_one_bayer_threshold():
+    """Zoomed out to a quarter, every shown pixel reads the same cell of the 4 x 4 matrix, at every column and row."""
+    x, y = (float(v) for v in re.search(r"ZOOM_AT = vec2\(([\d.]+), ([\d.]+)\)", nb.GLOW).groups())
+    cols = np.floor((np.arange(1920) + 0.5 - x) / 0.25 + x).astype(int) % 4
+    rows = np.floor((np.arange(1080) + 0.5 - y) / 0.25 + y).astype(int) % 4
+    assert len(set(cols)) == 1 and len(set(rows)) == 1
+    halves = np.floor((np.arange(1920) + 0.5 - x) / 0.5 + x).astype(int) % 4
+    assert len(set(halves)) == 2                        # half the size keeps four thresholds of sixteen
+
+
+def test_the_glow_matches_its_choices_by_name():
+    for i, name in enumerate(["OFF", "BAYER", "IGN"]):
+        assert f"const int {name} = {i}" in nb.GLOW and f"case {name}:" in nb.GLOW
+    assert 'hint_enum("Off", "Bayer", "IGN")' in nb.GLOW

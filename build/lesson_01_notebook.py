@@ -7,8 +7,9 @@ picture balls.png and the texture blue_noise.png come from lesson_01_diagrams.py
 Markdown cells are raw strings, so LaTeX keeps single backslashes and braces.
 A picture from imgs/1 is written as @img(file, width, alt text).
 
-Lesson 1 shares its slot with lesson 0, so the class does sections 1 and 2,
-two tasks in kernels, and the NumPy port with the Krita plugin is homework.
+Lesson 1 shares its slot with lesson 0, so the class does sections 1 to 3,
+two tasks in kernels and a finished kernel that shows when dithering fails, and
+the NumPy port with the Krita plugin is homework.
 Blue noise is shown as a picture only: a pixel kernel that declares a second
 image compiles in Sara but fails to run, as of Sara fb4de39. The goal maps
 through three colours, which the class never writes: the homework gets the
@@ -166,6 +167,60 @@ def pixel(ivec2 at) -> vec4:
     float t = posterise(to_lab(c.rgb).x, steps, threshold(at))
     return vec4(gradient(t), c.a)"""
 
+# Section 3: a soft light rounded with dither, too late, zoomed and over frames.
+# ZOOM_AT sits on the light's slope, so a large zoom shows dots, not the flat top.
+GLOW = f"""\
+%%gmacs "balls" -> "Glow"
+uniform int steps: hint_range(2, 64) = 16
+uniform int dither: hint_enum("Off", "Bayer", "IGN") = 2
+uniform bool too_late = false
+uniform float zoom: hint_range(0.25, 16) = 1.0
+uniform int frames: hint_range(1, 16) = 1
+
+const int OFF = 0
+const int BAYER = 1
+const int IGN = 2
+{BAYER_GMACS}
+const vec2 LIGHT_AT = vec2(960.0, 540.0)
+const vec2 ZOOM_AT = vec2(1260.0, 540.0)
+
+
+{POSTERISE}
+
+
+def threshold(ivec2 at, int frame) -> float:
+    match dither:
+        case OFF:
+            return 0.5
+        case BAYER:
+            ivec2 b = at + ivec2(frame % 4, frame / 4)            # the matrix moves every frame
+            return (BAYER_4X4[(b.y % 4) * 4 + b.x % 4] + 0.5) / 16.0
+        case IGN:
+            vec2 q = vec2(at) + 5.588238 * float(frame)           # the noise moves every frame
+            return fract(52.9829189 * fract(dot(q, vec2(0.06711056, 0.00583715))))
+
+
+def light(ivec2 at) -> float:
+    \"\"\"A soft light on black, in the screen's sRGB values, before any rounding.\"\"\"
+    vec2 d = (vec2(at) - LIGHT_AT) / 420.0
+    return 0.5 * exp(-dot(d, d))
+
+
+def shown(ivec2 at) -> float:
+    \"\"\"The light rounded to steps levels, averaged over frames as TAA does.\"\"\"
+    float total = 0.0
+    for frame in range(frames):
+        float v = light(at)
+        if too_late:
+            v = posterise(v, steps, 0.5)                          # rounded already, as in an 8-bit texture
+        total += posterise(v, steps, threshold(at, frame))
+    return total / float(frames)
+
+
+def pixel(ivec2 at) -> vec4:
+    vec2 p = (vec2(at) + 0.5 - ZOOM_AT) / zoom + ZOOM_AT       # the finished picture, zoomed around ZOOM_AT
+    return vec4(vec3(shown(ivec2(floor(p)))), 1.0)"""
+
 HELPERS_NP = '''\
 def fract(x):
     """Same as fract in GLSL: the part after the decimal point."""
@@ -308,20 +363,22 @@ md(r"""
 | `fract(x)`, `clamp(x, 0.0, 1.0)` | desetinná část, omezení do intervalu | 2 |
 | `sa_hash21(vec2 p)` | bílý šum, číslo od 0 do 1 z pozice, knihovna `noise` | 2 |
 | `const float A[16] = float[16](...)`, `at.x % 4` | pole konstant, zbytek po dělení | 2 |
+| `uniform bool b = false` | zaškrtávací políčko pod buňkou | 3 |
+| `exp(x)` | $e^x$ | 3 |
 
 **Sára v Pythonu**
 
 | Volání | Co dělá | Sekce |
 |---|---|---|
-| `sara.live(apply, PARAMS, source="balls", target="...")` | jednou přečte vrstvu `source`, z `PARAMS` udělá ovládací prvky a po každé změně zapíše `apply(obrázek, **hodnoty)` do vrstvy `target` | 3 |
+| `sara.live(apply, PARAMS, source="balls", target="...")` | jednou přečte vrstvu `source`, z `PARAMS` udělá ovládací prvky a po každé změně zapíše `apply(obrázek, **hodnoty)` do vrstvy `target` | 4 |
 
 **NumPy**
 
 | Volání | Co dělá | Sekce |
 |---|---|---|
-| `BAYER[yy % 4, xx % 4]` | indexování polem: každému pixelu vybere prvek matice 4 × 4 | 3 |
-| `np.interp(t, xp, fp)` | po částech lineární funkce: v bodech `xp` má hodnoty `fp`, mezi nimi interpoluje | 3 |
-| `np.floor(x)`, `np.clip(x, 0, 1)` | totéž co `floor` a `clamp` v kernelu, po prvcích | 3 |
+| `BAYER[yy % 4, xx % 4]` | indexování polem: každému pixelu vybere prvek matice 4 × 4 | 4 |
+| `np.interp(t, xp, fp)` | po částech lineární funkce: v bodech `xp` má hodnoty `fp`, mezi nimi interpoluje | 4 |
+| `np.floor(x)`, `np.clip(x, 0, 1)` | totéž co `floor` a `clamp` v kernelu, po prvcích | 4 |
 """)
 
 md(r"""
@@ -557,9 +614,24 @@ Třetí. Pixel se smí zaokrouhlit až po přičtení chyb od souseda vlevo a od
 </details>
 """)
 
-# --- 3. NumPy and Krita, at home --------------------------------------------------
+# --- 3. When dithering fails ------------------------------------------------------
 md(r"""
-## 3. Doma: do Krity
+## 3. Kdy dithering pomůže a kdy ne
+
+Pruhy kolem světel na tmavém pozadí měla i hra Hollow Knight: Silksong. Oprava, kterou Acerola zkoumá ve videu z tipu výše, je zkusila skrýt ditheringem a skoro nepomohla. Kernel níže kreslí podobné měkké světlo a s jeho ovládacími prvky vyzkoušíte, kdy dithering pomůže a kdy ne. Šum se dívejte v Sáře při 100 %, náhled pod buňkou je zmenšený a sousední pixely zprůměruje.
+""")
+
+code(GLOW)
+
+md(r"""
+- **Pozdě.** Zaškrtněte `too_late`. Světlo se pak nejdřív zaokrouhlí bez šumu, jako když je uložené v 8bitové textuře nebo už vykreslené na obrazovce, a dithering přijde až potom. Pruhy zůstanou, protože šum kolem už zaokrouhlené hodnoty se na ni zase zaokrouhlí. Tak dopadl dithering, který oprava Silksongu přidala až na hotový obrázek. Dithering patří do chvíle, kdy se zaokrouhluje, Acerola ho proto přidal do shaderu, který světlo kreslí.
+- **Zvětšení a zmenšení.** Posuňte `zoom`, kernel pak ukáže hotový obrázek zvětšený nebo zmenšený, jako texturu ve hře nebo fotku na sociální síti. Zvětšený vzor je vidět stejně jako pruhy. Při zmenšení na čtvrtinu s Bayerem připadne každému ukázanému pixelu stejný práh matice a pruhy se vrátí. Ze stejného důvodu je v náhledu Bayera v sekci 2 mřížka, kterou v Sáře při 100 % neuvidíte. Dithering proto patří až na konec, v rozlišení, ve kterém se obrázek ukáže. Pokazí ho i komprese JPEG nebo videa.
+- **V čase.** Nastavte `zoom` na 16, aby byly vidět jednotlivé pixely, a zvyšte `frames`. Prahy se každým snímkem posunou a kernel snímky zprůměruje, jako to ve hrách dělá časový antialiasing (*temporal anti-aliasing*, TAA). Ze šumu se stanou mezistupně, které výstup nemá. Právě pro TAA vznikl IGN. Bez TAA by šum, který se mění každým snímkem, blikal.
+""")
+
+# --- 4. NumPy and Krita, at home --------------------------------------------------
+md(r"""
+## 4. Doma: do Krity
 
 `PARAMS` znáte z úvodní lekce. Nové jsou v něm dva druhy položek:
 
@@ -618,6 +690,7 @@ md(r"""
 - Posterizace zaokrouhlí na $n$ úrovní a nechá pruhy. Dithering je rozbije prahem, který se mění od pixelu k pixelu.
 - Bílý šum se shlukuje, modrý ne, ale potřebuje texturu. Bayer je malá textura se vzorem, IGN jeden vzorec bez vzoru.
 - Floyd-Steinberg šíří chybu na sousedy, a pixely na sebe proto musí čekat.
+- Dithering patří do chvíle zaokrouhlení a na konec, v rozlišení obrazovky. Už zaokrouhlený, zvětšený ani zmenšený obrázek nezachrání. S TAA se šum měnící se po snímcích zprůměruje na mezistupně.
 
 ### Co jsme vynechali
 

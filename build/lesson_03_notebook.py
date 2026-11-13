@@ -536,8 +536,6 @@ md(r"""
 | `halo=64` na prvním řádku buňky | kernel smí číst až 64 pixelů za okrajem vrstvy | 1 |
 | `at / side` | celočíselné dělení, u `ivec2` po složkách | 1 |
 | `uniform float weights[9]` | matice 3 × 3 jako mřížka políček pod buňkou, čtená po řádcích | 2 |
-| `uniform bool normalise = true` | zaškrtávací políčko pod buňkou | 2 |
-| `exp(x)` | $e^x$ | 3 |
 | `min`, `max`, `clamp` na `ivec2`, `floor` na `vec2` a převod `ivec2(...)` | po složkách | 5 |
 | `kernel`, `image`, `params:`, `dst[pixel] = v` | celý kernel místo funkce `pixel`, s obrázky a parametry | 8 |
 | `shared`, `barrier()`, `local_id`, `group_id` | sdílená paměť skupiny vláken, čekání na celou skupinu a čísla vlákna a skupiny | 8 |
