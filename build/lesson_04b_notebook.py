@@ -17,7 +17,7 @@ import lesson_writer
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "lesson_04b_complex_image.ipynb"
 SIDE = 512                    # the photo's side and the canvas's
-THETA, STRETCH = 120.0, 1.0   # the hue kernel's sliders as it starts, which the check assumes
+THETA, STRETCH = 120.0, 1.0   # the hue kernel's sliders as it starts, which the NumPy cell below repeats
 cells = []
 
 
@@ -425,7 +425,7 @@ md(r"""
 
 V lekci 4 dostala každá frekvence komplexní číslo $F(u, v)$, šipku v rovině. Její délka byla amplituda vlny, úhel fáze. Tady dostane komplexní číslo každý **pixel**. Na barvě je pak vidět okem, co komplexní aritmetika dělá: násobení otáčí, sčítání posouvá a komplexně sdružené číslo zrcadlí.
 
-Notebook je nepovinný a navazuje na sekce 1 a 2 lekce 4. Má dva krátké úkoly, kernel v Sáře a funkci v NumPy. Spusťte první tři buňky: první otevře v Sáře dokument s fotkou, druhá připraví převody do OKLabu, třetí interaktivní obrázky. Kód obrázků je schovaný, stačí hýbat nabídkami a posuvníky.
+Notebook je nepovinný a navazuje na sekce 1 a 2 lekce 4. Má dva krátké úkoly, kernel v Sáře a funkci v NumPy. Spusťte první tři buňky, kód interaktivních obrázků je schovaný, stačí hýbat nabídkami a posuvníky.
 """)
 
 code("""
@@ -454,8 +454,6 @@ md(r"""
 | `z.real`, `z.imag` | reálná a imaginární část komplexního pole, $a$ a $b$ |
 | `np.abs(z)`, `np.angle(z)` | délka a úhel šipky, po prvcích, úhel od $-\pi$ do $\pi$ |
 | `np.exp(1j * t)` | jednotková šipka s úhlem `t` v radiánech |
-| `np.radians(d)`, `radians(d)` v kernelu | stupně na radiány |
-| `np.gradient(L)` | rozdíly sousedních pixelů ve směru řádků a sloupců |
 """)
 
 # --- 1. A colour as an arrow ----------------------------------------------------
@@ -529,15 +527,13 @@ Nedokončený kernel vrátí fotku beze změny.
 code(HUE, solve=[(HUE_STUB, SOLUTION_HUE)])
 
 md(rf"""
-### ✅ Kontrola
-
-Buňka otočí odstíny fotky stejně v NumPy a porovná výsledek s vrstvou `Hue`. Počítá s posuvníky kernelu ve výchozím stavu, $\theta = {THETA:g}°$ a $s = {STRETCH:g}$. Pokud jste jimi hýbali, nastavte `theta` a `s` v buňce na jejich hodnoty.
+Buňka otočí odstíny fotky stejně v NumPy a zapíše je do vrstvy `Hue NumPy`. Vypadá stejně jako `Hue` s posuvníky ve výchozím stavu, $\theta = {THETA:g}°$ a $s = {STRETCH:g}$.
 """)
 
 code(f"""
 theta, s = {THETA}, {STRETCH}                       # the kernel's sliders
 L, z = to_oklab(photo.read()[..., :3])
-sara.check("Hue", rgba(from_oklab(L, s * np.exp(1j * np.radians(theta)) * z)))
+doc.new_layer("Hue NumPy", rgba(from_oklab(L, s * np.exp(1j * np.radians(theta)) * z)))
 """)
 
 md(r"""
@@ -621,8 +617,8 @@ md(r"""
 ## Shrnutí
 
 - Dvojice čísel v pixelu je komplexní číslo. U barvy v OKLabu je délka sytost a úhel odstín, stejně jako u koeficientu spektra amplituda a fáze.
-- Násobení $e^{i\theta}$ otočí odstíny, násobení reálným $s$ mění sytost, přičtení $c$ tónuje a odečtení průměru vyváží bílou.
-- Kernel násobí komplexní čísla jako `vec2` podle $(ac - bd) + (ad + bc)\,i$, stejně jako druhý průchod DFT v lekci 4.
+- Násobení $e^{i\theta}$ otáčí odstíny, násobení $s$ mění sytost, přičtení $c$ tónuje, odečtení průměru vyvažuje bílou.
+- Kernel násobí komplexní čísla jako `vec2`, stejně jako druhý průchod DFT v lekci 4.
 - Spektrum reálného obrazu je souměrné, protože kosinus jsou dvě opačně točené šipky. Spektrum komplexního obrazu souměrné být nemusí a nese o polovinu víc informace. Dva reálné obrazy proto stačí transformovat jednou.
 - Gradient je komplexní obraz šipek kolmých na hrany. Směry hran se průměrují přes $g^2$, ve kterém se šipky $g$ a $-g$ nevyruší.
 

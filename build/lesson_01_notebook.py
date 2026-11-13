@@ -297,8 +297,6 @@ balls.show()
 md(r"""
 ### Nové funkce v této lekci
 
-Sloupec Sekce říká, kde se funkce objeví poprvé. Funkce z úvodní lekce shrnuje její příloha.
-
 **Kernel v buňce `%%gmacs`**
 
 | Zápis | Co dělá | Sekce |
@@ -307,7 +305,7 @@ Sloupec Sekce říká, kde se funkce objeví poprvé. Funkce z úvodní lekce sh
 | `uniform int i: hint_enum("A", "B") = 0` | rozbalovací seznam, kernel dostane pořadí volby od 0 | 1 |
 | `const int B = 1` | konstanta, tady jméno pro jednu volbu ze seznamu | 1 |
 | `match i:` a pod ním `case B:` | větvení podle hodnoty, `switch` z GLSL | 1 |
-| `floor(x)`, `fract(x)`, `clamp(x, 0.0, 1.0)` | zaokrouhlení dolů, desetinná část, omezení do intervalu | 2 |
+| `fract(x)`, `clamp(x, 0.0, 1.0)` | desetinná část, omezení do intervalu | 2 |
 | `sa_hash21(vec2 p)` | bílý šum, číslo od 0 do 1 z pozice, knihovna `noise` | 2 |
 | `const float A[16] = float[16](...)`, `at.x % 4` | pole konstant, zbytek po dělení | 2 |
 
@@ -578,7 +576,7 @@ code(HELPERS_NP)
 md(r"""
 ### 🎯 Úkol 3: efekt v NumPy
 
-Napište `apply`: světlost, práh podle `dither`, posterizace na `steps` úrovní a nakonec barvy z hotové `gradient`. Nedokončená funkce vrací obrázek beze změny.
+Napište `apply`: světlost, práh podle `dither`, posterizace na `steps` úrovní a nakonec barvy z hotové `gradient`.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -607,8 +605,8 @@ Vložte efekt do `pga_filter/effect.py` a vyzkoušejte ho na vlastní fotce. Okn
 
 <details><summary>💡 Nápověda</summary>
 
-1. Do `effect.py` patří buňka s pomocnými funkcemi a `PARAMS` a vaše `apply`. Řádek `import numpy as np` nechte nahoře.
-2. `TITLE = "Gradient map"` pojmenuje položku v menu. Okno filtru zavřete a znovu otevřete, Kritu restartovat nemusíte.
+1. Do `effect.py` patří buňka s pomocnými funkcemi a `PARAMS` a vaše `apply`.
+2. `TITLE = "Gradient map"` pojmenuje položku v menu.
 </details>
 """)
 
@@ -625,7 +623,6 @@ md(r"""
 
 - **Barvy mimo gamut.** Přechod v OKLabu může projít barvou, kterou sRGB neumí zobrazit, a ta se ořízne. Mapování gamutu přijde v lekci o HDR.
 - **Jak vzniká modrý šum.** Textura je spočítaná algoritmem void-and-cluster (Ulichney, 1993) ve skriptu `build/lesson_01_diagrams.py`.
-- **Error diffusion na GPU.** Jde jen po řádcích nebo po dlaždicích.
 
 ### Bonusové úkoly
 

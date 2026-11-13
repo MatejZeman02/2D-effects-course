@@ -529,8 +529,6 @@ photo = doc.import_image("imgs/3/coffee.png")            # a layer called "coffe
 md(r"""
 ### Nové funkce v této lekci
 
-Funkce z úvodní lekce shrnuje její příloha. Sloupec Sekce říká, kde se funkce objeví poprvé.
-
 **Kernel v buňce `%%gmacs`**
 
 | Zápis | Co dělá | Sekce |
@@ -539,7 +537,7 @@ Funkce z úvodní lekce shrnuje její příloha. Sloupec Sekce říká, kde se f
 | `at / side` | celočíselné dělení, u `ivec2` po složkách | 1 |
 | `uniform float weights[9]` | matice 3 × 3 jako mřížka políček pod buňkou, čtená po řádcích | 2 |
 | `uniform bool normalise = true` | zaškrtávací políčko pod buňkou | 2 |
-| `exp(x)`, `dot(d, d)` | $e^x$, čtverec délky vektoru | 3, 4 |
+| `exp(x)` | $e^x$ | 3 |
 | `min`, `max`, `clamp` na `ivec2`, `floor` na `vec2` a převod `ivec2(...)` | po složkách | 5 |
 | `kernel`, `image`, `params:`, `dst[pixel] = v` | celý kernel místo funkce `pixel`, s obrázky a parametry | 8 |
 | `shared`, `barrier()`, `local_id`, `group_id` | sdílená paměť skupiny vláken, čekání na celou skupinu a čísla vlákna a skupiny | 8 |
@@ -663,7 +661,7 @@ Průměr okolí udělá z jasného bodu hranatou skvrnu, protože soused v rohu 
 
 $$w(i, j) = e^{-\frac{i^2 + j^2}{2\sigma^2}}$$
 
-Ve vzdálenosti $3\sigma$ je váha asi setina té prostřední, kernel proto sčítá jen do poloměru $r = \lceil 3\sigma \rceil$. Rozmazání míchá světlo, a proto počítá v lineárním RGB, jak ukázal konec sekce 2. Poloměr roste se `sigma` až na 24 pixelů, `halo=32` mu dává rezervu.
+Ve vzdálenosti $3\sigma$ je váha asi setina té prostřední, kernel proto sčítá jen do poloměru $r = \lceil 3\sigma \rceil$. Kernel počítá v lineárním RGB, jak ukázal konec sekce 2. Poloměr roste se `sigma` až na 24 pixelů, `halo=32` mu dává rezervu.
 """)
 
 code(GAUSS_2D)
@@ -703,7 +701,7 @@ Napište první průchod, rozmazání po řádku. Výsledek nechte v lineárním
 
 1. Vezměte kernel `Gauss 2D` a nechte jen vnitřní cyklus, přes `dx`.
 2. Váha závisí jen na `dx`.
-3. Na konci vraťte součet dělený součtem vah, bez převodu do sRGB.
+3. Na konci vraťte součet dělený součtem vah.
 </details>
 
 <details><summary>🔑 Řešení</summary>
@@ -889,7 +887,7 @@ code(HELPERS_NP)
 md(r"""
 ### 🎯 Úkol 6: rozmazání v NumPy
 
-Napište `blur(a, sigma)`: rozmazání po řádcích a pak po sloupcích, okraj podle pravidla Clamp. Váhy dává `gaussian_1d(sigma)`, pole délky $2r + 1$. Nedokončená funkce pole nemění. Výsledek se zapíše do vrstvy `Blur NumPy`, která má vypadat jako `Gauss 2D` se `sigma` 3.
+Napište `blur(a, sigma)`: rozmazání po řádcích a pak po sloupcích, okraj podle pravidla Clamp. Váhy dává `gaussian_1d(sigma)`, pole délky $2r + 1$. Výsledek se zapíše do vrstvy `Blur NumPy`, která má vypadat jako `Gauss 2D` se `sigma` 3.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -916,11 +914,11 @@ print(f"NumPy blur: {{took * 1000:.1f}} ms")
 """, solve=[(BLUR_NP_GIVEN, SOLUTION_BLUR_NP)])
 
 md(r"""
-**Zaostření** (*unsharp mask*) přičte k obrázku jeho rozdíl od rozmazaného obrázku, $f + a\,(f - \text{blur}(f))$. Rozdíl jsou detaily menší než $\sigma$ a `amount` $a$ říká, kolikrát je zesílit. Jako na konci sekce 2 se počítá v OKLabu. Proč to funguje, ukazuje nepovinná sekce 9.
+**Zaostření** (*unsharp mask*) přičte k obrázku jeho rozdíl od rozmazaného obrázku, $f + a\,(f - \text{blur}(f))$. Rozdíl jsou detaily menší než $\sigma$ a `amount` $a$ říká, kolikrát je zesílit. Proč to funguje, ukazuje nepovinná sekce 9.
 
 ### 🎯 Úkol 7: filtr
 
-Napište `apply` s režimy `Blur` v lineárním RGB a `Sharpen` v OKLabu. Zaostřená barva může vyjít mimo sRGB, záporné světlo ořízněte na nulu. Nedokončená funkce vrací obrázek beze změny.
+Napište `apply` s režimy `Blur` v lineárním RGB a `Sharpen` v OKLabu. Zaostřená barva může vyjít mimo sRGB, záporné světlo ořízněte na nulu.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -948,7 +946,7 @@ Vložte filtr do `pga_filter/effect.py` s `TITLE = "Blur and sharpen"` a vyzkou�
 
 <details><summary>💡 Nápověda</summary>
 
-1. Do `effect.py` patří pomocné funkce, vaše `blur`, `PARAMS` a `apply`. Řádek `import numpy as np` nechte nahoře.
+1. Do `effect.py` patří pomocné funkce, vaše `blur`, `PARAMS` a `apply`.
 2. Náhled počítá jen malou kopii, pomalé je až Apply na celé fotce. Zkuste filtr nejdřív na výběru. Ve zmenšeném náhledu „Whole region, scaled down“ vypadá rozmazání silnější, skutečnou sílu ukáže „Centre at full size“.
 </details>
 
@@ -1040,19 +1038,19 @@ Součet vah je 0, takže každá plocha zčerná. Svítí jen tmavá strana hran
 md(r"""
 ## Shrnutí
 
-- Rozmazání míchá pixel s okolím. Průměr celé fotky je jedna barva, průměr v mřížce čtverců mozaika, průměr čtverce kolem každého pixelu rozmazání.
+- Rozmazání míchá pixel s okolím: průměr celé fotky je jedna barva, průměr v mřížce mozaika, průměr okolí každého pixelu rozmazání.
 - Konvoluce je vážený součet okolí. Součet vah 1 zachová plochy, součet 0 nechá jen změny.
 - Konvoluce je asociativní, a jádro, které je konvolucí sloupce s řádkem, jde proto spočítat ve dvou průchodech: $2(2r + 1)$ sousedů místo $(2r + 1)^2$. Takové je Gaussovo jádro, průměr i Sobel.
 - Rozmazání míchá světlo, a proto počítá v lineárním RGB. Zaostření a hrany měří rozdíly, jak je vidí oko, a proto v OKLabu.
 - Bilaterální filtr váží souseda i podle rozdílu barev a hrany nerozmaže. Jádro se mění od pixelu k pixelu, a dva průchody proto nejdou.
-- Za okrajem obrázku je nutné něco zvolit: Zero ztmaví okraje, Clamp je natáhne, Mirror zrcadlí a Wrap opakuje obrázek jako dlaždici.
+- Za okrajem je nutné zvolit pravidlo: Zero, Clamp, Mirror nebo Wrap. Fotce se hodí Mirror nebo Clamp, textuře Wrap.
 - Sobelův operátor odhadne gradient světlosti. Jeho délka je síla hrany, směr míří kolmo na hranu.
 - NumPy počítá konvoluci jako vážený součet posunutých výřezů celého pole.
 
 ### Co jsme vynechali
 
 - **Rozmazání s proměnným poloměrem.** Hloubka ostrosti nebo rozmazání podle masky mění $\sigma$ pixel od pixelu a jádro pak není oddělitelné.
-- **Rychlé aproximace.** Několik průměrů za sebou se blíží Gaussovi a průměr jde spočítat v čase nezávislém na poloměru, posuvným součtem. Kawaseho rozmazání a pyramida zmenšených obrázků jsou rychlé způsoby, jak hry dělají rozmazání pro bloom.
+- **Rychlé aproximace.** Několik průměrů za sebou se blíží Gaussovi. Kawaseho rozmazání a pyramida zmenšených obrázků jsou rychlé způsoby, jak hry dělají rozmazání pro bloom.
 - **Cannyho detektor hran.** Gaussovo rozmazání, Sobel, ztenčení hran na jeden pixel a dvě prahové hodnoty dají dohromady čisté čáry místo šedých pruhů.
 - **Konvoluce přes Fourierovu transformaci.** Pro velká jádra je rychlejší násobit spektra, jak ukáže lekce o frekvencích.
 

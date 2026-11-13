@@ -417,7 +417,7 @@ md(r"""
 
 Na konci lekce budete mít generátor krajiny: ostrovy s plážemi, lesy, skalami a sněhem, osvětlené sluncem, které jde posouvat. Nevzniká z žádného obrázku, každý pixel se spočítá jen ze své polohy. Cestou napíšete hodnotový šum, fraktální šum a Voroného šum, ze kterých se skládá většina procedurálních textur.
 
-Spusťte buňku. Otevře v Sáře nový dokument v sRGB místo toho otevřeného a přidá bílou vrstvu `Base` přes celé plátno. Kernely z ní nic nečtou, Sára podle ní jen pozná, přes jakou plochu je spustit.
+Spusťte buňku. Otevře nový dokument a přidá bílou vrstvu `Base` přes celé plátno. Kernely z ní nic nečtou, Sára podle ní jen pozná, přes jakou plochu je spustit.
 """)
 
 code("""
@@ -433,8 +433,6 @@ base = doc.new_layer("Base", np.ones_like(pixels))   # white, the size of the ca
 md(r"""
 ### Nové funkce v této lekci
 
-Funkce z úvodní lekce shrnuje její příloha. Sloupec Sekce říká, kde se funkce objeví poprvé.
-
 **Kernel v buňce `%%gmacs`**
 
 | Zápis | Co dělá | Sekce |
@@ -443,20 +441,16 @@ Funkce z úvodní lekce shrnuje její příloha. Sloupec Sekce říká, kde se f
 | `h ^ g`, `h >> 16u`, `h & 65535u` | bitové operace: XOR, posun doprava, AND | 1 |
 | `ivec2(floor(p))`, `float(h)`, `uint(x)` | převody mezi typy, `ivec2(floor(p))` je buňka mřížky, ve které leží bod `p` | 1 |
 | `for i in range(octaves):` | cyklus, jehož mez je parametr | 2 |
-| `p *= 2.0`, `total += x` | zkrácené přiřazení jako v Pythonu | 2 |
-| `for dy in range_inclusive(-1, 1):` | cyklus včetně horní meze: -1, 0, 1 | 3 |
-| `elif` | další podmínka | 3 |
-| `length(v)`, `normalize(v)`, `dot(a, b)` | délka vektoru, vektor délky 1, skalární součin | 3, 4 |
+| `normalize(v)` | vektor délky 1 | 4 |
 | `const vec3 A[8] = vec3[8](...)` | pole vektorů jako konstanta | 4 |
-| `radians(x)`, `cos(x)`, `sin(x)` | stupně na radiány a goniometrické funkce | 4 |
 
 **NumPy**
 
 | Volání | Co dělá | Sekce |
 |---|---|---|
-| `a.astype(np.uint32)` | převod na 32bitová celá čísla bez znaménka, násobení pak přetéká jako na GPU | 5 |
+| `a.astype(np.uint32)` | převod na 32bitová celá čísla bez znaménka | 5 |
 | `h >> 16`, `h ^ g` | bitové operace po prvcích | 5 |
-| `np.arange(w)[None, :]`, `np.arange(h)[:, None]` | řádek a sloupec čísel. Počítání s oběma najednou dá celé pole (*broadcasting*) | 5 |
+| `np.arange(w)[None, :]`, `np.arange(h)[:, None]` | řádek a sloupec čísel, viz úkol 6 | 5 |
 | `np.gradient(a)` | rozdíly sousedních prvků ve směru y a x | 5 |
 | `np.linalg.norm(n, axis=-1, keepdims=True)` | délka každého vektoru v poli | 5 |
 | `n @ l` | skalární součin každého vektoru v `n` s vektorem `l` | 5 |
@@ -466,7 +460,7 @@ Funkce z úvodní lekce shrnuje její příloha. Sloupec Sekce říká, kde se f
 md(r"""
 ## Cíl lekce
 
-Buňka níže spustí hotový generátor. Jeho kód je schovaný, protože ho během lekce napíšete sami. Vyzkoušejte hladinu moře `sea`, směr slunce `sun` a počet oktáv `octaves`.
+Buňka níže spustí hotový generátor, jehož kód je schovaný. Vyzkoušejte hladinu moře `sea`, směr slunce `sun` a počet oktáv `octaves`.
 """)
 
 code(GOAL, hidden=True)
@@ -487,7 +481,7 @@ Lineární přechod nechá na hranicích buněk zlomy. Hladký přechod nejdří
 
 ### 🎯 Úkol 1: hodnotový šum
 
-Napište `value_noise(p, smoothed)`. `p` je poloha v buňkách: celá část určuje buňku, desetinná část polohu uvnitř ní. Smíchejte čísla ze čtyř rohů buňky podle polohy uvnitř, se `smoothed` přes smoothstep. Dokud funkce chybí, ukazují `Linear` i `Smooth` stejné čtverce jako `Cells`.
+Napište `value_noise(p, smoothed)`. `p` je poloha v buňkách: celá část určuje buňku, desetinná část polohu uvnitř ní. Smíchejte čísla ze čtyř rohů buňky podle polohy uvnitř, se `smoothed` přes smoothstep.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -525,16 +519,14 @@ def pixel(ivec2 at) -> vec4:
 """, solve=[(VALUE_STUB, SOLUTION_VALUE)])
 
 md(r"""
-### ✅ Kontrola
-
-S volbou `Linear` jsou vidět rovné zlomy a hvězdice podél mřížky, se `Smooth` je šum měkký jako mraky. Posuvník `scale` mění velikost útvarů a obraz se přitom roztahuje od levého horního rohu.
+S volbou `Linear` jsou vidět zlomy podél mřížky, se `Smooth` je šum měkký jako mraky.
 
 > **❓ Otázka**
 > Když buňku spustíte znovu, nebo celý notebook zítra, vyjde stejný obraz. Proč je to u textury žádoucí? A co by se stalo při tahu posuvníkem, kdyby každý pixel bral číslo z generátoru náhodných čísel?
 
 <details><summary>🔑 Odpověď</summary>
 
-Hash je funkce, pro stejnou buňku dá vždy stejné číslo. Textura je proto stejná při každém spuštění, na každém počítači a na GPU stejně jako v NumPy, takže jde zkontrolovat a místo obrázku stačí uložit hodnoty parametrů. Generátor náhodných čísel by při každém pohybu posuvníkem vrátil jiná čísla a šum by se přeházel, místo aby se plynule měnil. Na GPU navíc vlákno nemá odkud vzít „další“ náhodné číslo, protože vlákna běží současně a nesdílejí stav.
+Textura je stejná při každém spuštění, na každém počítači a na GPU stejně jako v NumPy, takže jde zkontrolovat a místo obrázku stačí uložit hodnoty parametrů. Generátor náhodných čísel by při tahu posuvníkem šum pokaždé přeházel, místo aby se plynule měnil. Na GPU navíc vlákno nemá odkud vzít „další“ náhodné číslo, protože vlákna běží současně a nesdílejí stav.
 </details>
 """)
 
@@ -552,7 +544,7 @@ Dělení součtem vah drží výsledek mezi 0 a 1.
 
 ### 🎯 Úkol 2: fBm
 
-Napište `fbm(p)` s `octaves` oktávami. Mezi oktávami polohu kromě zjemnění posuňte o půl buňky, `p = p * lacunarity + 0.5`. Jinak by se mřížky všech oktáv sešly v levém horním rohu ve stejné buňce se stejným číslem. Nedokončená funkce vrací jednu oktávu.
+Napište `fbm(p)` s `octaves` oktávami. Mezi oktávami polohu kromě zjemnění posuňte o půl buňky, `p = p * lacunarity + 0.5`. Jinak by se mřížky všech oktáv sešly v levém horním rohu ve stejné buňce se stejným číslem.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -589,9 +581,7 @@ def pixel(ivec2 at) -> vec4:
 """, solve=[(FBM_STUB, SOLUTION_FBM)])
 
 md(r"""
-### ✅ Kontrola
-
-S jednou oktávou je obraz stejný jako hladký hodnotový šum, každá další přidá jemnější detail. Se `gain` kolem 0.8 je šum drsný a zrnitý, kolem 0.3 skoro hladký.
+S jednou oktávou je obraz stejný jako hladký hodnotový šum, se `gain` kolem 0.8 je šum drsný, kolem 0.3 skoro hladký.
 """)
 
 # --- 3. Voronoi -----------------------------------------------------------------
@@ -606,7 +596,7 @@ $F_1$ je u každého bodu nula a od něj roste, takže body jsou tmavé skvrny a
 
 ### 🎯 Úkol 3: F2 a barva buňky
 
-Upravte cyklus tak, aby si kromě nejbližší vzdálenosti `f1` pamatoval i druhou nejbližší `f2` a buňku nejbližšího bodu `owner`. Pak začnou fungovat volby `F2`, `F2 - F1` a `Cell`. Nedokončený kernel ukazuje pro `F2` a `F2 - F1` bílou a pro `Cell` barevné čtverce.
+Upravte cyklus tak, aby si kromě nejbližší vzdálenosti `f1` pamatoval i druhou nejbližší `f2` a buňku nejbližšího bodu `owner`. Pak začnou fungovat volby `F2`, `F2 - F1` a `Cell`.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -626,9 +616,7 @@ Místo řádku s TODO a řádku `f1 = min(f1, d)`:
 code(VORONOI.format(hash=HASH_GMACS, loop=VORONOI_LOOP_GIVEN), solve=[(VORONOI_LOOP_GIVEN, SOLUTION_VORONOI)])
 
 md(r"""
-### ✅ Kontrola
-
-`F2 - F1` kreslí tmavé čáry na hranicích buněk a `Cell` obarví každou buňku jednou barvou. S `jitter = 0` leží body ve středech čtverců mřížky a buňky jsou zase čtverce.
+`F2 - F1` kreslí tmavé čáry na hranicích buněk a `Cell` obarví každou buňku jednou barvou. S `jitter = 0` jsou buňky zase čtverce.
 
 > **❓ Otázka**
 > Přepněte na `Cell` a táhněte posuvníkem `scale`. Buňky rostou od levého horního rohu, ale každá si nechává svou barvu. Proč?
@@ -651,7 +639,7 @@ Kernel má zarážky v polích `STOP_AT` (výšky) a `STOP_LAB` (barvy převeden
 
 ### 🎯 Úkol 4: barvy krajiny
 
-Napište `terrain_colour(h)`, barvu výšky `h` v OKLabu. Leží lineárně mezi dvěma zarážkami, mezi kterými je `h - sea`. Pod první zarážkou je barva první, nad poslední barva poslední. Nedokončená funkce barví celé plátno hlubokou vodou.
+Napište `terrain_colour(h)`, barvu výšky `h` v OKLabu. Leží lineárně mezi dvěma zarážkami, mezi kterými je `h - sea`. Pod první zarážkou je barva první, nad poslední barva poslední.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -681,7 +669,7 @@ Minus u sinu je tam proto, že osa y v obrázku míří dolů.
 
 ### 🎯 Úkol 5: světlo
 
-Napište `light(at)`, jas pixelu $0.25 + 0.75 \max(n \cdot l, 0)$. Voda je rovná, výšku pod hladinou proto berte jako `sea`. Nedokončená funkce vrací 1, tedy krajinu bez stínů.
+Napište `light(at)`, jas pixelu $0.25 + 0.75 \max(n \cdot l, 0)$. Voda je rovná, výšku pod hladinou proto berte jako `sea`.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -700,9 +688,7 @@ code(TERRAIN.format(into="Terrain", stops=STOPS_GMACS, hash=HASH_GMACS, value=VA
      solve=[(COLOUR_GIVEN, SOLUTION_COLOUR), (LIGHT_GIVEN, SOLUTION_LIGHT)])
 
 md(r"""
-### ✅ Kontrola
-
-Plátno je krajina: modré moře, pláže, zelené nížiny, skály a sníh na vrcholcích. Posuvník `sea` zvedá hladinu a ostrovy pod ní mizí. Svahy otočené ke slunci jsou světlejší a moře je rovné, `sun` obchází se sluncem dokola.
+Plátno je krajina: modré moře, pláže, zelené nížiny, skály a sníh na vrcholcích. Svahy otočené ke slunci jsou světlejší a moře je rovné.
 
 > **❓ Otázka**
 > Kernel násobí jasem barvu v lineárním RGB, před zakódováním do sRGB. Proč ne až hodnoty sRGB?
@@ -717,7 +703,7 @@ Jas říká, kolik světla na plochu dopadá, a světlo se násobí a sčítá v
 md(r"""
 ## 5. Do Krity
 
-Teď generátor napíšete v NumPy. Pomocné funkce obsahují převody barev z lekce o barevných prostorech, `lab_to_linear` (převod z OKLabu do lineárního RGB, ještě bez zakódování do sRGB), hash a zarážky. `cell_hash` počítá v `np.uint32` jako GPU: násobení přeteče a pokračuje od nuly, takže vyjdou stejné bity. Buňku stačí spustit.
+Teď generátor napíšete v NumPy. Pomocné funkce obsahují převody barev z lekce o barevných prostorech, `lab_to_linear` (převod z OKLabu do lineárního RGB, ještě bez zakódování do sRGB), hash a zarážky. `cell_hash` počítá v `np.uint32` jako GPU, násobení přeteče a pokračuje od nuly. Buňku stačí spustit.
 """)
 
 code(HELPERS_NP)
@@ -725,7 +711,7 @@ code(HELPERS_NP)
 md(r"""
 ### 🎯 Úkol 6: hodnotový šum v NumPy
 
-Napište `value_noise(x, y)` pro celé pole poloh najednou. Pod ní je hotové `fbm`, stejné jako v kernelu, a ukázka, která ho nakreslí do vrstvy. `x` je řádek poloh tvaru (1, šířka) a `y` sloupec tvaru (výška, 1). NumPy z nich při počítání sám rozšíří celé pole (výška, šířka), stejně jako při sčítání pole s číslem. Nedokončená funkce vrací čtverce bez přechodů.
+Napište `value_noise(x, y)` pro celé pole poloh najednou. Pod ní je hotové `fbm`, stejné jako v kernelu, a ukázka, která ho nakreslí do vrstvy. `x` je řádek poloh tvaru (1, šířka) a `y` sloupec tvaru (výška, 1). NumPy z nich při počítání sám rozšíří celé pole (výška, šířka, *broadcasting*), stejně jako při sčítání pole s číslem.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -745,7 +731,7 @@ code(VALUE_NP_GIVEN + "\n\n\n" + FBM_NP + "\n\n\n" + FBM_PREVIEW, solve=[(VALUE_
 md(r"""
 ### 🎯 Úkol 7: celý generátor
 
-Napište `apply`: výšky z `fbm`, barvy ze zarážek a světlo z normál, stejně jako v kernelu. Obsah `img` generátor nepotřebuje, vezme z něj jen rozměry. Nedokončená funkce vrací vrstvu `Base` beze změny.
+Napište `apply`: výšky z `fbm`, barvy ze zarážek a světlo z normál, stejně jako v kernelu. Obsah `img` generátor nepotřebuje, vezme z něj jen rozměry.
 
 Kernel počítal výšku pěti pixelů, aby dostal sklon, protože vlákno nevidí výsledky sousedních vláken. V NumPy máte celou výškovou mapu v jednom poli a sklon spočítá `np.gradient`.
 
@@ -754,7 +740,7 @@ Kernel počítal výšku pěti pixelů, aby dostal sklon, protože vlákno nevid
 1. Polohy jsou `x = (np.arange(w)[None, :] + 0.5) / scale` a `y` stejně se sloupcem.
 2. Barvy dá `np.interp` po složkách jako v lekci o barevných prostorech, s `STOP_AT` a `STOP_LAB`.
 3. `np.gradient(výšky)` vrátí sklon ve směru y a ve směru x, v tomto pořadí. Vodu zarovná `np.maximum`.
-4. Normály poskládejte funkcí `np.stack([...], axis=-1)` a vydělte jejich délkou. `n @ l` je skalární součin každé normály s vektorem `l`.
+4. Normály poskládejte funkcí `np.stack([...], axis=-1)` a vydělte jejich délkou.
 5. Jasem se násobí lineární barva, `lab_to_linear(lab) * jas[..., None]`, a teprve výsledek se zakóduje do sRGB.
 </details>
 
@@ -771,16 +757,7 @@ sara.live(apply, PARAMS, source="Base", target="Terrain NumPy")
 """, solve=[(APPLY_NP_GIVEN, SOLUTION_APPLY_NP)])
 
 md(r"""
-### ✅ Kontrola
-
-Porovnání s kernelem „Goal“ z úvodu. Kontrola počítá s jeho výchozími hodnotami. Pokud jste s nimi hýbali, spusťte buňku „Goal“ znovu.
-
-`np.gradient` počítá na okrajích plátna sklon jen z jedné strany, kernel z obou, takže krajní pixely se mohou lišit víc. Ostatní by se měly lišit jen zaokrouhlením.
-""")
-
-code("""
-defaults = {"scale": 400.0, "octaves": 6, "sea": 0.5, "relief": 400.0, "sun": 135.0}
-sara.check("Goal", apply(base.read(), **defaults))
+Vrstva `Terrain NumPy` vypadá stejně jako `Goal`.
 """)
 
 md(r"""
@@ -790,6 +767,7 @@ md(r"""
 code("""
 import time
 
+defaults = {"scale": 400.0, "octaves": 6, "sea": 0.5, "relief": 400.0, "sun": 135.0}
 img = base.read()
 times = []
 for _ in range(3):
@@ -829,12 +807,12 @@ Pro zmenšený náhled předá šablona funkci `apply` zmenšené pole. Generát
 md(r"""
 ## Shrnutí
 
-- Hash z celých souřadnic dá číslo, které vypadá náhodně, ale je vždy stejné. Procedurální textura je proto stejná při každém spuštění a na GPU stejná jako v NumPy.
-- Hodnotový šum míchá náhodná čísla z rohů buněk, smoothstep schová zlomy na hranicích buněk.
-- fBm sčítá oktávy, každou jemnější a slabší, a dá útvary všech velikostí najednou.
-- Voroného šum měří vzdálenosti k rozházeným bodům: $F_1$ dá tmavé tečky v bodech, $F_2 - F_1$ hranice buněk a hash buňky její barvu.
-- Výšková mapa s gradientní mapou je krajina. Normála z rozdílů sousedních výšek a Lambertův zákon jí dají reliéf.
-- Kernel kvůli normále počítá výšku pěti pixelů, NumPy má celou mapu v poli a sklon mu dá `np.gradient`.
+- Hash dá z celých souřadnic stálé „náhodné“ číslo, procedurální textura je proto vždy stejná.
+- Hodnotový šum míchá čísla z rohů buněk, smoothstep schová zlomy.
+- fBm sčítá oktávy a dá útvary všech velikostí.
+- Voroného šum měří vzdálenost k rozházeným bodům, $F_2 - F_1$ kreslí hranice buněk a hash buňky její barvu.
+- Výšková mapa s gradientní mapou je krajina, normála a Lambertův zákon jí dají reliéf.
+- Sklon: kernel počítá výšku pěti pixelů, NumPy použije `np.gradient`.
 
 ### Co jsme vynechali
 

@@ -58,13 +58,6 @@ def test_the_template_reads_params(defaults):
                         "phi": nb.PHI, "levels": nb.LEVELS}
 
 
-def test_the_check_cell_uses_the_defaults(defaults):
-    check = [c for c in code_cells() if 'sara.check("Goal"' in c][0]
-    space = {}
-    exec(check.split("sara.check")[0], space)
-    assert space["defaults"] == defaults
-
-
 def test_the_photo_is_the_canvas_size():
     assert Image.open(ROOT / nb.IMG / "chelsea.png").size == (W, H)
     assert f"sara.init(width={W}, height={H})" in code_cells()[0]
@@ -76,7 +69,7 @@ def test_every_layer_is_made_before_it_is_read():
     for cell in code_cells():
         first = cell.splitlines()[0]
         reads = re.findall(r'^%%gmacs "([^"]+)"', first) + re.findall(r' \w+=([A-Z]\w*)', first)
-        reads += re.findall(r'(?:doc\.layer|sara\.check|sara\.bench)\("([^"]+)"', cell)
+        reads += re.findall(r'(?:doc\.layer|sara\.bench)\("([^"]+)"', cell)
         reads += re.findall(r'source="([^"]+)"', cell)
         for name in reads:
             assert name in made, f"{name} is read before any cell makes it"

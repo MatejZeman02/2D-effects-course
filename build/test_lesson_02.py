@@ -64,10 +64,10 @@ def test_the_sliders_agree():
             assert sliders[name] == (float(default), float(low), float(high)), name
 
 
-def test_the_check_cell_uses_the_defaults(defaults):
-    check = [c for c in nb.cells if c["cell_type"] == "code" and "sara.check(" in "".join(c["source"])][0]
+def test_the_speed_cell_uses_the_defaults(defaults):
+    speed = [c for c in nb.cells if c["cell_type"] == "code" and "time.perf_counter" in "".join(c["source"])][0]
     space = {}
-    exec("".join(check["source"]).split("sara.check")[0], space)
+    exec("".join(speed["source"]).split("img = ")[0], space)
     assert space["defaults"].keys() == defaults.keys()
     for name, value in defaults.items():
         assert np.allclose(space["defaults"][name], value), name

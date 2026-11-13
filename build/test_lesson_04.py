@@ -64,13 +64,6 @@ def test_the_template_reads_params(defaults):
     assert defaults == {"mode": "Deblur", "sigma": nb.BLUR_SIGMA, "noise": 0.01}
 
 
-def test_the_check_cell_uses_the_defaults(defaults):
-    check = [c for c in code_cells() if 'sara.check("Goal"' in c][0]
-    space = {}
-    exec(check.split("sara.check")[0], space)
-    assert space["defaults"] == defaults
-
-
 def test_the_photos_are_the_canvas_size():
     """The canvas the setup cell asks for, the photos and every N in the kernels are one size."""
     for name in ("astronaut.png", "astronaut_blur.png", "brick.png"):
@@ -90,7 +83,7 @@ def test_every_layer_is_made_before_it_is_read():
     for cell in code_cells():
         first = cell.splitlines()[0]
         reads = re.findall(r'^%%gmacs "([^"]+)"', first)
-        reads += re.findall(r'(?:doc\.layer|sara\.check|sara\.bench)\("([^"]+)"', cell)
+        reads += re.findall(r'(?:doc\.layer|sara\.bench)\("([^"]+)"', cell)
         reads += re.findall(r'source="([^"]+)"', cell)
         for name in reads:
             assert name in made, f"{name} is read before any cell makes it"

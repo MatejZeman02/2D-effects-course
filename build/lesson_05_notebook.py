@@ -314,10 +314,6 @@ GOAL = ("# The filter of section 5, hidden because you write it yourself.\n"
         + PARAMS_NP
         + '\n\nsara.live(_goal(), PARAMS, source="chelsea", target="Goal")')
 
-DEFAULTS = (f'{{"style": "Toon", "sigma": {SIGMA}, "p": {P}, "epsilon": {EPSILON}, '
-            f'"phi": {PHI}, "levels": {LEVELS}}}')
-
-
 def answer(snippet, lang="python"):
     """A solution block's code fence."""
     return f"```{lang}\n{snippet}\n```"
@@ -346,8 +342,6 @@ photo = doc.import_image("imgs/5/chelsea.png")         # a layer called "chelsea
 md(r"""
 ### Nové funkce v této lekci
 
-Funkce z úvodní lekce shrnuje její příloha. Sloupec Sekce říká, kde se funkce objeví poprvé.
-
 **Kernel v buňce `%%gmacs`**
 
 | Zápis | Co dělá | Sekce |
@@ -366,7 +360,7 @@ Funkce z úvodní lekce shrnuje její příloha. Sloupec Sekce říká, kde se f
 md(r"""
 ## Cíl lekce
 
-Buňka níže spustí hotový filtr. Jeho kód je schovaný, protože ho během lekce napíšete sami. Režim `Toon` dá kreslený vzhled, `Lines` jen čáry. Zkuste posuvníky `epsilon` a `p`: první říká, kolik obrázku zůstane bílé, druhé, jak silné jsou obrysy.
+Buňka níže spustí hotový filtr, jehož kód je schovaný. Režim `Toon` dá kreslený vzhled, `Lines` jen čáry. Zkuste posuvníky `epsilon` a `p`: první říká, kolik obrázku zůstane bílé, druhé, jak silné jsou obrysy.
 """)
 
 code(GOAL, hidden=True)
@@ -399,7 +393,7 @@ code(BLURS)
 md(r"""
 ### 🎯 Úkol 1: DoG
 
-Spočítejte rozdíl červené a zelené složky vrstvy `Blurs`, vynásobte ho `gain` a přičtěte k šedé 0.5, aby byly vidět kladné i záporné hodnoty. Nedokončený kernel vrací světlost.
+Spočítejte rozdíl červené a zelené složky vrstvy `Blurs`, vynásobte ho `gain` a přičtěte k šedé 0.5, aby byly vidět kladné i záporné hodnoty.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -413,20 +407,6 @@ Spočítejte rozdíl červené a zelené složky vrstvy `Blurs`, vynásobte ho `
 """)
 
 code(DOG, solve=[(DOG_STUB, SOLUTION_DOG)])
-
-md(r"""
-### ✅ Kontrola
-
-Pomocné funkce obsahují převody z lekce o barevných prostorech a rozmazání `blur` z lekce 3. Kontrola porovná vrstvu `DoG` s výpočtem v NumPy, s výchozími hodnotami posuvníků.
-""")
-
-code(HELPERS_NP)
-
-code(f"""
-L = lightness(photo.read())[..., None]
-dog = blur(L, {SIGMA}) - blur(L, {K} * {SIGMA})
-sara.check("DoG", rgba(0.5 + 10.0 * dog[..., 0]))
-""")
 
 md(r"""
 > **❓ Otázka**
@@ -456,7 +436,7 @@ S velkým $\varphi$ je práh ostrý a obrázek černobílý jako dřevoryt. S ma
 
 ### 🎯 Úkol 2: XDoG
 
-Napište kernel podle vzorců. Nedokončený kernel vrací světlost.
+Napište kernel podle vzorců.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -473,9 +453,7 @@ Napište kernel podle vzorců. Nedokončený kernel vrací světlost.
 code(XDOG, solve=[(XDOG_STUB, SOLUTION_XDOG)])
 
 md(r"""
-### ✅ Kontrola
-
-Porovnejte vrstvu `XDoG` s obrázkem níže, levým horním, který má výchozí hodnoty. Číselná kontrola přijde v sekci 5, až budete mít XDoG i v NumPy. Pak zkuste posuvníky: ostatní obrázky ukazují, co dělají.
+Vrstva `XDoG` má vypadat jako levý horní obrázek s výchozími hodnotami, ostatní ukazují, co dělají posuvníky.
 
 @img(xdog_params.png, 900, Šest variant čárové kresby kočky s různými hodnotami sigma, p, epsilon a phi)
 
@@ -498,13 +476,12 @@ Kreslený vzhled (*toon shading*) napodobuje kreslený film: málo odstínů a �
 
 ### 🎯 Úkol 3: toon
 
-Zaokrouhlete světlost `lab.x` na `levels` úrovní a pak vynásobte celé `lab` hodnotou čáry `ink`. Barva se tak u čáry ztmaví i odbarví. Nedokončený kernel vrací fotku.
+Zaokrouhlete světlost `lab.x` na `levels` úrovní a pak vynásobte celé `lab` hodnotou čáry `ink`. Barva se tak u čáry ztmaví i odbarví.
 
 <details><summary>💡 Nápověda</summary>
 
 1. Posterizace z lekce 1 s prahem 0.5: $\lfloor L\,(n - 1) + 0.5 \rfloor / (n - 1)$.
 2. `levels` je `int`, převeďte ho na `float`.
-3. `lab *= ink` vynásobí všechny tři složky.
 </details>
 
 <details><summary>🔑 Řešení</summary>
@@ -516,21 +493,6 @@ Zaokrouhlete světlost `lab.x` na `levels` úrovní a pak vynásobte celé `lab`
 code(TOON, solve=[(TOON_STUB, SOLUTION_TOON)])
 
 md(r"""
-### ✅ Kontrola
-
-Funkce `toon` je totéž v NumPy. Budete ji potřebovat v sekci 5.
-""")
-
-code(TOON_NP + f"""
-
-
-ink = doc.layer("XDoG").read()[..., 0]
-sara.check("Toon", rgba(toon(photo.read(), ink, {LEVELS})))
-""")
-
-md(r"""
-Posterizace zaokrouhluje, takže pixel na hranici dvou úrovní se na GPU a v NumPy může zaokrouhlit různě. Desetiny procenta jsou v pořádku.
-
 > **❓ Otázka**
 > Srst kočky je po posterizaci zrnitá, plná skvrn jedné a druhé úrovně. Proč, a co by pomohlo?
 
@@ -554,7 +516,7 @@ $$\operatorname{var} = \frac{1}{n}\sum l^2 - \Big(\frac{1}{n}\sum l\Big)^2$$
 
 ### 🎯 Úkol 4: Kuwahara
 
-Doplňte funkci `quadrant`. Čtverec má stranu `radius + 1` a vede od `at` ve směru `towards`: pixel `at + towards * ivec2(dx, dy)` pro `dx` a `dy` od 0 do `radius`. Vrací průměrnou barvu v lineárním RGB a ve složce `.a` rozptyl jasu $l = 0.2126\,R + 0.7152\,G + 0.0722\,B$. Funkce `calmer` a `pixel` jsou hotové. Nedokončená funkce vrací pixel samotný.
+Doplňte funkci `quadrant`. Čtverec má stranu `radius + 1` a vede od `at` ve směru `towards`: pixel `at + towards * ivec2(dx, dy)` pro `dx` a `dy` od 0 do `radius`. Vrací průměrnou barvu v lineárním RGB a ve složce `.a` rozptyl jasu $l = 0.2126\,R + 0.7152\,G + 0.0722\,B$. Funkce `calmer` a `pixel` jsou hotové.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -570,35 +532,6 @@ Doplňte funkci `quadrant`. Čtverec má stranu `radius + 1` a vede od `at` ve s
 """)
 
 code(KUWAHARA, solve=[(QUADRANT_STUB, SOLUTION_QUADRANT)])
-
-md(r"""
-### ✅ Kontrola
-
-Totéž v NumPy, se čtyřmi čtverci ve stejném pořadí jako ve funkci `pixel`. Při shodném rozptylu dvou čtverců může GPU zvolit jiný čtverec než NumPy, takže desetiny procenta jsou v pořádku.
-""")
-
-code(f"""
-r = {RADIUS}
-lin = srgb_to_linear(photo.read()[..., :3])
-lum = lin @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
-h, w = lum.shape
-P = np.pad(lin, ((r, r), (r, r), (0, 0)), mode="edge")
-Q = np.pad(lum, r, mode="edge")
-best, best_var = np.zeros_like(lin), np.full((h, w), np.inf)
-for sx, sy in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
-    total, s1, s2 = np.zeros_like(lin), np.zeros((h, w)), np.zeros((h, w))
-    for dy in range(r + 1):
-        for dx in range(r + 1):
-            y, x = r + sy * dy, r + sx * dx
-            total += P[y:y + h, x:x + w]
-            s1 += Q[y:y + h, x:x + w]
-            s2 += Q[y:y + h, x:x + w] ** 2
-    n = (r + 1) ** 2
-    var = s2 / n - (s1 / n) ** 2
-    calmer = var < best_var
-    best[calmer], best_var[calmer] = total[calmer] / n, var[calmer]
-sara.check("Kuwahara", rgba(linear_to_srgb(best)))
-""")
 
 md(r"""
 Teď kreslený vzhled podruhé, z malby místo z fotky. V buňce kernelu `Toon` změňte první řádek na
@@ -624,13 +557,18 @@ a spusťte ji znovu. Zkuste také `Blurs` z vrstvy `Kuwahara`, aby i čáry byly
 md(r"""
 ## 5. Do Krity
 
-Filtr do Krity spojí XDoG a toon v NumPy. Rozmazání `blur` a funkci `toon` už máte.
+Filtr do Krity spojí XDoG a toon v NumPy. Pomocné funkce obsahují převody z lekce o barevných prostorech, rozmazání `blur` z lekce 3 a `toon`, totéž co kernel `Toon`.
+""")
+
+code(HELPERS_NP + "\n\n\n" + TOON_NP)
+
+md(r"""
 
 ### 🎯 Úkol 5: XDoG v NumPy
 
-Napište `xdog(L, sigma, p, epsilon, phi)`. `L` je pole `(h, w)`, `blur` chce `(h, w, c)`, takže světlost rozšiřte o osu a výsledek o ni zase zmenšete. Nedokončená funkce vrací bílý papír.
+Napište `xdog(L, sigma, p, epsilon, phi)`. `L` je pole `(h, w)`, `blur` chce `(h, w, c)`, takže světlost rozšiřte o osu a výsledek o ni zase zmenšete.
 
-Buňka pod funkcí porovná výsledek s vrstvou `XDoG`. Pokud jste na konci sekce 4 přepnuli `Blurs` na `Kuwahara` nebo hýbali posuvníky, vraťte první řádek `Blurs` na `%%gmacs "chelsea" -> "Blurs" halo=32` a spusťte znovu `Blurs` a pak `XDoG`.
+Buňka pod funkcí zapíše výsledek jako vrstvu `XDoG NumPy`, porovnejte ji s vrstvou `XDoG`. Pokud jste v sekci 4 přepnuli `Blurs` na `Kuwahara`, vraťte první řádek `Blurs` na `%%gmacs "chelsea" -> "Blurs" halo=32` a spusťte znovu `Blurs` a `XDoG`.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -650,13 +588,13 @@ code(XDOG_NP_GIVEN + f"""
 start = time.perf_counter()
 lines = xdog(lightness(photo.read()), {SIGMA}, {P}, {EPSILON}, {PHI})
 print(f"NumPy XDoG: {{(time.perf_counter() - start) * 1000:.1f}} ms")
-sara.check("XDoG", rgba(lines))
+doc.new_layer("XDoG NumPy", rgba(lines))
 """, solve=[(XDOG_NP_GIVEN, SOLUTION_XDOG_NP)])
 
 md(r"""
 ### 🎯 Úkol 6: filtr
 
-Napište `apply`. Styl `Lines` vrátí čáry jako šedý obrázek, `Toon` posterizaci s čarami přes funkci `toon`. Nedokončená funkce vrací obrázek beze změny.
+Napište `apply`. Styl `Lines` vrátí čáry jako šedý obrázek, `Toon` posterizaci s čarami přes funkci `toon`. Vrstvu `Filter NumPy` z buňky pod funkcí porovnejte s `Goal`.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -678,24 +616,13 @@ sara.live(apply, PARAMS, source="chelsea", target="Filter NumPy")
 """, solve=[(APPLY_GIVEN, SOLUTION_APPLY)])
 
 md(r"""
-### ✅ Kontrola
-
-Porovnání s filtrem „Goal“ z úvodu s jeho výchozími hodnotami. Pokud jste s nimi hýbali, spusťte buňku „Goal“ znovu.
-""")
-
-code(f"""
-defaults = {DEFAULTS}
-sara.check("Goal", apply(photo.read(), **defaults))
-""")
-
-md(r"""
 ### 🎯 Úkol 7: filtr v Kritě
 
 Vložte filtr do `pga_filter/effect.py` s `TITLE = "XDoG line art"` a vyzkoušejte ho na portrétu, na krajině a na vlastní kresbě. Na velkých fotkách zvětšete `sigma`, protože detaily mají víc pixelů.
 
 <details><summary>💡 Nápověda</summary>
 
-Do `effect.py` patří pomocné funkce (převody, `blur`, `toon`), vaše `xdog`, `PARAMS` a `apply`. Řádek `import numpy as np` nechte nahoře.
+Kromě `xdog`, `PARAMS` a `apply` patří do `effect.py` i pomocné funkce z buňky nahoře.
 </details>
 """)
 
@@ -704,16 +631,15 @@ md(r"""
 ## Shrnutí
 
 - Rozdíl dvou Gaussových rozmazání je pásmová propust: nechá detaily mezi dvěma velikostmi a na hranách dá kladné a záporné hodnoty.
-- DoG je skoro záporný Laplace rozmazaného obrázku (LoG), protože Gauss se s rostoucím $\sigma$ mění podle rovnice vedení tepla.
-- XDoG k rozmazané světlosti přičte zesílený rozdíl a výsledek projde měkkým prahem. Čtyři čísla, $\sigma$, $p$, $\varepsilon$ a $\varphi$, nastaví vzhled od kresby tuší po kresbu uhlem.
-- Kreslený vzhled je posterizovaná světlost krát čáry. Celý kernel čte dvě vrstvy, druhou přes `image ...: readonly` a jméno na prvním řádku buňky.
-- Kuwaharův filtr vyhladí plochy a nechá hrany, protože bere průměr nejklidnějšího ze čtyř čtverců.
-- Stylizace je řetěz průchodů: každý kernel zapíše vrstvu, kterou čte další, a každý článek jde vyměnit.
+- DoG je skoro záporný Laplace rozmazaného obrázku (LoG).
+- XDoG k rozmazané světlosti přičte zesílený rozdíl a výsledek projde měkkým prahem. Parametry $\sigma$, $p$, $\varepsilon$ a $\varphi$ nastaví vzhled od tuše po uhel.
+- Kreslený vzhled je posterizovaná světlost krát čáry. Kernel čte druhou vrstvu přes `image`.
+- Kuwaharův filtr vyhladí plochy a nechá hrany: průměr nejklidnějšího ze čtyř čtverců.
+- Stylizace je řetěz průchodů, každý článek jde vyměnit.
 
 ### Co jsme vynechali
 
 - **Čáry podél hran.** Rozmazání podél směru hrany (*flow-based DoG*, s polem směrů *edge tangent flow*) spojí přerušované čáry do plynulých tahů. Směr hrany dává Sobelův operátor z lekce o konvoluci.
-- **Anizotropní Kuwahara.** Výseče protažené podél hrany místo čtverců. Výsledek vypadá jako opravdová malba štětcem.
 - **Šrafování a půltóny.** Světlost se dá převést na šrafy, tečky tiskového rastru nebo znaky ASCII. Znaky potřebují obrázek s písmeny jako druhý vstup, a to teď umíte.
 - **Paleta.** Místo posterizace světlosti se barvy dají zaokrouhlit na paletu několika barev, vybranou ručně nebo shlukováním (k-means).
 

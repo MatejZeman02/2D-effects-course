@@ -447,10 +447,6 @@ GOAL = ("# The tonemapper of section 5, hidden because you write it yourself.\n"
         + PARAMS_NP
         + '\n\nsara.live(_goal(), PARAMS, source="HDR", target="Goal")')
 
-DEFAULTS = (f'{{"auto": True, "key": {KEY}, "stops": 0.0, "threshold": {THRESHOLD}, "sigma": {SIGMA}, '
-            f'"strength": {STRENGTH}, "curve": "ACES", "encode": True}}')
-
-
 def answer(snippet, lang="python"):
     """A solution block's code fence."""
     return f"```{lang}\n{snippet}\n```"
@@ -483,8 +479,6 @@ Vrstva drží čísla tak, jak jsou, i větší než 1. Sára je ale ukazuje jak
 
 ### Nové funkce v této lekci
 
-Funkce z úvodní lekce shrnuje její příloha. Sloupec Sekce říká, kde se funkce objeví poprvé.
-
 **Kernel v buňce `%%gmacs`**
 
 | Zápis | Co dělá | Sekce |
@@ -508,7 +502,7 @@ Funkce z úvodní lekce shrnuje její příloha. Sloupec Sekce říká, kde se f
 md(r"""
 ## Cíl lekce
 
-Buňka níže spustí hotový tonemapper. Jeho kód je schovaný, protože ho během lekce napíšete sami. Zkuste vypnout `auto`, posouvat `stops` a změnit `curve`.
+Buňka níže spustí hotový tonemapper, jehož kód je schovaný. Zkuste vypnout `auto`, posouvat `stops` a změnit `curve`.
 """)
 
 code(GOAL, hidden=True)
@@ -541,7 +535,7 @@ $$T(x) = \frac{x\,(2.51\,x + 0.03)}{x\,(2.43\,x + 0.59) + 0.14}$$
 
 ### 🎯 Úkol 1: tónová křivka
 
-Doplňte funkci `tone`: pro `curve` 1 Reinhardovu křivku, pro 2 ACES oříznutou na 0 až 1. Výchozí volba je ACES. Nedokončená funkce ořezává.
+Doplňte funkci `tone`: pro `curve` 1 Reinhardovu křivku, pro 2 ACES oříznutou na 0 až 1. Výchozí volba je ACES.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -555,21 +549,6 @@ Vzorce platí po složkách, a operace na `vec3` po složkách jsou. `1.0 + x` p
 """)
 
 code(TONE, solve=[(TONE_STUB, SOLUTION_TONE)])
-
-md(r"""
-### ✅ Kontrola
-
-Pomocné funkce obsahují převody z lekce o barevných prostorech, jas `luminance` a rozmazání `blur` z lekce o konvoluci. Kontrola porovná vrstvu `Tone` s křivkou ACES v NumPy, s `stops` na 0.
-""")
-
-code(HELPERS_NP)
-
-code(CURVES_NP + """
-
-
-hdr = doc.layer("HDR").read()[..., :3]
-sara.check("Tone", rgba(linear_to_srgb(aces(hdr))))
-""")
 
 md(r"""
 > **❓ Otázka**
@@ -599,7 +578,7 @@ Redukce umí jen čísla, která se sčítají v libovolném pořadí. Histogram
 
 ### 🎯 Úkol 2: logaritmus jasu
 
-Napište kernel, který do všech tří kanálů zapíše $\log(\delta + Y)$, s jasem $Y = 0.2126\,R + 0.7152\,G + 0.0722\,B$. Nedokončený kernel vrací nulu, a expozice pak vyjde rovna klíči.
+Napište kernel, který do všech tří kanálů zapíše $\log(\delta + Y)$, s jasem $Y = 0.2126\,R + 0.7152\,G + 0.0722\,B$.
 
 <details><summary>🔑 Řešení</summary>
 
@@ -627,19 +606,7 @@ print(f"mean log luminance {{mean_log:.4f}}, exposure {{exposure:.3f}}, {{np.log
 """)
 
 md(r"""
-### ✅ Kontrola
-
-Průměr spočítaný na GPU porovnáme s NumPy. Vrstva drží čísla v poloviční přesnosti (*half float*), takže se shodují asi na tři místa.
-""")
-
-code("""
-mean_np = np.log(1e-4 + luminance(hdr)).mean()
-print(f"GPU {mean_log:.5f}, NumPy {mean_np:.5f}, difference {abs(mean_log - mean_np):.5f}")
-print("they match" if abs(mean_log - mean_np) < 0.01 else "they differ, look at the Log luminance kernel")
-""")
-
-md(r"""
-Kernel níže použije spočítanou expozici. Zápis `{exposure}` na prvním řádku buňky dosadí hodnotu proměnné `exposure` z Pythonu. Po novém výpočtu expozice spusťte buňku znovu.
+Kernel níže použije spočítanou expozici, `{exposure}` na prvním řádku ji dosadí z Pythonu. Po novém výpočtu buňku spusťte znovu.
 """)
 
 code(AUTO)
@@ -662,7 +629,7 @@ Silné světlo se v objektivu i v oku rozptýlí a kolem lampy vznikne záře. H
 
 @img(bloom_steps.png, 900, Obrázek s tónovou křivkou, světlo nad prahem, jeho rozmazání a obrázek se září)
 
-Výběr světla a dva průchody rozmazání z lekce o konvoluci jsou hotové. Rozmazání je bez převodů ze sRGB, protože vrstva drží lineární světlo.
+Výběr světla a dva průchody rozmazání z lekce o konvoluci jsou hotové.
 """)
 
 code(BRIGHT)
@@ -674,7 +641,7 @@ code(BLOOM)
 md(r"""
 ### 🎯 Úkol 3: složení
 
-Celý kernel čte vrstvu `HDR` jako `src` a záři jako `bloom`. Přičtěte záři vynásobenou `strength` ke světlu, pak expozice a křivka. Nedokončený kernel záři nepřičte.
+Celý kernel čte vrstvu `HDR` jako `src` a záři jako `bloom`. Přičtěte záři vynásobenou `strength` ke světlu, pak expozice a křivka.
 
 <details><summary>🔑 Řešení</summary>
 
@@ -683,15 +650,6 @@ Celý kernel čte vrstvu `HDR` jako `src` a záři jako `bloom`. Přičtěte zá
 """)
 
 code(COMPOSITE, solve=[(COMPOSITE_STUB, SOLUTION_COMPOSITE)])
-
-md(r"""
-### ✅ Kontrola
-""")
-
-code(f"""
-glow = doc.layer("Bloom").read()[..., :3]
-sara.check("Glow", rgba(linear_to_srgb(aces((hdr + {STRENGTH} * glow) * exposure))))
-""")
 
 md(r"""
 > **❓ Otázka**
@@ -717,7 +675,7 @@ Největší sytost, která se vejde, se najde **půlením intervalu** (*bisectio
 
 ### 🎯 Úkol 4: stlačení do gamutu
 
-Doplňte `fit`. Barvu, která je uvnitř, vraťte beze změny. Jinak ji převeďte do OKLabu, světlost ořízněte na 1 a půlením najděte největší podíl sytosti `ab`, při kterém je barva uvnitř. Funkce `inside` je hotová. Nedokončená funkce ořezává, jako volba `Clip`.
+Doplňte `fit`. Barvu, která je uvnitř, vraťte beze změny. Jinak ji převeďte do OKLabu, světlost ořízněte na 1 a půlením najděte největší podíl sytosti `ab`, při kterém je barva uvnitř. Funkce `inside` je hotová.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -735,30 +693,6 @@ Doplňte `fit`. Barvu, která je uvnitř, vraťte beze změny. Jinak ji převeď
 code(GAMUT, solve=[(FIT_STUB, SOLUTION_FIT)])
 
 md(r"""
-### ✅ Kontrola
-
-Totéž v NumPy, půlení pro všechny pixely najednou.
-""")
-
-code("""
-c = hdr * exposure
-y = luminance(c)
-scaled = c * (aces(y) / np.maximum(y, 1e-4))[..., None]
-lab = oklab(scaled)
-lab[..., 0] = np.minimum(lab[..., 0], 1.0)
-lo, hi = np.zeros(y.shape), np.ones(y.shape)
-for i in range(16):
-    mid = 0.5 * (lo + hi)
-    rgb = oklab_to_linear(np.dstack([lab[..., 0], mid[..., None] * lab[..., 1:]]))
-    ok = np.all((rgb >= 0) & (rgb <= 1), axis=-1)
-    lo, hi = np.where(ok, mid, lo), np.where(ok, hi, mid)
-fitted = np.clip(oklab_to_linear(np.dstack([lab[..., 0], lo[..., None] * lab[..., 1:]])), 0, 1)
-inside = np.all((scaled >= 0) & (scaled <= 1), axis=-1)
-fitted[inside] = scaled[inside]
-sara.check("Gamut", rgba(linear_to_srgb(fitted)))
-""")
-
-md(r"""
 Přepněte `mode` a porovnejte lampy a oranžový lem u rampy. Rozdíl je jemný, protože fotka má málo sytých světel. Na neonech, ohni nebo laseru ve hře je zřetelný.
 
 > **❓ Otázka**
@@ -774,11 +708,15 @@ Světlost je to, co tónová křivka nastavila, a změna by udělala z jasné la
 md(r"""
 ## 5. Do Krity
 
-Tonemapper do Krity spojí všechno v NumPy: automatickou expozici, záři a křivku. Pomocné funkce, `blur` a křivky už máte.
+Tonemapper do Krity spojí všechno v NumPy: automatickou expozici, záři a křivku. Pomocné funkce obsahují převody z lekce o barevných prostorech, jas `luminance` a rozmazání `blur` z lekce o konvoluci.
+""")
 
+code(HELPERS_NP + "\n\n\n" + CURVES_NP)
+
+md(r"""
 ### 🎯 Úkol 5: automatická expozice v NumPy
 
-Napište `auto_exposure(lin, key)` podle vzorce ze sekce 2. Nedokončená funkce vrací 1.
+Napište `auto_exposure(lin, key)` podle vzorce ze sekce 2.
 
 <details><summary>🔑 Řešení</summary>
 
@@ -801,7 +739,7 @@ Napište `apply`:
 2. Záře: světlo nad prahem `threshold` (jako kernel `Bright`), rozmazané se `sigma`, krát `strength`, přičtené ke světlu.
 3. Pak expozice a křivka podle `curve`, a s `encode` převod do sRGB.
 
-Záporné hodnoty na vstupu ořízněte na nulu. Nedokončená funkce vrací obrázek beze změny.
+Záporné hodnoty na vstupu ořízněte na nulu. Vrstvu `Filter NumPy` z buňky pod funkcí porovnejte s `Goal`.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -822,24 +760,13 @@ sara.live(apply, PARAMS, source="HDR", target="Filter NumPy")
 """, solve=[(APPLY_GIVEN, SOLUTION_APPLY)])
 
 md(r"""
-### ✅ Kontrola
-
-Porovnání s filtrem „Goal“ z úvodu s jeho výchozími hodnotami. Pokud jste s nimi hýbali, spusťte buňku „Goal“ znovu.
-""")
-
-code(f"""
-defaults = {DEFAULTS}
-sara.check("Goal", apply(hdr_layer.read(), **defaults))
-""")
-
-md(r"""
 ### 🎯 Úkol 7: tonemapper v Kritě
 
 Vložte filtr do `pga_filter/effect.py` s `TITLE = "Tonemapper"`. Tonemapper potřebuje obrázek s čísly nad 1: otevřete v Kritě soubor EXR, třeba panorama oblohy z Poly Haven (licence CC0), který má dokument s 32bitovými čísly v lineárním světle. Krita sama převádí lineární světlo na obrazovku, a tak vypněte `encode`.
 
 <details><summary>💡 Nápověda</summary>
 
-1. Do `effect.py` patří pomocné funkce, křivky, `auto_exposure`, `PARAMS` a `apply`.
+1. Kromě `apply` a `PARAMS` patří do `effect.py` i všechny pomocné funkce a `auto_exposure`.
 2. V osmibitovém dokumentu Krita čísla nad 1 ořízne už na vstupu, a tonemapper pak nemá co stlačit.
 </details>
 """)
@@ -892,7 +819,7 @@ Přemapovat obrázek zvlášť pro každý koeficient by trvalo dlouho. Rychlá 
 
 ### 🎯 Úkol 8: přemapování
 
-Napište `remap(x, g, sigma_r, alpha, beta)` podle vzorce. `x` je pole, `g` číslo. Funkce `local_laplacian` je hotová. Nedokončená funkce vrací `x`, a filtr pak obrázek nezmění. Kontrola pod funkcí zkusí čtyři hodnoty.
+Napište `remap(x, g, sigma_r, alpha, beta)` podle vzorce. `x` je pole, `g` číslo. Funkce `local_laplacian` je hotová. Kontrola pod funkcí zkusí čtyři hodnoty.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -949,19 +876,18 @@ Obloha se rozpadne na skvrny. Fotka byla původně osmibitová, a plynulý přec
 md(r"""
 ## Shrnutí
 
-- Světlo ve scéně má rozsah i dvacet expozičních stupňů, obrazovka asi osm. Výpočet probíhá v lineárním světle bez omezení a do obrazovky se světlo stlačí až na konci.
+- Světlo ve scéně má rozsah i dvacet expozičních stupňů, obrazovka asi osm. Počítá se v lineárním světle a stlačí se až na konci.
 - Tónová křivka stlačí jasné plynule. Reinhard je nejjednodušší, ACES má tvar S a filmový vzhled.
 - Automatická expozice posune geometrický průměr jasu na klíč. Průměr celého obrázku je redukce, kterou GPU sčítá ve stromu.
-- Hodnota z Pythonu se do kernelu dostane jako parametr, dosazením `{proměnná}` do prvního řádku buňky.
+- `{proměnná}` v prvním řádku buňky dosadí hodnotu z Pythonu.
 - Záře je světlo nad prahem, rozmazané a přičtené před tónovou křivkou.
 - Křivka po složkách posouvá odstín jasných barev. Stlačení jasu a pak sytosti v OKLabu odstín zachová.
 - Laplaceova pyramida rozloží obrázek podle velikosti detailů a složí ho zpět přesně. Lokální Laplaceův filtr v ní stlačí hrany a detail nechá, bez svatozáře.
 
 ### Co jsme vynechali
 
-- **Histogram a percentily.** Expozice podle histogramu ignoruje nejtmavší a nejjasnější procenta pixelů. Histogram na GPU potřebuje atomické zápisy do přihrádek.
+- **Histogram a percentily.** Expozice podle histogramu ignoruje nejtmavší a nejjasnější procenta pixelů.
 - **Lokální Laplaceův filtr na GPU.** Každá úroveň pyramidy je kernel nad menším obrázkem a pyramidy pro všechna $g$ jdou spočítat najednou. Darktable ho má v modulu místního kontrastu.
-- **Pyramida záře.** Hry zmenšují obrázek několikrát na polovinu, rozmazávají malé verze a skládají je zpět. Je to rychlejší než velké jádro a záře má dlouhý měkký ocas.
 - **Moderní křivky.** AgX a Khronos PBR Neutral řeší posun odstínu přímo v křivce. Blender má obě, Godot zatím jen AgX.
 - **HDR obrazovky.** Obrazovka s jasem přes 1000 nitů ukáže víc než 1, a tonemapper pak stlačuje jen to, co se nevejde ani do ní.
 
