@@ -44,35 +44,44 @@ def test_the_template_reads_params(defaults):
     assert isinstance(defaults["steps"], int) and defaults["dither"] == "Bayer"
 
 
+def test_the_goal_colours_are_the_params():
+    """Each colour picker of the goal holds its PARAMS colour to four decimals, and mid_at the same slider."""
+    listed = namespace(nb.HELPERS_NP)["PARAMS"]
+    for name in ("dark", "mid", "light"):
+        rgb = [int(listed[name][i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        assert f"uniform vec3 {name}: source_color = vec3({rgb[0]:.4f}, {rgb[1]:.4f}, {rgb[2]:.4f})" in nb.GOAL
+    default, low, high = listed["mid_at"]
+    assert f"uniform float mid_at: hint_range({low}, {high}) = {default}" in nb.GOAL
+
+
+def test_the_gradient_passes_through_its_three_colours(defaults):
+    space = namespace(nb.HELPERS_NP)
+    for mid_at in (0.3, 0.5, 0.8):
+        t = np.array([[0.0, mid_at, 1.0]], dtype=np.float32)
+        colours = space["gradient"](t, defaults["dark"], defaults["mid"], defaults["light"], mid_at)[0]
+        for got, name in zip(colours, ("dark", "mid", "light")):
+            assert np.allclose(got, defaults[name], atol=1e-3), (mid_at, name)
+
+
 def test_the_dither_labels_agree():
-    """The kernels' hint_enum and PARAMS list the same labels in the same order."""
+    """The goal's hint_enum and PARAMS list the same labels, and both open on Bayer."""
     labels = [label.strip(' "') for label in nb.DITHERS.split(",")]
-    assert namespace(nb.HELPERS_NP)["PARAMS"]["dither"] == labels
-    assert f"hint_enum({nb.DITHERS}) = 0" in nb.GOAL
-
-
-def test_the_check_cell_uses_the_defaults(defaults):
-    check = [c for c in nb.cells if c["cell_type"] == "code" and "sara.check(" in "".join(c["source"])][0]
-    space = {}
-    exec("".join(check["source"]).split("sara.check")[0], space)
-    for name, value in defaults.items():
-        if isinstance(value, str):
-            assert space["defaults"][name] == value, name
-        else:
-            assert np.allclose(space["defaults"][name], value), name
+    listed = namespace(nb.HELPERS_NP)["PARAMS"]["dither"]
+    assert sorted(listed) == sorted(labels) and listed[0] == "Bayer"
+    default = labels.index("Bayer")
+    assert f"hint_enum({nb.DITHERS}) = {default}" in nb.GOAL
+    for i, constant in enumerate(["OFF", "WHITE", "BAYER", "IGN"]):
+        assert f"const int {constant} = {i}" in nb.GOAL
 
 
 def test_unfinished_cells_are_harmless(balls, defaults):
-    space = namespace(nb.HELPERS_NP, nb.GRADIENT_NP_GIVEN, nb.APPLY_NP_GIVEN)
+    space = namespace(nb.HELPERS_NP, nb.APPLY_NP_GIVEN)
     assert np.array_equal(space["apply"](balls, **defaults), balls)
-    t = np.linspace(0, 1, 12, dtype=np.float32).reshape(3, 4)
-    flat = space["gradient"](t, defaults["dark"], defaults["mid"], defaults["light"], 0.5)
-    assert flat.shape == (3, 4, 3) and np.allclose(flat, defaults["dark"])
 
 
 @pytest.mark.parametrize("dither", ["Bayer", "White noise", "IGN", "Off"])
 def test_the_solution_runs(balls, defaults, dither, tmp_path_factory):
-    space = namespace(nb.HELPERS_NP, nb.SOLUTION_GRADIENT_NP, nb.SOLUTION_APPLY_NP)
+    space = namespace(nb.HELPERS_NP, nb.SOLUTION_APPLY_NP)
     out = space["apply"](balls, **{**defaults, "dither": dither})
     assert out.shape == balls.shape and np.isfinite(out).all()
     assert np.array_equal(out[..., 3], balls[..., 3])
@@ -89,18 +98,20 @@ def test_the_solution_runs(balls, defaults, dither, tmp_path_factory):
     plt.imsave(tmp_path_factory.mktemp("lesson_01") / f"goal_{dither}.png", np.clip(out, 0, 1))
 
 
-def test_interp_matches_the_kernel_gradient(defaults):
-    """np.interp in OKLab gives the two mixes the kernel's gradient picks between."""
-    space = namespace(nb.HELPERS_NP, nb.SOLUTION_GRADIENT_NP)
-    to_lab, dark, mid, light = space["to_lab"], defaults["dark"], defaults["mid"], defaults["light"]
-    for mid_at in (0.05, 0.3, 0.5, 0.95):
-        t = np.linspace(0, 1, 101, dtype=np.float32)
-        s = np.where(t < mid_at, t / mid_at, (t - mid_at) / (1 - mid_at))[:, None]
-        a = np.where((t < mid_at)[:, None], to_lab(dark), to_lab(mid))
-        b = np.where((t < mid_at)[:, None], to_lab(mid), to_lab(light))
-        expected = space["from_lab"]((1 - s) * a + s * b)
-        got = space["gradient"](t[None], dark, mid, light, mid_at)[0]
-        assert np.allclose(got, expected, atol=1e-4), mid_at
+def test_the_blue_noise_texture_is_even_and_has_no_clumps():
+    """Every threshold is about as common, and the texture holds less of the low frequencies, the
+    clumps, than white noise does."""
+    blue = plt.imread(ROOT / "imgs" / "1" / "blue_noise.png")[..., 0]
+    assert blue.shape == (64, 64)
+    counts = np.histogram(blue, bins=8, range=(0, 1))[0] / blue.size
+    assert abs(counts - 0.125).max() < 0.01, counts
+
+    def low(d):
+        power = np.abs(np.fft.fftshift(np.fft.fft2(d - d.mean()))) ** 2
+        return power[28:37, 28:37].sum() / power.sum()
+
+    white = np.random.default_rng(0).random((64, 64))
+    assert low(blue) < low(white) / 10
 
 
 def test_hash21_is_the_kernel_hash():

@@ -308,8 +308,8 @@ def apply(img, style, sigma, p, epsilon, phi, levels):
 
 GOAL = ("# The filter of section 5, hidden because you write it yourself.\n"
         "def _goal():\n"
-        + textwrap.indent("\n\n".join(piece.replace("\n\n\n", "\n\n") for piece in
-                                        [HELPERS_NP, TOON_NP, SOLUTION_XDOG_NP, SOLUTION_APPLY]), "    ")
+        + textwrap.indent(lesson_writer.used_only("\n\n".join(piece.replace("\n\n\n", "\n\n") for piece in
+                                        [HELPERS_NP, TOON_NP, SOLUTION_XDOG_NP, SOLUTION_APPLY]), keep=("apply",)), "    ")
         + "\n\n    return apply\n\n\n"
         + PARAMS_NP
         + '\n\nsara.live(_goal(), PARAMS, source="chelsea", target="Goal")')

@@ -10,7 +10,8 @@ Run it after the builders, which write the notebooks empty, with Sara running:
 It runs `lesson_NN_*_solution.ipynb` top to bottom in the course folder, then copies each cell's
 outputs into the same cell of `lesson_NN_*.ipynb`, whose task cells keep their stubs. A saved widget
 needs its kernel to draw, and VS Code keeps no widget state at all, so each widget output becomes the
-picture and the caption it showed last. A large picture, a photo or a spectrum, is kept as a JPEG.
+picture and the caption it showed last, no taller than the live widget shows it. A large picture,
+a photo or a spectrum, is kept as a JPEG.
 A lesson with a failing cell is left as it was.
 """
 import base64
@@ -33,6 +34,7 @@ WIDGET = "application/vnd.jupyter.widget-view+json"
 STATE = "application/vnd.jupyter.widget-state+json"
 BOXES = {"VBoxModel", "HBoxModel", "BoxModel", "GridBoxModel"}
 LARGE = 200_000        # bytes of PNG past which a JPEG is tried, for photos
+TALLEST = 400          # pixels, the height a picture under its controls is shown at most, as in lib/sara_notebook.py
 # Put above each widget saved as a still, where its controls were, so nobody looks for them.
 STILL_NOTE = '<i style="opacity: 0.7">Uložený náhled. Posuvníky a nabídky se objeví, až buňku spustíte.</i>'
 
@@ -50,6 +52,17 @@ def picture(png):
     return nbformat.v4.new_output("display_data", data={"image/png": base64.b64encode(png).decode()})
 
 
+def fitted(png):
+    """The PNG bytes *png* scaled down to TALLEST pixels high, as the widget shows them, or *png* when it fits."""
+    image = Image.open(io.BytesIO(png))
+    if image.height <= TALLEST:
+        return png
+    width = round(image.width * TALLEST / image.height)
+    smaller = io.BytesIO()
+    image.resize((width, TALLEST), Image.LANCZOS).save(smaller, "PNG")
+    return smaller.getvalue()
+
+
 def still(model_id, models):
     """The outputs that show what the widget *model_id* showed: its pictures, captions and labels, no controls."""
     model = models.get(model_id.removeprefix("IPY_MODEL_"))
@@ -60,7 +73,7 @@ def still(model_id, models):
         return [shown for child in state.get("children", []) for shown in still(child, models)]
     if kind == "ImageModel":
         value = [b["data"] for b in model.get("buffers", []) if b["path"] == ["value"]]
-        return [picture(base64.b64decode(value[0]))] if value else []
+        return [picture(fitted(base64.b64decode(value[0])))] if value else []
     if kind == "HTMLModel" and state.get("value"):
         return [nbformat.v4.new_output("display_data", data={"text/html": state["value"]})]
     if kind == "LabelModel" and state.get("value"):

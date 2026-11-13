@@ -185,7 +185,7 @@ def explore(draw, **controls):
             made[name] = widgets.IntSlider(value=default, min=low, max=high, description=label,
                                            continuous_update=False)
         made[name].style.description_width = "initial"
-    picture = widgets.Image(format="png", layout=widgets.Layout(max_width="100%"))
+    picture = widgets.Image(format="png", layout=widgets.Layout(max_width="100%", max_height="400px"))
     caption = widgets.HTML(layout=widgets.Layout(max_width="60em"))
 
     def redraw(_=None):
@@ -289,7 +289,7 @@ LOOK = '''\
 def look(name):
     rgb = PICTURES[name]
     L, z = to_oklab(rgb)
-    fig = Figure(figsize=(12, 8.4), layout="constrained")
+    fig = Figure(figsize=(8.4, 5.4), layout="constrained")
     axes = fig.subplots(2, 3).ravel()
     panel(axes[0], rgb, name)
     panel(axes[1], L, "L, reálný obraz", vmin=0, vmax=1)

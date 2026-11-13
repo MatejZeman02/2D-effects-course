@@ -441,8 +441,8 @@ def local_laplacian(a, sigma_r, alpha, beta, levels=7):
 
 GOAL = ("# The tonemapper of section 5, hidden because you write it yourself.\n"
         "def _goal():\n"
-        + textwrap.indent("\n\n".join(piece.replace("\n\n\n", "\n\n") for piece in
-                                        [HELPERS_NP, CURVES_NP, SOLUTION_AUTO_NP, SOLUTION_APPLY]), "    ")
+        + textwrap.indent(lesson_writer.used_only("\n\n".join(piece.replace("\n\n\n", "\n\n") for piece in
+                                        [HELPERS_NP, CURVES_NP, SOLUTION_AUTO_NP, SOLUTION_APPLY]), keep=("apply",)), "    ")
         + "\n\n    return apply\n\n\n"
         + PARAMS_NP
         + '\n\nsara.live(_goal(), PARAMS, source="HDR", target="Goal")')

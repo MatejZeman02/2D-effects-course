@@ -136,7 +136,7 @@ class Live:
         self.controls = {param.name: Control(param) for param in params}
         self.values: dict[str, Any] = {param.name: param.initial() for param in params}
         self.status = ipywidgets.Label()
-        self.picture = ipywidgets.Image(format="png")
+        self.picture = ipywidgets.Image(format="png", layout=ipywidgets.Layout(max_height=sara_notebook.PICTURE_HEIGHT))
         self.debounce = sara_notebook.Debounce(self.rerun)
         # The wait for the let go, restarted by every write of a drag, and the last picture such a write sent,
         # which the let go sends again with history on. None when no write since the last step is unrecorded.

@@ -131,39 +131,7 @@ for col, (title, a, b) in enumerate(pairs):
 save(fig, "mix_spaces.png")
 
 
-# 3. A gradient map with three stops ---------------------------------------------
-stops = [("dark", 0.0, hex_colour("#1b1035")), ("mid", 0.5, hex_colour("#c2412d")),
-         ("light", 1.0, hex_colour("#ffe7a3"))]
-t = np.linspace(0, 1, 768)
-grey = np.clip(linear_to_srgb(oklab_to_linear(np.stack([t, 0 * t, 0 * t], axis=-1))), 0, 1)
-low = t < 0.5
-mapped = np.where(low[:, None], blend(stops[0][2], stops[1][2], np.clip(t / 0.5, 0, 1), "oklab"),
-                  blend(stops[1][2], stops[2][2], np.clip((t - 0.5) / 0.5, 0, 1), "oklab"))
-
-fig = plt.figure(figsize=(11, 2.6))
-top = fig.add_axes([0.05, 0.62, 0.9, 0.24])
-bottom = fig.add_axes([0.05, 0.16, 0.9, 0.24])
-top.imshow(np.repeat(grey[None], 30, axis=0), aspect="auto", extent=(0, 1, 0, 1))
-bottom.imshow(np.repeat(np.clip(mapped, 0, 1)[None], 30, axis=0), aspect="auto", extent=(0, 1, 0, 1))
-for ax in (top, bottom):
-    ax.set_yticks([])
-    for s in ax.spines.values():
-        s.set_visible(False)
-top.set_xticks([0, 0.25, 0.5, 0.75, 1])
-top.tick_params(labelsize=10, length=0)
-top.set_title("světlost pixelu t = L", fontsize=12, loc="left")
-bottom.set_xticks([])
-for name, at, colour in stops:
-    fig.add_artist(FancyArrowPatch((0.05 + 0.9 * at, 0.58), (0.05 + 0.9 * at, 0.43), transform=fig.transFigure,
-                                   arrowstyle="-|>", mutation_scale=14, linewidth=1.8, color=GREY))
-    bottom.text(at, -0.25, name, ha="center", va="top", fontsize=11, family="monospace",
-                transform=bottom.transAxes)
-bottom.text(0.25, 1.12, "barva z přechodu, míchaná v OKLabu", ha="center", va="bottom", fontsize=12,
-            transform=bottom.transAxes)
-save(fig, "gradient_map.png")
-
-
-# 4. The Bayer matrix and what it does to a ramp ----------------------------------
+# 3. The Bayer matrix and what it does to a ramp ----------------------------------
 BAYER = np.array([[0, 8, 2, 10],
                   [12, 4, 14, 6],
                   [3, 11, 1, 9],
@@ -197,7 +165,67 @@ fig.text(0.33, 0.1, "přechod od černé po bílou, převedený na dvě úrovně
 save(fig, "bayer.png")
 
 
-# 5. Other thresholds: white noise and interleaved gradient noise ------------------
+# 4. Blue noise: a 64 x 64 texture of thresholds with no clumps ---------------------
+def blue_noise(size=64, sigma=1.9, seed=7):
+    """The ranks 0 to size² - 1 of a tileable blue noise, by Ulichney's void and cluster (1993).
+
+    Each pixel's energy is a Gaussian sum over the chosen pixels around it, wrapped at the edges so
+    the texture tiles. The tightest cluster is the chosen pixel of most energy, the largest void the
+    free pixel of least. A few random pixels are moved from clusters into voids until they sit evenly,
+    then ranked by taking the tightest cluster away one at a time, and the rest of the pixels get the
+    next ranks by filling the largest void one at a time."""
+    n = size * size
+    d = np.minimum(np.arange(size), size - np.arange(size)).astype(np.float64)
+    kernel = np.exp(-(d[:, None] ** 2 + d[None, :] ** 2) / (2 * sigma ** 2))
+    energy = np.zeros((size, size))
+    flat = energy.reshape(-1)
+
+    def splat(index, sign):
+        y, x = divmod(int(index), size)
+        energy[...] += sign * np.roll(np.roll(kernel, y, 0), x, 1)
+
+    def cluster(chosen):
+        return np.argmax(np.where(chosen, flat, -np.inf))
+
+    def void(chosen):
+        return np.argmin(np.where(chosen, np.inf, flat))
+
+    chosen = np.zeros(n, bool)
+    chosen[np.random.default_rng(seed).choice(n, n // 10, replace=False)] = True
+    for index in np.flatnonzero(chosen):
+        splat(index, 1)
+    while True:
+        tightest = cluster(chosen)
+        chosen[tightest] = False
+        splat(tightest, -1)
+        largest = void(chosen)
+        chosen[largest] = True
+        splat(largest, 1)
+        if largest == tightest:
+            break
+    rank = np.zeros(n, int)
+    start, start_energy = chosen.copy(), energy.copy()
+    for r in range(int(chosen.sum()) - 1, -1, -1):
+        tightest = cluster(chosen)
+        chosen[tightest] = False
+        splat(tightest, -1)
+        rank[tightest] = r
+    chosen = start
+    energy[...] = start_energy
+    for r in range(int(chosen.sum()), n):
+        largest = void(chosen)
+        chosen[largest] = True
+        splat(largest, 1)
+        rank[largest] = r
+    return rank.reshape(size, size)
+
+
+BLUE = (blue_noise() + 0.5) / 64 ** 2
+plt.imsave(os.path.join(OUT, "blue_noise.png"), BLUE, cmap="gray", vmin=0, vmax=1)
+BLUE = plt.imread(os.path.join(OUT, "blue_noise.png"))[..., 0]   # the 8-bit numbers the kernel reads
+
+
+# 5. Every threshold of the lesson on a soft light ----------------------------------
 def fract(x):
     return x - np.floor(x)
 
@@ -217,13 +245,14 @@ def ign(x, y):
 S = 128
 gy, gx = np.mgrid[0:S, 0:S]
 thresholds = [("práh 0.5", np.full((S, S), 0.5)),
-              ("Bayer 4 × 4", (BAYER[gy % 4, gx % 4] + 0.5) / 16),
               ("bílý šum", hash21(gx, gy)),
+              ("modrý šum", BLUE[gy % 64, gx % 64]),
+              ("Bayer 4 × 4", (BAYER[gy % 4, gx % 4] + 0.5) / 16),
               ("IGN", ign(gx, gy))]
-# A soft glow on black, the case where banding shows worst.
+# A soft light on black, the case where banding shows worst.
 glow = 0.5 * np.exp(-3.2 * (np.hypot(gx - S / 2 + 0.5, gy - S / 2 + 0.5) / (S / 2)) ** 2)
 levels = 7
-fig, axes = plt.subplots(2, 4, figsize=(11, 5.9), gridspec_kw={"hspace": 0.08, "wspace": 0.05})
+fig, axes = plt.subplots(2, 5, figsize=(13.5, 5.9), gridspec_kw={"hspace": 0.08, "wspace": 0.05})
 for col, (label, d) in enumerate(thresholds):
     axes[0, col].imshow(d[:24, :24], cmap="gray", vmin=0, vmax=1, interpolation="nearest")
     axes[1, col].imshow(np.floor(glow * levels + d) / levels, cmap="gray", vmin=0, vmax=1,
@@ -233,7 +262,7 @@ for col, (label, d) in enumerate(thresholds):
         ax.set_xticks([])
         ax.set_yticks([])
 axes[0, 0].set_ylabel("práh d\n24 × 24 pixelů", fontsize=11)
-axes[1, 0].set_ylabel("záře na tmavém pozadí\nna osmi úrovních", fontsize=11)
+axes[1, 0].set_ylabel("měkké světlo na černé\nna osmi úrovních", fontsize=11)
 save(fig, "noise.png")
 
 

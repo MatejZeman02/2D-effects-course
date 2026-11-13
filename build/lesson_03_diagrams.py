@@ -29,7 +29,7 @@ LIGHT = "#DDE6F0"
 space = {"np": np}
 for source in (nb.HELPERS_NP, nb.SOLUTION_BLUR_NP):
     exec(source, space)
-srgb_to_linear, linear_to_srgb, lightness = space["srgb_to_linear"], space["linear_to_srgb"], space["lightness"]
+srgb_to_linear, linear_to_srgb = space["srgb_to_linear"], space["linear_to_srgb"]
 gaussian_1d, blur = space["gaussian_1d"], space["blur"]
 
 KERNELS = {
@@ -339,6 +339,45 @@ def second_derivative():
     save(fig, "second_derivative.png")
 
 
+def to_oklab(rgb):
+    """OKLab of linear RGB, (..., 3)."""
+    lms = np.cbrt(rgb @ np.array([[0.4122214708, 0.5363325363, 0.0514459929],
+                                  [0.2119034982, 0.6806995451, 0.1073969566],
+                                  [0.0883024619, 0.2817188376, 0.6299787005]]).T)
+    return lms @ np.array([[0.2104542553, 0.7936177850, -0.0040720468],
+                           [1.9779984951, -2.4285922050, 0.4505937099],
+                           [0.0259040371, 0.7827717662, -0.8086757660]]).T
+
+
+def lightness(img):
+    """OKLab L of an (h, w, 4) picture in sRGB, an (h, w) array."""
+    return to_oklab(srgb_to_linear(img[..., :3]))[..., 0]
+
+
+BILATERAL_AT = (600, 421)     # a pixel of the cup's red side, just below the edge to its white rim
+
+
+def bilateral():
+    """A patch across an edge and its centre's bilateral weights: by distance, by colour, and both."""
+    sigma, sigma_color = 3.0, 0.05
+    r = int(np.ceil(3 * sigma))
+    x, y = BILATERAL_AT
+    patch = load("coffee.png")[y - r:y + r + 1, x - r:x + r + 1, :3]
+    lab = to_oklab(srgb_to_linear(patch.astype(np.float64)))
+    jj, ii = np.mgrid[-r:r + 1, -r:r + 1]
+    spatial = np.exp(-(ii ** 2 + jj ** 2) / (2 * sigma ** 2))
+    colour = np.exp(-((lab - lab[r, r]) ** 2).sum(axis=-1) / (2 * sigma_color ** 2))
+    panels = [(patch, "okolí pixelu"), (spatial, "váha podle vzdálenosti"),
+              (colour, "váha podle barvy"), (spatial * colour, "bilaterální váha, součin")]
+    fig, axes = plt.subplots(1, 4, figsize=(12, 3.4))
+    for ax, (image, title) in zip(axes, panels):
+        ax.imshow(image, cmap=None if image.ndim == 3 else "magma", vmin=0, vmax=1, interpolation="nearest")
+        ax.add_patch(Rectangle((r - 0.5, r - 0.5), 1, 1, fill=False, ec="#00e0ff", lw=1.6))
+        ax.set_title(title, fontsize=11)
+        bare(ax)
+    save(fig, "bilateral.png")
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     make_photo()
@@ -348,6 +387,7 @@ def main():
     edge_modes()
     shared_tile()
     sobel()
+    bilateral()
     second_derivative()
     numpy_shifts()
     print("wrote", sorted(p.name for p in OUT.glob("*.png")))

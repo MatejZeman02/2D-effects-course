@@ -9,12 +9,49 @@ copies are in `.gitignore`, since a student who wants one has the 🔑 boxes.
 """
 
 import json
+import re
 from pathlib import Path
 
 METADATA = {
     "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
     "language_info": {"name": "python"},
 }
+
+
+# A top-level statement starts at the first column, and the lines indented under it, or closing its
+# brackets there, are its body.
+_TOP_LEVEL = re.compile(r"\n(?=[^\s)\]}])")
+_DEFINED = re.compile(r"def\s+(\w+)|([A-Z][A-Z0-9_]*)\s*=")
+
+
+def used_only(source, keep=()):
+    """*source*, Python or gmacs, without the top-level functions and constants nothing else in it uses.
+
+    A goal cell is put together from the helpers the student's cells share, and
+    a helper only a task needs would sit in it unused. A function or an
+    upper-case constant whose name appears nowhere outside its own lines goes,
+    with a comment written right above it, and again until every one left is
+    used. The names in *keep* are used from outside, `apply` by `sara.live`,
+    `pixel` by Sara.
+    """
+    blocks = _TOP_LEVEL.split(source)
+    while True:
+        dead = set()
+        for i, block in enumerate(blocks):
+            defined = _DEFINED.match(block)
+            name = defined and (defined[1] or defined[2])
+            if not name or name in keep:
+                continue
+            word = re.compile(rf"\b{name}\b")
+            if not any(word.search(other) for j, other in enumerate(blocks) if j != i):
+                dead.add(i)
+                above = i - 1
+                while above >= 0 and blocks[above].startswith("#") and not blocks[above].endswith("\n"):
+                    dead.add(above)
+                    above -= 1
+        if not dead:
+            return re.sub(r"\n{4,}", "\n\n\n", "\n".join(blocks))
+        blocks = [block for i, block in enumerate(blocks) if i not in dead]
 
 
 def lines(text):

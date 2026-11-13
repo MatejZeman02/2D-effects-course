@@ -57,20 +57,13 @@ def test_the_template_reads_params(defaults):
     assert defaults == {"mode": "Blur", "sigma": nb.SIGMA, "amount": 1.0}
 
 
-def test_the_check_cell_uses_the_defaults(defaults):
-    check = [c for c in code_cells() if 'sara.check("Goal"' in c][0]
-    space = {}
-    exec(check.split("sara.check")[0], space)
-    assert space["defaults"] == defaults
-
-
 def test_the_photo_is_the_canvas_size():
     assert Image.open(ROOT / nb.IMG / "coffee.png").size == (W, H)
     assert f"sara.init(width={W}, height={H})" in code_cells()[0]
     assert f"const ivec2 SIZE = ivec2({W}, {H})" in nb.EDGES
 
 
-def test_the_matrix_starts_as_the_sharpen_the_check_uses():
+def test_the_matrix_starts_as_sharpen():
     numbers = re.search(r"weights\[9\] = \{([^}]*)\}", nb.CONV)[1]
     assert [float(n) for n in numbers.split(",")] == nb.SHARPEN
 
@@ -121,20 +114,36 @@ def test_the_edge_rules_are_numpys_pads():
     assert "p - SIZE * ivec2(floor(vec2(p) / vec2(SIZE)))" in nb.SOLUTION_FETCH
 
 
-def test_the_shift_check_is_a_roll(photo):
-    """The kernel reads at - (dx, dy), so with Wrap the layer is the photo rolled by (dy, dx)."""
-    dx, dy = nb.SHIFT
-    rolled = np.roll(photo, (dy, dx), axis=(0, 1))
-    assert np.array_equal(rolled[dy + 5, dx + 7], photo[5, 7])
-    assert f"np.roll(photo.read(), ({dy}, {dx}), axis=(0, 1))" in "".join(code_cells())
-
-
 def test_sobels_weights_are_the_matrices():
     gx = np.array([[i * (2 - abs(j)) for i in (-1, 0, 1)] for j in (-1, 0, 1)])
     gy = np.array([[j * (2 - abs(i)) for i in (-1, 0, 1)] for j in (-1, 0, 1)])
     assert np.array_equal(gx, [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]])
     assert np.array_equal(gy, gx.T)
     assert "vec2(i * (2 - abs(j)), j * (2 - abs(i)))" in nb.SOLUTION_SOBEL
+
+
+def test_the_kernels_reach_as_far_as_they_read():
+    """A square of the grid at the far edge reads up to twice the largest radius past it, and the
+    bilateral filter reads out to 3 sigma at its largest sigma."""
+    radius = int(re.search(r"radius: hint_range\(0, (\d+)\)", nb.MEAN)[1])
+    assert f"halo={2 * radius}" in nb.MEAN.splitlines()[0]
+    sigma = float(re.search(r"sigma: hint_range\(0.5, (\d+)\)", nb.BILATERAL)[1])
+    assert int(np.ceil(3 * sigma)) <= int(re.search(r"halo=(\d+)", nb.BILATERAL)[1])
+    radius = int(re.search(r"radius: hint_range\(1, (\d+)\)", nb.SPACES)[1])
+    assert f"halo={radius}" in nb.SPACES.splitlines()[0]
+
+
+def test_the_enums_are_matched_by_name():
+    for kernel, names in ((nb.MEAN, ["BLOCKS", "AROUND"]), (nb.EDGES, ["ZERO", "CLAMP", "MIRROR", "WRAP"])):
+        for i, name in enumerate(names):
+            assert f"const int {name} = {i}" in kernel
+        assert "match " in kernel and " == 1" not in kernel
+    for name in ("BLOCKS", "AROUND"):                   # every choice has its own case
+        assert f"case {name}:" in nb.MEAN, name
+    for name in ("BLUR", "SHARPEN", "SRGB", "LINEAR", "OKLAB"):
+        assert f"case {name}:" in nb.SPACES, name
+    for name in ("ZERO", "CLAMP", "MIRROR", "WRAP"):
+        assert f"case {name}:" in nb.EDGES.replace(nb.FETCH_STUB, nb.SOLUTION_FETCH), name
 
 
 def test_the_shared_row_fits_the_largest_sigma():

@@ -269,8 +269,9 @@ def pixel(ivec2 at) -> vec4:
     vec3 rgb = oklab_to_linear_srgb(terrain_colour(height(at))) * light(at)
     return vec4(linear_srgb_to_srgb(rgb), 1.0)"""
 
-GOAL = TERRAIN.format(into="Goal", stops=STOPS_GMACS, hash=HASH_GMACS, value=VALUE_GMACS, fbm=FBM_GMACS,
-                      colour=SOLUTION_COLOUR, light=SOLUTION_LIGHT)
+GOAL = lesson_writer.used_only(TERRAIN.format(into="Goal", stops=STOPS_GMACS, hash=HASH_GMACS, value=VALUE_GMACS,
+                                             fbm=FBM_GMACS, colour=SOLUTION_COLOUR, light=SOLUTION_LIGHT),
+                               keep=("pixel",))
 
 STOPS_NP = "\n".join(f"    ({at:.3f}, \"{hex_}\"),{' ' * (9 - len(f'{at:.3f}'))}# {name}" for at, hex_, _, name in STOPS)
 

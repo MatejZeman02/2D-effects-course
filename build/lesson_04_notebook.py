@@ -314,7 +314,7 @@ def explore(draw, **controls):
             made[name] = widgets.IntSlider(value=default, min=low, max=high, description=label,
                                            continuous_update=False)
         made[name].style.description_width = "initial"
-    picture = widgets.Image(format="png", layout=widgets.Layout(max_width="100%"))
+    picture = widgets.Image(format="png", layout=widgets.Layout(max_width="100%", max_height="400px"))
     caption = widgets.HTML(layout=widgets.Layout(max_width="60em"))
 
     def redraw(_=None):
@@ -411,7 +411,7 @@ def parts(name, shift):
              (phase_picture(np.angle(F), strong), "fáze arg F, kde je vlna silná", {})]
     zoom = name in ("kosinusovka", "sinusovka")
     middle = slice(128 - 8, 128 + 9) if zoom else slice(None)
-    fig = Figure(figsize=(12, 8))
+    fig = Figure(figsize=(10, 6.6))
     axes = fig.subplots(2, 3).ravel()
     panel(axes[0], f, f"{name}, posun o {shift} px", vmin=0, vmax=1)
     for ax, (a, title, keys) in zip(axes[1:], views):
@@ -514,7 +514,7 @@ else:
                 "v": widgets.IntSlider(value=4, min=-32, max=32, description="v", continuous_update=False),
                 "phase": widgets.FloatSlider(value=0, min=0, max=360, description="phase", continuous_update=False)}
     display(widgets.HBox(list(controls.values())))
-vector_picture = widgets.Image(format="png", layout=widgets.Layout(max_width="100%"))
+vector_picture = widgets.Image(format="png", layout=widgets.Layout(max_width="100%", max_height="400px"))
 
 
 def redraw_vector(_=None):
@@ -825,7 +825,7 @@ def changed(f, change, amount):
 def properties(change, amount):
     f = PICTURES["písmeno A"]
     g, what = changed(f, change, amount)
-    fig = Figure(figsize=(14, 7.4))
+    fig = Figure(figsize=(12, 5.8))
     axes = fig.subplots(2, 4)
     spectra = []
     for row, (picture, title) in enumerate(((f, "písmeno A"), (g, what))):
@@ -869,7 +869,7 @@ SAMPLED = {"fotka za síťkou": screened_photo(), "zónová deska": zone_plate()
 
 
 def sampling(picture, frequency, factor):
-    fig = Figure(figsize=(13, 7.6))
+    fig = Figure(figsize=(12, 6.4))
     grid = fig.add_gridspec(2, 3, height_ratios=[1, 1.5], hspace=0.35)
     ax = fig.add_subplot(grid[0, :])
     t = np.linspace(0, 1, 2000)

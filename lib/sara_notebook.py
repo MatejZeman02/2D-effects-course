@@ -104,6 +104,8 @@ FLOAT_RANGE = (0.0, 1.0)
 INT_RANGE = (0, 10)
 INT_TYPES = ("int", "uint")
 COLOUR_TYPES = ("vec3", "vec4")
+# The tallest a picture under its controls is shown, so that a laptop screen holds both.
+PICTURE_HEIGHT = "400px"
 
 # The kernel the app wraps a short pixel form into, never `pixel`, the dialect's own word.
 PIXEL_KERNEL = "pixels"
@@ -429,7 +431,7 @@ class Cell:
         # The slider takes only its range, so a value past it is held to it before the first picture is made.
         self.clamped: list[str] = self._fit()
         # An `Image` and no `Output`: VS Code's Jupyter 2025.9.1 cannot load that widget's module.
-        self.picture = ipywidgets.Image(format="png")
+        self.picture = ipywidgets.Image(format="png", layout=ipywidgets.Layout(max_height=PICTURE_HEIGHT))
         self.timing = ipywidgets.Label()
         self.sliders: dict[str, ipywidgets.Widget] = {}
         self.grids: dict[str, ipywidgets.GridBox] = {}
