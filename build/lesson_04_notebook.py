@@ -311,7 +311,7 @@ def explore(draw, **controls):
             made[name] = widgets.IntSlider(value=default, min=low, max=high, description=label,
                                            continuous_update=False)
         made[name].style.description_width = "initial"
-    picture = widgets.Image(format="png", layout=widgets.Layout(max_width="100%", max_height="400px"))
+    picture = widgets.Image(format="png", layout=widgets.Layout(max_width="100%", max_height="400px", object_fit="contain"))
     caption = widgets.HTML(layout=widgets.Layout(max_width="60em"))
 
     def redraw(_=None):
@@ -511,7 +511,7 @@ else:
                 "v": widgets.IntSlider(value=4, min=-32, max=32, description="v", continuous_update=False),
                 "phase": widgets.FloatSlider(value=0, min=0, max=360, description="phase", continuous_update=False)}
     display(widgets.HBox(list(controls.values())))
-vector_picture = widgets.Image(format="png", layout=widgets.Layout(max_width="100%", max_height="400px"))
+vector_picture = widgets.Image(format="png", layout=widgets.Layout(max_width="100%", max_height="400px", object_fit="contain"))
 
 
 def redraw_vector(_=None):

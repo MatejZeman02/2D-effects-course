@@ -185,7 +185,7 @@ def explore(draw, **controls):
             made[name] = widgets.IntSlider(value=default, min=low, max=high, description=label,
                                            continuous_update=False)
         made[name].style.description_width = "initial"
-    picture = widgets.Image(format="png", layout=widgets.Layout(max_width="100%", max_height="400px"))
+    picture = widgets.Image(format="png", layout=widgets.Layout(max_width="100%", max_height="400px", object_fit="contain"))
     caption = widgets.HTML(layout=widgets.Layout(max_width="60em"))
 
     def redraw(_=None):
