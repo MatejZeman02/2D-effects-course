@@ -55,8 +55,9 @@ and GitHub Copilot all read this file.
 
 ## Sára and the notebook
 
-- Sára is a painting program that computes on the GPU. It comes as a zip handed
-  out in the course, not from this repository.
+- Sára is a painting program that computes on the GPU. It is downloaded from
+  its own repository's releases, https://github.com/MatejZeman02/sara/releases,
+  not from this repository.
 - A notebook talks to a running Sára over a local connection, its agent door.
   Start Sára with `sara-with-door.cmd` on Windows or
   `./sara.x86_64 --display-driver wayland -- --agent-door` on Linux (without
@@ -241,12 +242,14 @@ in VS Code** as well, not only `pip install`:
 
    Use the `.vsix` that is in `lib/`, never a download. Then ask the student to
    run **Developer: Reload Window**.
-3. Sára unzipped into a folder `Sara` beside the notebooks. You cannot get the
-   zip yourself, it is handed out in the course, so check the folder and ask
-   for it if it is missing.
+3. Sára unpacked into a folder `Sara` beside the notebooks, from the newest
+   release on https://github.com/MatejZeman02/sara/releases: the asset ending
+   in `-release.zip` on Windows, the one ending in `-release.tar.gz` on Linux.
+   Not the AppImage, which `sara.init()` does not look for. Ask the student
+   before you download it.
 
 Then tell the student plainly, in a short list, what you did, what you could
-not do and what is left for them (the Sára zip, the window reload, picking
+not do and what is left for them (Sára if you did not download it, the window reload, picking
 `.venv` as the kernel). Never say everything is set up while a step is left.
 
 ## Running things

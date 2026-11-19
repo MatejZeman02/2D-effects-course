@@ -2,7 +2,7 @@
 
 Notebooks and a Krita plugin template for the 2D part of the computer graphics
 course at FIT ČVUT, winter semester 2026/27. Each lesson builds one image
-effect three ways: as a GPU kernel in Sára, rerun live from a Jupyter notebook
+effect three ways: as a GPU kernel in [Sára](https://github.com/MatejZeman02/sara), rerun live from a Jupyter notebook
 as you move its sliders, as a plain NumPy function, and as a Krita 6 plugin
 running that same function.
 
@@ -22,8 +22,11 @@ English.
 
 ## Getting started
 
-1. Get Sára, which comes as a separate zip for Windows or Linux, handed out in
-   the course.
+1. Download Sára from the newest release on its
+   [releases page](https://github.com/MatejZeman02/sara/releases), under
+   **Assets**: the file ending in `-release.zip` for Windows, the one ending
+   in `-release.tar.gz` for Linux. Skip the Linux AppImage, which `sara.init()`
+   does not look for.
 2. Install Python 3.13, the version Krita 6 runs, so an effect behaves the
    same in the notebook and in the plugin. `requirements.txt` pins the
    plugin's NumPy, 2.5.1, for the same reason. A computer often has an older
@@ -58,7 +61,7 @@ English.
    run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, or use
    `cmd` and `.venv\Scripts\activate.bat` instead.
 
-3. Unzip Sára into a folder called `Sara` in this clone, which git ignores,
+3. Unpack Sára into a folder called `Sara` in this clone, which git ignores,
    and `sara.init()` starts it with its agent door whenever none runs. It
    also starts a `sara` on your `PATH`, and lesson 0's first section shows
    how to put it there on each system. Otherwise start Sára with its agent

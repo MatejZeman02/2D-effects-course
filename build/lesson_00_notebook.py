@@ -66,7 +66,7 @@ md(r"""
 
 | Co | Kde |
 |---|---|
-| Sára | zip z kurzu (Windows nebo Linux), rozbalený do složky `Sara` vedle notebooků |
+| Sára | ze stránky [Releases](https://github.com/MatejZeman02/sara/releases) jejího repozitáře soubor končící `-release.zip` pro Windows nebo `-release.tar.gz` pro Linux, rozbalený do složky `Sara` vedle notebooků |
 | Python, JupyterLab, NumPy, Numba, ipywidgets, Matplotlib a zvýraznění syntaxe gmacs pro JupyterLab | `pip install -r requirements.txt` ve složce s notebookem, před spuštěním JupyterLab |
 | zvýraznění syntaxe gmacs pro VS Code | `code --install-extension lib/gmacs-syntax-1.2.2.vsix` ve složce s notebookem, pak **Developer: Reload Window** |
 | Krita 6 | [krita.org](https://krita.org/) |
@@ -151,7 +151,7 @@ Na Linuxu s X11 místo Waylandu vynechte `--display-driver wayland`. Bez něj S�
 Když `sara.init()` žádnou běžící Sáru nenajde, spustí ji sám se zapnutým spojením. Hledá ji na dvou místech:
 
 1. **Program `sara` v systémové proměnné `PATH`**, návod je níže. Hodí se, když Sáru používáte i mimo kurz.
-2. **Složka vedle notebooků, jejíž jméno začíná na `Sara`.** Rozbalte zip Sáry přímo do naklonovaného repozitáře, do složky `Sara`, nebo nechte složku, kterou vytvoří rozbalení zipu. Sára tam může ležet přímo, nebo o jednu složku hlouběji. Git takovou složku ignoruje, do vašeho repozitáře se nedostane. Nic dalšího nastavovat nemusíte.
+2. **Složka vedle notebooků, jejíž jméno začíná na `Sara`.** Rozbalte Sáru přímo do naklonovaného repozitáře, do složky `Sara`, nebo nechte složku, kterou vytvoří rozbalení. Sára tam může ležet přímo, nebo o jednu složku hlouběji. Git takovou složku ignoruje, do vašeho repozitáře se nedostane. Nic dalšího nastavovat nemusíte.
 
 Když jich najde víc, spustí tu nejnovější. Na Linuxu musí mít `sara.x86_64` právo ke spuštění, které některé rozbalovací programy zahodí. Vrátí ho `chmod +x Sara/sara.x86_64`.
 
@@ -165,7 +165,7 @@ Když jich najde víc, spustí tu nejnovější. Na Linuxu musí mít `sara.x86_
 
 Stejně to jde v okně **Proměnné prostředí** (najde ho hledání ve Start menu), řádek `Path` v horní části pro váš účet.
 
-**Linux.** Rozbalte zip do `~/sara`, ať v ní leží `sara.x86_64`, a ve složce `~/.local/bin` vytvořte krátký spouštěč `sara`:
+**Linux.** Rozbalte archiv `.tar.gz` do `~/sara`, ať v ní leží `sara.x86_64`, a ve složce `~/.local/bin` vytvořte krátký spouštěč `sara`:
 
 ```bash
 mkdir -p ~/.local/bin
