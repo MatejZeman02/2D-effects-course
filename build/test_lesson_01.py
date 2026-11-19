@@ -171,10 +171,10 @@ def test_dithering_too_late_gives_the_bands_back():
 def test_a_quarter_zoom_shows_one_bayer_threshold():
     """Zoomed out to a quarter, every shown pixel reads the same cell of the 4 x 4 matrix, at every column and row."""
     x, y = (float(v) for v in re.search(r"ZOOM_AT = vec2\(([\d.]+), ([\d.]+)\)", nb.GLOW).groups())
-    cols = np.floor((np.arange(1920) + 0.5 - x) / 0.25 + x).astype(int) % 4
-    rows = np.floor((np.arange(1080) + 0.5 - y) / 0.25 + y).astype(int) % 4
+    cols = np.floor((np.arange(512) + 0.5 - x) / 0.25 + x).astype(int) % 4
+    rows = np.floor((np.arange(288) + 0.5 - y) / 0.25 + y).astype(int) % 4
     assert len(set(cols)) == 1 and len(set(rows)) == 1
-    halves = np.floor((np.arange(1920) + 0.5 - x) / 0.5 + x).astype(int) % 4
+    halves = np.floor((np.arange(512) + 0.5 - x) / 0.5 + x).astype(int) % 4
     assert len(set(halves)) == 2                        # half the size keeps four thresholds of sixteen
 
 
@@ -182,3 +182,11 @@ def test_the_glow_matches_its_choices_by_name():
     for i, name in enumerate(["OFF", "BAYER", "IGN"]):
         assert f"const int {name} = {i}" in nb.GLOW and f"case {name}:" in nb.GLOW
     assert 'hint_enum("Off", "Bayer", "IGN")' in nb.GLOW
+
+
+def test_the_canvas_shows_every_pixel():
+    """The document and both test pictures are 512 x 288, the size of the picture under a cell."""
+    from PIL import Image
+    assert "sara.init(width=512, height=288)" in "".join("".join(c["source"]) for c in nb.cells)
+    for name in ("balls.png", "color_chart.png"):
+        assert Image.open(ROOT / "imgs" / "1" / name).size == (512, 288), name

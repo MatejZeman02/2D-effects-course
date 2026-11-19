@@ -2,7 +2,9 @@
 
 The notebook is generated: edit this file and run it again, never the .ipynb
 by hand, or the next build overwrites the edit. The pictures, the test
-picture balls.png and the texture blue_noise.png come from lesson_01_diagrams.py.
+pictures balls.png and color_chart.png and the texture blue_noise.png come from
+lesson_01_diagrams.py. The canvas is 512 x 288, the size of the picture Sara
+shows under a cell, so the notebook shows every pixel of a dither.
 
 Markdown cells are raw strings, so LaTeX keeps single backslashes and braces.
 A picture from imgs/1 is written as @img(file, width, alt text).
@@ -181,8 +183,8 @@ const int OFF = 0
 const int BAYER = 1
 const int IGN = 2
 {BAYER_GMACS}
-const vec2 LIGHT_AT = vec2(960.0, 540.0)
-const vec2 ZOOM_AT = vec2(1260.0, 540.0)
+const vec2 LIGHT_AT = vec2(256.0, 144.0)
+const vec2 ZOOM_AT = vec2(336.0, 144.0)
 
 
 {POSTERISE}
@@ -202,7 +204,7 @@ def threshold(ivec2 at, int frame) -> float:
 
 def light(ivec2 at) -> float:
     \"\"\"A soft light on black, in the screen's sRGB values, before any rounding.\"\"\"
-    vec2 d = (vec2(at) - LIGHT_AT) / 420.0
+    vec2 d = (vec2(at) - LIGHT_AT) / 112.0
     return 0.5 * exp(-dot(d, d))
 
 
@@ -343,8 +345,8 @@ sys.path.insert(0, "lib")            # sara.py and its helpers live in lib/
 import numpy as np
 import sara
 
-doc, layer, pixels = sara.init()                      # a new sRGB document in Sara
-chart = doc.import_image("imgs/0/color_chart.png")    # a layer called "color_chart"
+doc, layer, pixels = sara.init(width=512, height=288) # a new sRGB document in Sara
+chart = doc.import_image("imgs/1/color_chart.png")    # a layer called "color_chart"
 balls = doc.import_image("imgs/1/balls.png")          # a layer called "balls"
 balls.show()
 """)
@@ -618,14 +620,14 @@ Třetí. Pixel se smí zaokrouhlit až po přičtení chyb od souseda vlevo a od
 md(r"""
 ## 3. Kdy dithering pomůže a kdy ne
 
-Pruhy kolem světel na tmavém pozadí měla i hra Hollow Knight: Silksong. Oprava, kterou Acerola zkoumá ve videu z tipu výše, je zkusila skrýt ditheringem a skoro nepomohla. Kernel níže kreslí podobné měkké světlo a s jeho ovládacími prvky vyzkoušíte, kdy dithering pomůže a kdy ne. Šum se dívejte v Sáře při 100 %, náhled pod buňkou je zmenšený a sousední pixely zprůměruje.
+Pruhy kolem světel na tmavém pozadí měla i hra Hollow Knight: Silksong. Oprava, kterou Acerola zkoumá ve videu z tipu výše, je zkusila skrýt ditheringem a skoro nepomohla. Kernel níže kreslí podobné měkké světlo a s jeho ovládacími prvky vyzkoušíte, kdy dithering pomůže a kdy ne.
 """)
 
 code(GLOW)
 
 md(r"""
 - **Pozdě.** Zaškrtněte `too_late`. Světlo se pak nejdřív zaokrouhlí bez šumu, jako když je uložené v 8bitové textuře nebo už vykreslené na obrazovce, a dithering přijde až potom. Pruhy zůstanou, protože šum kolem už zaokrouhlené hodnoty se na ni zase zaokrouhlí. Tak dopadl dithering, který oprava Silksongu přidala až na hotový obrázek. Dithering patří do chvíle, kdy se zaokrouhluje, Acerola ho proto přidal do shaderu, který světlo kreslí.
-- **Zvětšení a zmenšení.** Posuňte `zoom`, kernel pak ukáže hotový obrázek zvětšený nebo zmenšený, jako texturu ve hře nebo fotku na sociální síti. Zvětšený vzor je vidět stejně jako pruhy. Při zmenšení na čtvrtinu s Bayerem připadne každému ukázanému pixelu stejný práh matice a pruhy se vrátí. Ze stejného důvodu je v náhledu Bayera v sekci 2 mřížka, kterou v Sáře při 100 % neuvidíte. Dithering proto patří až na konec, v rozlišení, ve kterém se obrázek ukáže. Pokazí ho i komprese JPEG nebo videa.
+- **Zvětšení a zmenšení.** Posuňte `zoom`, kernel pak ukáže hotový obrázek zvětšený nebo zmenšený, jako texturu ve hře nebo fotku na sociální síti. Zvětšený vzor je vidět stejně jako pruhy. Při zmenšení na čtvrtinu s Bayerem připadne každému ukázanému pixelu stejný práh matice a pruhy se vrátí. Dithering proto patří až na konec, v rozlišení, ve kterém se obrázek ukáže. I tahle lekce má proto plátno jen 512 × 288 pixelů, stejně velké jako obrázek pod buňkou, který tak ukáže každý pixel. Pokazí ho i komprese JPEG nebo videa.
 - **V čase.** Nastavte `zoom` na 16, aby byly vidět jednotlivé pixely, a zvyšte `frames`. Prahy se každým snímkem posunou a kernel snímky zprůměruje, jako to ve hrách dělá časový antialiasing (*temporal anti-aliasing*, TAA). Ze šumu se stanou mezistupně, které výstup nemá. Právě pro TAA vznikl IGN. Bez TAA by šum, který se mění každým snímkem, blikal.
 """)
 

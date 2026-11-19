@@ -1,7 +1,11 @@
-"""Draws the lesson 1 diagrams and its test picture into imgs/1 of the lecture folder."""
+"""Draws the lesson 1 diagrams and its test pictures into imgs/1 of the lecture folder.
+
+The test pictures are 512 x 288, the size of the picture Sara shows under a cell, so that
+the notebook shows every pixel of a dither and does not average it away."""
 import os
 from pathlib import Path
 import numpy as np
+from PIL import Image
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -69,7 +73,7 @@ def hex_colour(text):
 # 1. The test picture: three shaded balls under a sky ---------------------------
 # Rendered in linear light and encoded to sRGB, so the shading is smooth and a
 # posterise shows its bands plainly.
-W, H = 1920, 1080
+W, H = 512, 288
 yy, xx = np.mgrid[0:H, 0:W] + 0.5
 horizon = 0.6 * H
 sky_t = np.clip(yy / horizon, 0, 1)[..., None] ** 0.8
@@ -104,6 +108,10 @@ for cx, cy, r, albedo in sorted(balls, key=lambda b: b[1] + b[2]):
     image = mix(image, shaded, coverage)
 
 plt.imsave(os.path.join(OUT, "balls.png"), np.clip(linear_to_srgb(image), 0, 1))
+
+# Lesson 0's colour chart at the same size, since Sara crops a larger picture to the canvas.
+chart = Image.open(Path(OUT).parent / "0" / "color_chart.png").convert("RGB")
+chart.resize((W, H), Image.LANCZOS).save(os.path.join(OUT, "color_chart.png"))
 
 
 # 2. One gradient mixed in three spaces ----------------------------------------
