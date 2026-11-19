@@ -169,7 +169,7 @@ def pixel(ivec2 at) -> vec4:
     float t = posterise(to_lab(c.rgb).x, steps, threshold(at))
     return vec4(gradient(t), c.a)"""
 
-# Section 3: a soft light rounded with dither, too late, zoomed and over frames.
+# Section 3: a soft light rounded with dither, too late, zoomed, frame by frame and with TAA.
 # ZOOM_AT sits on the light's slope, so a large zoom shows dots, not the flat top.
 GLOW = f"""\
 %%gmacs "balls" -> "Glow"
@@ -177,7 +177,8 @@ uniform int steps: hint_range(2, 64) = 16
 uniform int dither: hint_enum("Off", "Bayer", "IGN") = 2
 uniform bool too_late = false
 uniform float zoom: hint_range(0.25, 16) = 1.0
-uniform int frames: hint_range(1, 16) = 1
+uniform int frame: hint_range(0, 15) = 0
+uniform bool taa = false
 
 const int OFF = 0
 const int BAYER = 1
@@ -185,20 +186,21 @@ const int IGN = 2
 {BAYER_GMACS}
 const vec2 LIGHT_AT = vec2(256.0, 144.0)
 const vec2 ZOOM_AT = vec2(336.0, 144.0)
+const int TAA_FRAMES = 16
 
 
 {POSTERISE}
 
 
-def threshold(ivec2 at, int frame) -> float:
+def threshold(ivec2 at, int f) -> float:
     match dither:
         case OFF:
             return 0.5
         case BAYER:
-            ivec2 b = at + ivec2(frame % 4, frame / 4)            # the matrix moves every frame
+            ivec2 b = at + ivec2(f % 4, f / 4)                    # the matrix moves every frame
             return (BAYER_4X4[(b.y % 4) * 4 + b.x % 4] + 0.5) / 16.0
         case IGN:
-            vec2 q = vec2(at) + 5.588238 * float(frame)           # the noise moves every frame
+            vec2 q = vec2(at) + 5.588238 * float(f)               # the noise moves every frame
             return fract(52.9829189 * fract(dot(q, vec2(0.06711056, 0.00583715))))
 
 
@@ -208,15 +210,22 @@ def light(ivec2 at) -> float:
     return 0.5 * exp(-dot(d, d))
 
 
+def rounded(ivec2 at, int f) -> float:
+    \"\"\"The light rounded to steps levels in frame f.\"\"\"
+    float v = light(at)
+    if too_late:
+        v = posterise(v, steps, 0.5)                              # rounded already, as in an 8-bit texture
+    return posterise(v, steps, threshold(at, f))
+
+
 def shown(ivec2 at) -> float:
-    \"\"\"The light rounded to steps levels, averaged over frames as TAA does.\"\"\"
+    \"\"\"One frame, or with TAA the mean of sixteen frames in a row.\"\"\"
+    if not taa:
+        return rounded(at, frame)
     float total = 0.0
-    for frame in range(frames):
-        float v = light(at)
-        if too_late:
-            v = posterise(v, steps, 0.5)                          # rounded already, as in an 8-bit texture
-        total += posterise(v, steps, threshold(at, frame))
-    return total / float(frames)
+    for k in range(TAA_FRAMES):
+        total += rounded(at, frame + k)
+    return total / float(TAA_FRAMES)
 
 
 def pixel(ivec2 at) -> vec4:
@@ -638,7 +647,7 @@ code(GLOW)
 md(r"""
 - **Pozdě.** Zaškrtněte `too_late`. Světlo se pak nejdřív zaokrouhlí bez šumu, jako když je uložené v 8bitové textuře nebo už vykreslené na obrazovce, a dithering přijde až potom. Pruhy zůstanou, protože šum kolem už zaokrouhlené hodnoty se na ni zase zaokrouhlí. Tak dopadne dithering přidaný až na hotový obrázek jako efekt po vykreslení (*post-processing*). Dithering patří do chvíle, kdy se zaokrouhluje, tedy do shaderu, který světlo kreslí.
 - **Zvětšení a zmenšení.** Posuňte `zoom`, kernel pak ukáže hotový obrázek zvětšený nebo zmenšený, jako texturu ve hře nebo fotku na sociální síti. Zvětšený vzor je vidět stejně jako pruhy. Při zmenšení na čtvrtinu s Bayerem připadne každému ukázanému pixelu stejný práh matice a pruhy se vrátí. Dithering proto patří až na konec, v rozlišení, ve kterém se obrázek ukáže. I tahle lekce má proto plátno jen 512 × 288 pixelů, stejně velké jako obrázek pod buňkou, který tak ukáže každý pixel. Pokazí ho i komprese JPEG nebo videa.
-- **V čase.** Nastavte `zoom` na 16, aby byly vidět jednotlivé pixely, a zvyšte `frames`. Prahy se každým snímkem posunou a kernel snímky zprůměruje, jako to ve hrách dělá časový antialiasing (*temporal anti-aliasing*, TAA). Ze šumu se stanou mezistupně, které výstup nemá. Právě pro TAA vznikl IGN. Bez TAA by šum, který se mění každým snímkem, blikal.
+- **V čase.** Nastavte `zoom` na 16, aby byly vidět jednotlivé pixely, a táhněte posuvníkem `frame`, který snímek se ukáže. Prahy se každým snímkem posunou a šum bliká. Pak zaškrtněte `taa`: kernel zprůměruje 16 snímků po sobě, jako to ve hrách dělá časový antialiasing (*temporal anti-aliasing*, TAA). Obraz se při tažení `frame` přestane hýbat a ze šumu se stanou mezistupně, které výstup nemá. Právě pro TAA vznikl IGN. Bez TAA je lepší šum, který se mezi snímky nemění.
 """)
 
 # --- 4. NumPy and Krita, at home --------------------------------------------------

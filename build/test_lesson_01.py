@@ -199,3 +199,13 @@ def test_the_written_bayer_matrix_is_the_kernels():
     rows = [[float(v) for v in row.split("&")] for row in written.split(r"\\")]
     kernel = re.search(r"float\[16\]\((.*?)\)", nb.BAYER_GMACS)[1]
     assert sum(rows, []) == [float(v) for v in kernel.split(",")]
+
+
+def test_taa_gives_every_pixel_all_sixteen_bayer_thresholds():
+    """Sixteen frames in a row, from any frame on, shift the matrix to all sixteen places, so the
+    mean under TAA does not move while frame is dragged."""
+    assert "uniform int frame: hint_range(0, 15) = 0" in nb.GLOW and "uniform bool taa = false" in nb.GLOW
+    assert "ivec2(f % 4, f / 4)" in nb.GLOW and "const int TAA_FRAMES = 16" in nb.GLOW
+    for frame in range(16):
+        shifts = {(f % 4, f // 4 % 4) for f in range(frame, frame + 16)}
+        assert len(shifts) == 16, frame
