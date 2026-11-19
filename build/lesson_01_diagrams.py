@@ -274,6 +274,25 @@ axes[1, 0].set_ylabel("měkké světlo na černé\nna osmi úrovních", fontsize
 save(fig, "noise.png")
 
 
+# 5b. What section 2 is after: the balls on four greys, rounded and dithered -----------
+# Stacked at one pixel per pixel, so the notebook shows every pixel and the eye averages them.
+srgb = plt.imread(os.path.join(OUT, "balls.png"))[..., :3].astype(np.float64)
+lightness = linear_to_oklab(srgb_to_linear(srgb))[..., 0]
+by, bx = np.mgrid[0:H, 0:W]
+GOAL_STEPS = 4
+
+
+def grey(d):
+    """The lightness rounded to GOAL_STEPS levels with threshold d, as the grey the lesson's kernel draws."""
+    L = np.floor(np.clip(lightness, 0, 1) * (GOAL_STEPS - 1) + d) / (GOAL_STEPS - 1)
+    lab = np.stack([L, np.zeros_like(L), np.zeros_like(L)], axis=-1)
+    return np.clip(linear_to_srgb(oklab_to_linear(lab)), 0, 1)
+
+
+goal = np.concatenate([grey(0.5), np.ones((8, W, 3)), grey(ign(bx, by))])
+plt.imsave(os.path.join(OUT, "dither_goal.png"), goal)
+
+
 # 6. Why Floyd-Steinberg runs pixel after pixel -----------------------------------
 fig, ax = plt.subplots(figsize=(8, 3.6))
 ax.set_xlim(-0.6, 7.6)

@@ -518,21 +518,27 @@ def threshold(ivec2 at) -> float:
 """)
 
 md(r"""
-Stínování se rozpadlo na ploché pruhy (*banding*), protože se celá plocha zaokrouhlí stejně. Jiné $d$ nepomůže, se stejným $d$ všude se pruhy jen posunou.
+Stínování se rozpadlo na ploché pruhy (*banding*). Víc úrovní (větší bitovou hloubku, *bit depth*) si ale vybrat nemůžeme, určuje je výstup. Game Boy měl čtyři odstíny, GIF nejvýš 256 barev, tisk a e-ink jen dva, inkoust a papír. I běžný monitor s 256 úrovněmi na kanál ukáže pruhy v pomalém tmavém přechodu, třeba na obloze nebo kolem světla na černém pozadí.
 
-Víc úrovní (větší bitovou hloubku, *bit depth*) si ale vybrat nemůžeme, určuje je výstup. Game Boy měl čtyři odstíny, GIF nejvýš 256 barev, tisk a e-ink jen dva, inkoust a papír. I běžný monitor s 256 úrovněmi na kanál ukáže pruhy v pomalém tmavém přechodu, třeba na obloze nebo kolem světla na černém pozadí. Pixelů je přitom dost a oko z dálky sousední pixely zprůměruje. Dithering proto vymění část prostorového rozlišení za odstíny, které výstupu chybějí.
+Chceme docílit tohoto:
 
-Od lepšího zaokrouhlení chceme tři věci:
+@img(dither_goal.png, 512, Míčky na čtyřech odstínech šedé, nahoře zaokrouhlené, dole s ditheringem)
+
+Dole jsou pořád jen čtyři odstíny, a přece z dálky vypadá stínování plynule. Oko totiž sousední pixely zprůměruje. Pixelů je dost, tak část rozlišení vyměníme za odstíny, které výstupu chybějí.
+
+Jak na to? Vezměte plochu, jejíž světlost leží ve třech čtvrtinách cesty k vyšší úrovni. S prahem $d = 0.5$ se celá zaokrouhlí nahoru, a jiné $d$, stejné pro všechny pixely, jen posune hranici pruhu. Aby měla plocha z dálky správnou světlost, musí se nahoru zaokrouhlit tři pixely ze čtyř a dolů jeden. Práh (*threshold*) $d$ se tedy musí měnit od pixelu k pixelu.
+
+Zkusíme to třeba takhle: každý pixel dostane náhodné $d$ od 0 do 1, bílý šum (*white noise*). Přepněte v buňce nahoře `dither` na `White noise`.
+
+A ono to funguje. Pruhy zmizely a stínování je z dálky zase plynulé. Tomu se říká dithering.
+
+Zblízka je ale šum zrnitý, protože se náhodná čísla shlukují. Od dobrého ditheringu proto chceme tři věci:
 
 1. Plocha má z dálky stejnou světlost jako před zaokrouhlením, takže pruhy zmizí.
 2. Šum, který to způsobí, je vidět co nejméně.
 3. Každý pixel se spočítá sám, bez čekání na sousedy, jak to potřebuje GPU.
 
-První podmínku splní práh (*threshold*) $d$, který se mění od pixelu k pixelu. Plocha ze tří čtvrtin cesty k vyšší úrovni se pak zaokrouhlí nahoru ve třech pixelech ze čtyř. To je dithering.
-
-Nejjednodušší takový práh je náhodné číslo v každém pixelu, bílý šum (*white noise*). Přepněte v buňce nahoře na `White noise` a podívejte se na plochy zblízka.
-
-Pruhy zmizely a každý pixel si číslo spočítá sám, první a třetí podmínka tedy platí. Šum je ale zrnitý, protože se náhodná čísla shlukují. Šum bez shluků, ve kterém se sousední prahy vždy hodně liší, se jmenuje modrý šum (*blue noise*) a splní všechny tři podmínky. Počítá se ale pomalu, proto se předem uloží do textury, třeba 64 × 64 pixelů, a ta se opakuje přes celý obrázek (obrázek níže, prostřední sloupec).
+Bílý šum splní první a třetí. Šum bez shluků, ve kterém se sousední prahy vždy hodně liší, se jmenuje modrý šum (*blue noise*) a splní všechny tři. Počítá se ale pomalu, proto se předem uloží do textury, třeba 64 × 64 pixelů, a ta se opakuje přes celý obrázek (obrázek níže, prostřední sloupec).
 
 Jde to i bez textury:
 
