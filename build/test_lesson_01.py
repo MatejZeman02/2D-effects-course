@@ -190,3 +190,12 @@ def test_the_canvas_shows_every_pixel():
     assert "sara.init(width=512, height=288)" in "".join("".join(c["source"]) for c in nb.cells)
     for name in ("balls.png", "color_chart.png"):
         assert Image.open(ROOT / "imgs" / "1" / name).size == (512, 288), name
+
+
+def test_the_written_bayer_matrix_is_the_kernels():
+    """The matrix in the text of section 2 is BAYER_4X4, row by row."""
+    text = "".join("".join(c["source"]) for c in nb.cells if c["cell_type"] == "markdown")
+    written = re.search(r"\\begin\{pmatrix\}(.*?)\\end\{pmatrix\}", text)[1]
+    rows = [[float(v) for v in row.split("&")] for row in written.split(r"\\")]
+    kernel = re.search(r"float\[16\]\((.*?)\)", nb.BAYER_GMACS)[1]
+    assert sum(rows, []) == [float(v) for v in kernel.split(",")]
