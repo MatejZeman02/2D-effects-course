@@ -122,12 +122,6 @@ def test_the_gamut_fit_keeps_hue_and_lands_inside(solved):
     assert np.abs(np.angle(np.exp(1j * (hue - hue_out)))).max() < 0.02
 
 
-def test_unfinished_cells_are_harmless(img, defaults):
-    space = namespace(nb.HELPERS_NP, nb.CURVES_NP, nb.AUTO_NP_GIVEN, nb.PARAMS_NP, nb.APPLY_GIVEN)
-    assert space["auto_exposure"](img[..., :3]) == 1.0
-    assert np.array_equal(space["apply"](img, **defaults), img)
-
-
 def test_the_solution_runs(img, defaults, solved):
     crop = img[200:, :300]
     for curve in CURVES:
@@ -141,7 +135,7 @@ def test_the_solution_runs(img, defaults, solved):
 
 
 def test_the_goal_is_the_solution(img, solved):
-    """The hidden Goal cell runs the same tonemapper, PARAMS and source as section 5."""
+    """The hidden Goal cell runs the solved tonemapper with the same PARAMS, on the HDR layer."""
     called = {}
 
     class Sara:
@@ -165,10 +159,20 @@ def test_the_pictures_exist():
         text = "".join(cell["source"])
         shown |= set(re.findall(r'src="(imgs/6/[^"]+)"', text))
         shown |= set(re.findall(r'"(imgs/6/[^"]+\.(?:png|npz))"', text))
-    assert len(shown) >= 7, shown
+    assert len(shown) >= 11, shown
     for path in shown:
         assert (ROOT / path).is_file(), path
     assert "`rocket_hdr.npz`" in (ROOT / nb.IMG / "SOURCES.md").read_text()
+
+
+def test_remap_is_continuous_and_matches_the_hand_values(local):
+    remap = local["remap"]
+    for alpha, beta in ((1.0, 1.0), (0.5, 0.4), (2.0, 0.1)):
+        assert np.allclose(remap(np.array([1 - 1e-9, 1 + 1e-9, -1 - 1e-9]), 0.0, 1.0, alpha, beta), [1, 1, -1])
+    x = np.linspace(-5, 5, 101)
+    assert np.allclose(remap(x, 0.3, 0.7, 1.0, 1.0), x)
+    got = remap(np.array([-3.0, -0.5, 0.25, 2.0]), 0.0, 1.0, 0.5, 0.4)
+    assert np.allclose(got, [-1.8, -0.7071, 0.5, 1.4], atol=1e-3)
 
 
 @pytest.fixture(scope="module")
@@ -183,24 +187,6 @@ def test_the_pyramid_collapses_back_exactly(hdr, local):
     assert np.abs(local["collapse"](pyramid) - L).max() < 1e-4
 
 
-def test_remap_is_continuous_and_the_check_expects_the_solution(local):
-    remap = local["remap"]
-    for alpha, beta in ((1.0, 1.0), (0.5, 0.4), (2.0, 0.1)):
-        assert np.allclose(remap(np.array([1 - 1e-9, 1 + 1e-9, -1 - 1e-9]), 0.0, 1.0, alpha, beta), [1, 1, -1])
-    x = np.linspace(-5, 5, 101)
-    assert np.allclose(remap(x, 0.3, 0.7, 1.0, 1.0), x)
-    check = [c for c in code_cells() if 'print("remap: ok"' in c][0]
-    space = dict(local)
-    exec(check.split("def remap")[0] + check.split("return collapse(out)")[1], space)
-    assert np.allclose(space["got"], space["want"], atol=1e-3)
-
-
-def test_the_unfinished_remap_leaves_the_picture(hdr, local):
-    space = namespace(nb.HELPERS_NP, nb.PYRAMID_NP, nb.REMAP_GIVEN, nb.LOCAL_NP)
-    L = np.log2(1e-4 + space["luminance"](hdr[::4, ::4]))
-    assert np.abs(space["local_laplacian"](L, nb.SIGMA_R, 0.5, 0.4) - L).max() < 1e-4
-
-
 def test_the_local_filter_compresses_the_range_and_keeps_neutral(hdr, local):
     L = np.log2(1e-4 + local["luminance"](hdr))
     same = local["local_laplacian"](L, nb.SIGMA_R, 1.0, 1.0)
@@ -208,3 +194,19 @@ def test_the_local_filter_compresses_the_range_and_keeps_neutral(hdr, local):
     out = local["local_laplacian"](L, nb.SIGMA_R, nb.ALPHA, nb.BETA)
     assert out.shape == L.shape and np.isfinite(out).all()
     assert np.ptp(out) < 0.7 * np.ptp(L)
+
+
+def test_the_lesson_is_optional_and_folded():
+    """No Krita section, no NumPy tasks, the local contrast part is one details without headings."""
+    text = "\n".join("".join(c["source"]) for c in nb.cells)
+    assert "Do Krity" not in text and "Filter NumPy" not in text
+    for banned in (r"\b[Zz]áře?\b", r"\b[Zz]ář\w*", r"\b[Tt]ónov\w+ křiv\w+"):
+        assert not re.findall(banned, text.replace("česky záře", "")), banned
+    assert re.findall(r"### 🎯 Úkol (\d+)", text) == ["1", "2", "3", "4"]
+    folded = [c for c in nb.cells if c["cell_type"] == "markdown"
+              and "Lokální kontrast (nepovinné)" in "".join(c["source"])]
+    assert len(folded) == 1 and not [l for l in folded[0]["source"] if l.startswith("#")]
+
+
+def test_the_goal_has_no_unused_helpers():
+    assert "oklab" not in nb.GOAL and "gaussian_pyramid" not in nb.GOAL

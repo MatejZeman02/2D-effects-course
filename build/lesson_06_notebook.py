@@ -24,7 +24,7 @@ IMG = "imgs/6"
 WIDTH, HEIGHT = 640, 427      # the photo's size and the canvas's
 KEY = 0.12                    # the grey auto exposure aims the mean at
 THRESHOLD, SIGMA, STRENGTH = 2.0, 6.0, 0.1
-SIGMA_R, ALPHA, BETA = 1.0, 1.0, 0.4   # the local Laplacian filter of section 6, in stops
+SIGMA_R, ALPHA, BETA = 1.0, 1.0, 0.4   # the local Laplacian filter of the folded last part, in stops
 cells = []
 
 
@@ -126,7 +126,7 @@ BRIGHT = f"""\
 uniform float threshold: hint_range(0, 16) = {THRESHOLD}
 
 
-# Only the light above the threshold, its colour kept: what is bright enough to glow.
+# Only the light above the threshold, its colour kept: what is bright enough to bloom.
 def pixel(ivec2 at) -> vec4:
     vec3 c = src[at].rgb
     float y = dot(c, vec3(0.2126, 0.7152, 0.0722))
@@ -164,15 +164,15 @@ def pixel(ivec2 at) -> vec4:
     return vec4(total / weight, 1.0)"""
 
 COMPOSITE_STUB = """\
-    # TODO: the glow added to the light, times strength, before the exposure and the curve
+    # TODO: the bloom added to the light, times strength, before the exposure and the curve
     vec3 mapped = aces(c * exposure)"""
 
 SOLUTION_COMPOSITE = """\
-    vec3 mapped = aces((c + strength * glow) * exposure)"""
+    vec3 mapped = aces((c + strength * blurred) * exposure)"""
 
 COMPOSITE = f"""\
-%%gmacs "HDR" -> "Glow" bloom=Bloom exposure={{exposure}} strength={STRENGTH}
-kernel glow
+%%gmacs "HDR" -> "Final" bloom=Bloom exposure={{exposure}} strength={STRENGTH}
+kernel compose
 
 import linear_srgb_color_space
 
@@ -188,9 +188,9 @@ params:
 {ACES_GLSL}
 
 
-def glow():
+def compose():
     vec3 c = src[pixel].rgb
-    vec3 glow = bloom[pixel].rgb
+    vec3 blurred = bloom[pixel].rgb
 {COMPOSITE_STUB}
     dst[pixel] = vec4(linear_srgb_to_srgb(mapped), 1.0)"""
 
@@ -319,12 +319,6 @@ def aces(x):
     """Narkowicz's fit of the ACES film curve, from 0 to 1."""
     return np.clip(x * (2.51 * x + 0.03) / (x * (2.43 * x + 0.59) + 0.14), 0, 1)'''
 
-AUTO_NP_GIVEN = f'''\
-def auto_exposure(lin, key={KEY}):
-    """The exposure that brings the picture's mean log luminance to key."""
-    # TODO: the geometric mean of DELTA + Y over every pixel, then key divided by it
-    return 1.0'''
-
 SOLUTION_AUTO_NP = f'''\
 def auto_exposure(lin, key={KEY}):
     """The exposure that brings the picture's mean log luminance to key."""
@@ -342,12 +336,6 @@ PARAMS = {{
     "curve": ["ACES", "Reinhard", "Clip"],
     "encode": True,
 }}'''
-
-APPLY_GIVEN = '''\
-def apply(img, auto, key, stops, threshold, sigma, strength, curve, encode):
-    out = img.copy()
-    # TODO: exposure, the bloom, the tone curve and, when encode is on, sRGB
-    return out'''
 
 SOLUTION_APPLY = '''\
 def apply(img, auto, key, stops, threshold, sigma, strength, curve, encode):
@@ -405,12 +393,6 @@ def collapse(pyramid):
         a = level + up(a, level.shape)
     return a'''
 
-REMAP_GIVEN = '''\
-def remap(x, g, sigma_r, alpha, beta):
-    """x moved around g: differences under sigma_r as detail, larger ones as an edge."""
-    # TODO: t^alpha within sigma_r of g, 1 + beta * (t - 1) beyond, in units of sigma_r
-    return x'''
-
 SOLUTION_REMAP = '''\
 def remap(x, g, sigma_r, alpha, beta):
     """x moved around g: differences under sigma_r as detail, larger ones as an edge."""
@@ -439,7 +421,7 @@ def local_laplacian(a, sigma_r, alpha, beta, levels=7):
     return collapse(out)'''
 
 
-GOAL = ("# The tonemapper of section 5, hidden because you write it yourself.\n"
+GOAL = ("# The tonemapper of the whole lesson, hidden because you write it yourself.\n"
         "def _goal():\n"
         + textwrap.indent(lesson_writer.used_only("\n\n".join(piece.replace("\n\n\n", "\n\n") for piece in
                                         [HELPERS_NP, CURVES_NP, SOLUTION_AUTO_NP, SOLUTION_APPLY]), keep=("apply",)), "    ")
@@ -454,17 +436,16 @@ def answer(snippet, lang="python"):
 
 # --- Title --------------------------------------------------------------------
 md(r"""
-# Lekce 6 (bonus): HDR, záře a tone mapping
+# Lekce 6 (bonus): HDR, bloom a tone mapping
 
-Fotka ze skutečného světa má světla, která jsou stokrát jasnější než obloha, a obrazovka umí ukázat jen rozsah od 0 do 1. Hry a fotoaparáty proto počítají ve vysokém dynamickém rozsahu (*high dynamic range*, HDR) a teprve na konci světlo stlačí do obrazovky. V této lekci to postavíte celé: expozici, tónovou křivku, automatickou expozici z průměru celého obrázku spočítaného na GPU, záři kolem světel (*bloom*) a stlačení sytých barev v OKLabu. Nepovinná poslední sekce přidá lokální tone mapping.
+Fotka ze skutečného světa má světla, která jsou stokrát jasnější než obloha, a obrazovka umí ukázat jen rozsah od 0 do 1. Hry a fotoaparáty proto počítají ve vysokém dynamickém rozsahu (*high dynamic range*, HDR) a teprve na konci světlo stlačí do obrazovky. Na konci lekce budete mít celý tonemapper: expozici, tonemapper křivku, automatickou expozici z průměru celého obrázku spočítaného na GPU, bloom kolem světel a stlačení sytých barev v OKLabu.
 
-Lekce je bonusová a na samostudium. Spusťte buňku. Otevře v Sáře dokument s plátnem 640 × 427 a do vrstvy `HDR` zapíše fotku rakety na rampě v lineárním světle, s lampami až stokrát jasnějšími než bílá.
+Lekce je nepovinná a na samostudium. Spusťte buňku. Otevře v Sáře dokument s plátnem 640 × 427 a do vrstvy `HDR` zapíše fotku rakety na rampě v lineárním světle, s lampami až stokrát jasnějšími než bílá.
 """)
 
 code(f"""
 import sys
 sys.path.insert(0, "lib")            # sara.py and its helpers live in lib/
-import time
 import numpy as np
 import sara
 
@@ -477,7 +458,7 @@ print(f"the brightest pixel: {{hdr.max():.0f}}, the mean: {{hdr.mean():.3f}}")
 md(r"""
 Vrstva drží čísla tak, jak jsou, i větší než 1. Sára je ale ukazuje jako sRGB a všechno nad 1 ořízne, takže vrstva `HDR` vypadá tmavě a lampy jako bílé skvrny.
 
-### Nové funkce v této lekci
+<details><summary>📖 Nové funkce v této lekci</summary>
 
 **Kernel v buňce `%%gmacs`**
 
@@ -494,22 +475,94 @@ Vrstva drží čísla tak, jak jsou, i větší než 1. Sára je ale ukazuje jak
 |---|---|---|
 | `np.load("....npz")["rgb"]` | pole uložené v souboru NumPy | úvod |
 | `doc.door.verdict({"reduce": ...})` | součet, průměr, minimum a maximum vrstvy, spočítané na GPU | 2 |
-| `a[::2, ::2]` | každý druhý řádek a sloupec, pole poloviční velikosti | 6 |
-| `np.repeat(a, 2, axis=0)` | každý řádek dvakrát za sebou | 6 |
-| `stack[k, rows, cols]` s `np.indices` | z každého místa hodnota z jiné vrstvy pole, podle pole indexů `k` | 6 |
+
+</details>
 """)
 
 md(r"""
 ## Cíl lekce
-
-Buňka níže spustí hotový tonemapper, jehož kód je schovaný. Zkuste vypnout `auto`, posouvat `stops` a změnit `curve`.
 """)
 
 code(GOAL, hidden=True)
 
+# --- Brainstorming ------------------------------------------------------------------
+md(r"""
+## Jak byste to udělali?
+
+Zkuste v cíli `stops` kolem nuly a `auto` vypnuté. Fotka má lampy stokrát jasnější než bílá, obrazovka ukáže jen rozsah od 0 do 1. Jak z té fotky udělat obrázek, který se na obrazovce dobře dívá?
+
+<details><summary>💭 Nápady</summary>
+
+Dobrý obrázek splní tři věci: ukáže oblohu i lampy najednou, tmavé části nechá čitelné a jasná světla nenechá jen jako bílé skvrny. Navíc to musí jít spočítat pro libovolnou fotku, bez ručního ladění.
+
+<details><summary>Oříznout všechno nad 1</summary>
+
+Nejjednodušší, a obrazovka to dělá sama. Obloha vyjde dobře, ale lampy jsou ploché bílé skvrny a stačí je trochu zesvětlit nebo ztmavit, aby se obloha ztratila. Uvidíte to v sekci 1 s volbou `Clip`.
+
+@img(idea_clip.png, 420, Fotka rakety oříznutá na rozsah obrazovky: lampy jsou bílé skvrny)
+
+</details>
+
+<details><summary>Vydělit všechno největší hodnotou</summary>
+
+Nic se neořízne, ale největší hodnotu má jedna lampa, takže zbytek obrázku vyjde skoro černý. Chybí expozice a křivka, které světlo stlačí jen tam, kde je ho moc. Sekce 1.
+
+@img(idea_scale.png, 420, Fotka rakety vydělená největší hodnotou: skoro celá černá kromě lamp)
+
+</details>
+
+<details><summary>Logaritmus všeho</summary>
+
+Logaritmus stlačí rozsah dvaceti expozičních stupňů do osmi, ale stlačí i tmavé části a drobné rozdíly. Obrázek je šedý a bez kontrastu. Tonemapper křivka v sekci 1 tmavé téměř nechá a stlačí jen jasné.
+
+@img(idea_log.png, 420, Logaritmus všech hodnot fotky: šedý obrázek bez kontrastu)
+
+</details>
+
+<details><summary>Zvolit expozici ručně pro každou fotku</summary>
+
+Funguje, ale pro každou fotku jiné číslo, a hra by ho musela ladit pro každou scénu. Správnou expozici lze spočítat z obrázku, sekce 2.
+
+</details>
+
+<details><summary>Lokální úpravy: každou oblast zvlášť</summary>
+
+Vypadá dobře, ale kolem silné hrany vzniká svatozář. Jak se jí vyhnout, je ve složené části na konci lekce.
+
+</details>
+
+</details>
+
+A jak udělat, aby jasná lampa vypadala jasně, i když ji obrazovka víc než bílou nevydá?
+
+<details><summary>💭 Nápady</summary>
+
+<details><summary>Nechat ji bílou</summary>
+
+Víc než 1 obrazovka neukáže. Oko i objektiv ale silné světlo rozptýlí, a kolem lampy vznikne svítící okraj. To je to, co obrázku chybí.
+
+</details>
+
+<details><summary>Rozmazat celý obrázek</summary>
+
+Okraj kolem lampy to dá, ale rozmaže i raketu, věže a oblohu. Rozmazat se má jen to, co je dost jasné, a přičíst k ostrému obrázku. Bloom, sekce 3.
+
+@img(idea_blur_all.png, 420, Celá fotka rozmazaná: lampy mají okraj, ale rozmazaná je i raketa a věže)
+
+</details>
+
+<details><summary>Namalovat lampám kolem svítící kolečko</summary>
+
+Platí jen pro lampy, které někdo našel, a nesedí na světlo, které se mění s expozicí. Světlo nad prahem najde každý pixel sám, sekce 3.
+
+</details>
+
+</details>
+""")
+
 # --- 1. Exposure and tone curves -------------------------------------------------
 md(r"""
-## 1. Expozice a tónová křivka
+## 1. Expozice a tonemapper křivka
 
 Fotoaparát světlo nejdřív vynásobí **expozicí**, a ta se měří v **expozičních stupních** (EV, *stops*): o jeden stupeň víc je dvakrát víc světla. Pak ho musí dostat do rozsahu obrazovky. Nejjednodušší je oříznout všechno nad 1. Posuňte `stops` v kernelu níže a podívejte se, co ořezání dělá s lampami a co s oblohou.
 
@@ -523,7 +576,7 @@ Při žádné expozici není vidět obloha a lampy zároveň. Rozsah fotky, od n
 code(EXPOSURE)
 
 md(r"""
-**Tónová křivka** (*tone curve*) místo ořezání světla plynule stlačí: tmavé zůstanou skoro stejné a jasné se přibližují k 1, ale nikdy ji nepřekročí. Reinhardova křivka z roku 2002 je nejjednodušší:
+**Tonemapper křivka** (*tone curve*) místo ořezání světlo plynule stlačí: tmavé zůstanou skoro stejné a jasné se přibližují k 1, ale nikdy ji nepřekročí. Reinhardova křivka z roku 2002 je nejjednodušší:
 
 $$T(x) = \frac{x}{1 + x}$$
 
@@ -533,9 +586,9 @@ $$T(x) = \frac{x\,(2.51\,x + 0.03)}{x\,(2.43\,x + 0.59) + 0.14}$$
 
 @img(tone_curves.png, 760, Ořezání, Reinhardova křivka a ACES na logaritmické ose světla od setiny po sto)
 
-### 🎯 Úkol 1: tónová křivka
+### 🎯 Úkol 1: tonemapper křivka
 
-Doplňte funkci `tone`: pro `curve` 1 Reinhardovu křivku, pro 2 ACES oříznutou na 0 až 1. Výchozí volba je ACES.
+Doplňte funkci `tone`: pro `curve` 1 Reinhardovu křivku, pro 2 ACES oříznutou na 0 až 1, obě podle vzorců výše. Výchozí volba je ACES.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -551,12 +604,15 @@ Vzorce platí po složkách, a operace na `vec3` po složkách jsou. `1.0 + x` p
 code(TONE, solve=[(TONE_STUB, SOLUTION_TONE)])
 
 md(r"""
-> **❓ Otázka**
-> S křivkou ACES vypadá fotka správně až při expozici kolem +1.5. Proč by správná expozice měla záležet na obrázku, a jak by ji šlo spočítat?
+<details><summary>❓ Otázka: proč má správná expozice záležet na obrázku?</summary>
+
+S křivkou ACES vypadá fotka správně až při expozici kolem +1.5. Proč by správná expozice měla záležet na obrázku, a jak by ji šlo spočítat?
 
 <details><summary>🔑 Odpověď</summary>
 
 Tmavá scéna potřebuje víc světla než slunečná, jinak je celá černá, a světlá méně. Fotoaparát expozici volí sám tak, aby průměrný jas scény vyšel jako středně šedá. To je automatická expozice v další sekci.
+</details>
+
 </details>
 """)
 
@@ -564,7 +620,7 @@ Tmavá scéna potřebuje víc světla než slunečná, jinak je celá černá, a
 md(r"""
 ## 2. Automatická expozice a redukce na GPU
 
-Expozice má posunout „typický“ jas scény na středně šedou, **klíč** (*key*) kolem 0.18. Typický jas ale není aritmetický průměr: jedna lampa se stonásobným jasem posune průměr víc než celá obloha. Reinhard proto bere průměr **logaritmů**, tedy geometrický průměr:
+Expozice má posunout „typický“ jas scény na středně šedou, **klíč** (*key*) kolem 0.18. Nejblíž k ruce je aritmetický průměr jasu, jenže jedna lampa se stonásobným jasem posune průměr víc než celá obloha a zbytek obrázku by vyšel tmavý. Reinhard proto bere průměr **logaritmů**, tedy geometrický průměr:
 
 $$\bar L = \exp\Big(\frac{1}{n} \sum \log(\delta + Y)\Big), \qquad \text{expozice} = \frac{\text{klíč}}{\bar L}$$
 
@@ -574,11 +630,16 @@ Průměr celého obrázku je **redukce**: z milionu čísel jedno. Jedno vlákno
 
 @img(reduce.png, 860, Strom sčítání šestnácti čísel ve čtyřech krocích, v každém kroku polovina vláken sečte dvojici)
 
+<details><summary>📖 Proč redukce neumí histogram</summary>
+
 Redukce umí jen čísla, která se sčítají v libovolném pořadí. Histogram by potřeboval, aby vlákna zapisovala do společných přihrádek (*atomics*), a ty buňka `%%gmacs` zatím nenabízí.
+</details>
 
 ### 🎯 Úkol 2: logaritmus jasu
 
-Napište kernel, který do všech tří kanálů zapíše $\log(\delta + Y)$, s jasem $Y = 0.2126\,R + 0.7152\,G + 0.0722\,B$.
+Napište kernel, který do všech tří kanálů zapíše jas z předchozího vzorce:
+
+$$\text{out} = \log(\delta + Y), \qquad Y = 0.2126\,R + 0.7152\,G + 0.0722\,B$$
 
 <details><summary>🔑 Řešení</summary>
 
@@ -612,22 +673,25 @@ Kernel níže použije spočítanou expozici, `{exposure}` na prvním řádku ji
 code(AUTO)
 
 md(r"""
-> **❓ Otázka**
-> Zkuste klíč 0.18, 0.12 a 0.05 a buňky spusťte znovu, a nakonec klíč vraťte na 0.12. Proč by hra měnila expozici postupně, snímek po snímku, a ne hned?
+<details><summary>❓ Otázka: proč hra mění expozici postupně?</summary>
+
+Zkuste klíč 0.18, 0.12 a 0.05 a buňky spusťte znovu, a nakonec klíč vraťte na 0.12. Proč by hra měnila expozici postupně, snímek po snímku, a ne hned?
 
 <details><summary>🔑 Odpověď</summary>
 
 Klíč říká, jak světlá má scéna vypadat: 0.18 je den, 0.05 noc. Kdyby se expozice měnila okamžitě, obraz by při každém záblesku nebo otočení kamery ke světlu blikal. Hry proto expozici k cíli posouvají pomalu, jako oko, které si na tmu zvyká postupně, zornice za pár sekund, sítnice i desítky minut. Tomu se říká přizpůsobení oka (*eye adaptation*).
 </details>
+
+</details>
 """)
 
 # --- 3. Bloom ---------------------------------------------------------------------
 md(r"""
-## 3. Záře
+## 3. Bloom
 
-Silné světlo se v objektivu i v oku rozptýlí a kolem lampy vznikne záře. Hry ji napodobí třemi kroky: vyberou jen světlo nad prahem, rozmažou ho a přičtou k obrázku **před** tónovou křivkou, dokud je to ještě světlo, ne barva obrazovky.
+Silné světlo se v objektivu i v oku rozptýlí a kolem lampy vznikne svítící okraj, česky záře, v počítačové grafice **bloom**. Nejjednodušší pokus je rozmazat celý obrázek a přičíst ho, jenže rozmaže i raketu, věže a oblohu. Hry proto použijí tři kroky: vyberou jen světlo nad prahem, rozmažou ho a přičtou k obrázku **před** tonemapper křivkou, dokud je to ještě světlo, ne barva obrazovky.
 
-@img(bloom_steps.png, 900, Obrázek s tónovou křivkou, světlo nad prahem, jeho rozmazání a obrázek se září)
+@img(bloom_steps.png, 900, Obrázek s tonemapper křivkou, světlo nad prahem, jeho rozmazání a obrázek s bloomem)
 
 Výběr světla a dva průchody rozmazání z lekce o konvoluci jsou hotové.
 """)
@@ -641,7 +705,11 @@ code(BLOOM)
 md(r"""
 ### 🎯 Úkol 3: složení
 
-Celý kernel čte vrstvu `HDR` jako `src` a záři jako `bloom`. Přičtěte záři vynásobenou `strength` ke světlu, pak expozice a křivka.
+Celý kernel čte vrstvu `HDR` jako `src` a bloom jako `bloom`. Se světlem $c$, rozmazaným světlem $b$, silou $s$, expozicí $e$ a křivkou $T$ je výsledek
+
+$$\text{out} = T\bigl((c + s\,b)\cdot e\bigr)$$
+
+Přičtěte tedy bloom vynásobený `strength` ke světlu, pak expozice a křivka.
 
 <details><summary>🔑 Řešení</summary>
 
@@ -652,12 +720,15 @@ Celý kernel čte vrstvu `HDR` jako `src` a záři jako `bloom`. Přičtěte zá
 code(COMPOSITE, solve=[(COMPOSITE_STUB, SOLUTION_COMPOSITE)])
 
 md(r"""
-> **❓ Otázka**
-> Proč se záře přičítá před tónovou křivkou, a ne až k hotovému obrázku?
+<details><summary>❓ Otázka: proč se bloom přičítá před tonemapper křivkou?</summary>
+
+Proč se bloom přičítá před tonemapper křivkou, a ne až k hotovému obrázku?
 
 <details><summary>🔑 Odpověď</summary>
 
-Po tónové křivce jsou lampy i bílá raketa stejně bílé, 1, a práh by je nerozlišil. Před křivkou má lampa sto a raketa jedna, a září jen lampa. Záře přidaná před křivkou je také světlo, a křivka ji stlačí spolu s ostatním. Přidaná po ní by obrázek přesvítila nad 1 a ořízla. Hry rozmazávají pyramidu zmenšených obrázků místo jednoho velkého jádra, protože je to levnější a záře má pak měkký dlouhý ocas.
+Po křivce jsou lampy i bílá raketa stejně bílé, 1, a práh by je nerozlišil. Před křivkou má lampa sto a raketa jedna, a bloom vytvoří jen lampa. Bloom přidaný před křivkou je také světlo, a křivka ho stlačí spolu s ostatním. Přidaný po ní by obrázek přesvítil nad 1 a ořízl. Hry rozmazávají pyramidu zmenšených obrázků místo jednoho velkého jádra, protože je to levnější a bloom má pak měkký dlouhý ocas.
+</details>
+
 </details>
 """)
 
@@ -665,17 +736,21 @@ Po tónové křivce jsou lampy i bílá raketa stejně bílé, 1, a práh by je 
 md(r"""
 ## 4. Syté barvy v OKLabu
 
-Křivka po složkách stlačí každý kanál zvlášť. Sytá oranžová lampa má červenou složku mnohem větší než modrou, a křivka červenou stlačí víc. Barva se proto s rostoucím jasem posouvá ke žluté, modrá k azurové, a kde je třetí složka nulová, tam už zůstane. Vývojáři a koloristé tomu říkají „notorious six“: při velkém jasu zbude jen šest barev, tři základní a tři doplňkové.
+Tonemapper křivka po složkách stlačí každý kanál zvlášť. Sytá oranžová lampa má červenou složku mnohem větší než modrou, a křivka červenou stlačí víc. Barva se proto s rostoucím jasem posouvá ke žluté, modrá k azurové, a kde je třetí složka nulová, tam už zůstane. Vývojáři a koloristé tomu říkají „notorious six“: při velkém jasu zbude jen šest barev, tři základní a tři doplňkové.
 
 Druhá možnost je stlačit jen **jas** a barvu vynásobit stejným poměrem. Odstín zůstane, ale jasná sytá barva skončí mimo krychli 0 až 1, kterou obrazovka umí (mimo **gamut**). Ořezání kanálů odstín zase posune. Správně je zachovat v OKLabu světlost a odstín a ubrat **sytost** (*chroma*), dokud se barva do krychle nevejde.
 
 @img(gamut.png, 900, Pruh sytých barev s rostoucí expozicí ve třech podáních: křivka po složkách, jas s ořezáním a jas se stlačením sytosti v OKLabu)
 
-Největší sytost, která se vejde, se najde **půlením intervalu** (*bisection*): podíl sytosti od 0 do 1, a v každém kroku se interval zkrátí na polovinu, podle toho, zda je barva uvnitř. Po 16 krocích je podíl přesný na $2^{-16}$.
+Největší sytost, která se vejde, se najde **půlením intervalu** (*bisection*): podíl sytosti $q$ od 0 do 1, a v každém kroku se interval zkrátí na polovinu, podle toho, zda je barva uvnitř. Po 16 krocích je podíl přesný na $2^{-16}$.
 
 ### 🎯 Úkol 4: stlačení do gamutu
 
-Doplňte `fit`. Barvu, která je uvnitř, vraťte beze změny. Jinak ji převeďte do OKLabu, světlost ořízněte na 1 a půlením najděte největší podíl sytosti `ab`, při kterém je barva uvnitř. Funkce `inside` je hotová.
+Doplňte `fit`. Barvu, která je uvnitř, vraťte beze změny. Jinak ji převeďte do OKLabu $(L, a, b)$, světlost ořízněte na 1 a půlením najděte největší $q$, při kterém je barva uvnitř krychle:
+
+$$q^* = \max\{\,q \in [0, 1] : \text{rgb}(L,\, q\,a,\, q\,b) \in [0, 1]^3\,\}$$
+
+Funkce `inside` je hotová.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -695,95 +770,30 @@ code(GAMUT, solve=[(FIT_STUB, SOLUTION_FIT)])
 md(r"""
 Přepněte `mode` a porovnejte lampy a oranžový lem u rampy. Rozdíl je jemný, protože fotka má málo sytých světel. Na neonech, ohni nebo laseru ve hře je zřetelný.
 
-> **❓ Otázka**
-> Proč se půlí sytost, a ne světlost?
+<details><summary>❓ Otázka: proč se půlí sytost, a ne světlost?</summary>
+
+Proč se půlí sytost, a ne světlost?
 
 <details><summary>🔑 Odpověď</summary>
 
-Světlost je to, co tónová křivka nastavila, a změna by udělala z jasné lampy tmavší. Odstín je to, co oko pozná nejdřív, a jeho změna je vidět jako jiná barva. Sytost se mění nejméně nápadně: velmi jasná barva i ve skutečnosti vypadá bledší, protože oko se jí přizpůsobí. Proto jasná světla v obrázku přecházejí do bílé, a s OKLabem plynule a bez změny odstínu.
+Světlost je to, co tonemapper křivka nastavila, a změna by udělala z jasné lampy tmavší. Odstín je to, co oko pozná nejdřív, a jeho změna je vidět jako jiná barva. Sytost se mění nejméně nápadně: velmi jasná barva i ve skutečnosti vypadá bledší, protože oko se jí přizpůsobí. Proto jasná světla v obrázku přecházejí do bílé, a s OKLabem plynule a bez změny odstínu.
+</details>
+
 </details>
 """)
 
-# --- 5. NumPy and Krita -----------------------------------------------------------
+
+# --- Local contrast (optional, folded) -------------------------------------------------
 md(r"""
-## 5. Do Krity
+<details><summary>📖 Lokální kontrast (nepovinné): Laplaceova pyramida a lokální Laplaceův filtr</summary>
 
-Tonemapper do Krity spojí všechno v NumPy: automatickou expozici, záři a křivku. Pomocné funkce obsahují převody z lekce o barevných prostorech, jas `luminance` a rozmazání `blur` z lekce o konvoluci.
-""")
-
-code(HELPERS_NP + "\n\n\n" + CURVES_NP)
-
-md(r"""
-### 🎯 Úkol 5: automatická expozice v NumPy
-
-Napište `auto_exposure(lin, key)` podle vzorce ze sekce 2.
-
-<details><summary>🔑 Řešení</summary>
-
-""" + answer(SOLUTION_AUTO_NP) + r"""
-</details>
-""")
-
-code(AUTO_NP_GIVEN + """
-
-
-print(f"NumPy exposure {auto_exposure(hdr):.3f}, GPU exposure {exposure:.3f}")
-""", solve=[(AUTO_NP_GIVEN, SOLUTION_AUTO_NP)])
-
-md(r"""
-### 🎯 Úkol 6: tonemapper
-
-Napište `apply`:
-
-1. Expozice je $2^{\text{stops}}$, a s `auto` ještě krát `auto_exposure`.
-2. Záře: světlo nad prahem `threshold` (jako kernel `Bright`), rozmazané se `sigma`, krát `strength`, přičtené ke světlu.
-3. Pak expozice a křivka podle `curve`, a s `encode` převod do sRGB.
-
-Záporné hodnoty na vstupu ořízněte na nulu. Vrstvu `Filter NumPy` z buňky pod funkcí porovnejte s `Goal`.
-
-<details><summary>💡 Nápověda</summary>
-
-1. Kernel `Bright` v NumPy: `lin * (np.maximum(y - threshold, 0.0) / np.maximum(y, 1e-4))[..., None]`.
-2. Křivku podle jména vybere slovník funkcí: `{"ACES": aces, "Reinhard": reinhard, ...}[curve]`.
-</details>
-
-<details><summary>🔑 Řešení</summary>
-
-""" + answer(SOLUTION_APPLY) + r"""
-</details>
-""")
-
-code(PARAMS_NP + "\n\n\n" + APPLY_GIVEN + """
-
-
-sara.live(apply, PARAMS, source="HDR", target="Filter NumPy")
-""", solve=[(APPLY_GIVEN, SOLUTION_APPLY)])
-
-md(r"""
-### 🎯 Úkol 7: tonemapper v Kritě
-
-Vložte filtr do `pga_filter/effect.py` s `TITLE = "Tonemapper"`. Tonemapper potřebuje obrázek s čísly nad 1: otevřete v Kritě soubor EXR, třeba panorama oblohy z Poly Haven (licence CC0), který má dokument s 32bitovými čísly v lineárním světle. Krita sama převádí lineární světlo na obrazovku, a tak vypněte `encode`.
-
-<details><summary>💡 Nápověda</summary>
-
-1. Kromě `apply` a `PARAMS` patří do `effect.py` i všechny pomocné funkce a `auto_exposure`.
-2. V osmibitovém dokumentu Krita čísla nad 1 ořízne už na vstupu, a tonemapper pak nemá co stlačit.
-</details>
-""")
-
-# --- 6. Local Laplacian filter (optional) -------------------------------------------
-md(r"""
-## 6. Lokální kontrast (nepovinné)
-
-Tónová křivka je pro všechny pixely stejná. Stlačí dvacet expozičních stupňů do osmi, a stejně stlačí i malé rozdíly, kresbu mraků nebo nátěr rakety. Obrázek pak vypadá ploše. **Lokální tone mapping** stlačí velké rozdíly mezi oblastmi a malé rozdíly nechá. Sekce je nepovinná a celá v NumPy.
+Tonemapper křivka je pro všechny pixely stejná. Stlačí dvacet expozičních stupňů do osmi, a stejně stlačí i malé rozdíly, kresbu mraků nebo nátěr rakety. Obrázek pak vypadá ploše. **Lokální tone mapping** stlačí velké rozdíly mezi oblastmi a malé rozdíly nechá.
 
 Nejjednodušší pokus rozdělí logaritmus jasu na rozmazaný **základ** a **detail**, rozdíl od základu. Základ stlačí a detail přičte zpět. Rozmazání ale u silné hrany míchá obě strany: kolem jasné lampy je základ jasnější než okolí, a jeho stlačení okolí ztmaví. Vznikne tmavá **svatozář** (*halo*), na obrázku uprostřed.
 
-@img(local_tonemap.png, 900, Výřez s lampami třikrát: s tónovou křivkou pro celý obrázek, se základem a detailem a tmavou svatozáří kolem lamp, a s lokálním Laplaceovým filtrem bez svatozáře)
+@img(local_tonemap.png, 900, Výřez s lampami třikrát: s tonemapper křivkou pro celý obrázek, se základem a detailem a tmavou svatozáří kolem lamp, a s lokálním Laplaceovým filtrem bez svatozáře)
 
-### Laplaceova pyramida
-
-Burt a Adelson v roce 1983 rozložili obrázek podle velikosti detailů. **Gaussova pyramida** obrázek opakovaně rozmaže malým jádrem $(1\;4\;6\;4\;1) / 16$ a zmenší na polovinu. Každá úroveň **Laplaceovy pyramidy** je rozdíl úrovně Gaussovy pyramidy a zvětšené úrovně pod ní, a poslední úroveň je nejmenší Gaussova:
+**Laplaceova pyramida.** Burt a Adelson v roce 1983 rozložili obrázek podle velikosti detailů. **Gaussova pyramida** obrázek opakovaně rozmaže malým jádrem $(1\;4\;6\;4\;1) / 16$ a zmenší na polovinu. Každá úroveň **Laplaceovy pyramidy** je rozdíl úrovně Gaussovy pyramidy a zvětšené úrovně pod ní, a poslední úroveň je nejmenší Gaussova:
 
 $$\ell_i = g_i - \text{up}(g_{i+1}), \qquad \ell_n = g_n$$
 
@@ -791,23 +801,9 @@ Rozdíl dvou rozmazání je DoG, tedy skoro Laplaceův operátor z lekce o konvo
 
 @img(laplacian_pyramid.png, 860, Gaussova pyramida logaritmu jasu fotky, každá úroveň poloviční, a pod ní Laplaceova pyramida, kde jsou jen hrany a detaily dané velikosti)
 
-Funkce pyramidy jsou hotové. Buňka níže rozloží logaritmus jasu fotky a složí ho zpět.
-""")
+""" + answer(PYRAMID_NP) + r"""
 
-code(PYRAMID_NP + """
-
-
-lin = np.maximum(doc.layer("HDR").read()[..., :3], 0.0)
-L = np.log2(1e-4 + luminance(lin))                  # log luminance, in stops
-pyramid = laplacian_pyramid(L, 7)
-print("levels:", [level.shape for level in pyramid])
-print(f"collapsed back, largest difference {np.abs(collapse(pyramid) - L).max():.1e}")
-""")
-
-md(r"""
-### Lokální Laplaceův filtr
-
-Paris, Hasinoff a Kautz v roce 2011 rozhodují o každém koeficientu pyramidy zvlášť. Pro koeficient $\ell_i$ v místě $p$ vezmou hodnotu $g = g_i(p)$ z Gaussovy pyramidy, celý obrázek přemapují funkcí $r_g$ a koeficient vezmou z Laplaceovy pyramidy přemapovaného obrázku. Funkce $r_g$ rozlišuje dva druhy rozdílů od $g$: menší než $\sigma_r$ jsou detail, větší jsou hrana. S $t = |x - g| / \sigma_r$:
+**Lokální Laplaceův filtr.** Paris, Hasinoff a Kautz v roce 2011 rozhodují o každém koeficientu pyramidy zvlášť. Pro koeficient $\ell_i$ v místě $p$ vezmou hodnotu $g = g_i(p)$ z Gaussovy pyramidy, celý obrázek přemapují funkcí $r_g$ a koeficient vezmou z Laplaceovy pyramidy přemapovaného obrázku. Funkce $r_g$ rozlišuje dva druhy rozdílů od $g$: menší než $\sigma_r$ jsou detail, větší jsou hrana. S $t = |x - g| / \sigma_r$:
 
 $$r_g(x) = g + \operatorname{sign}(x - g)\, \sigma_r \cdot \begin{cases} t^\alpha & t \le 1 \\ 1 + \beta\,(t - 1) & t > 1 \end{cases}$$
 
@@ -815,98 +811,57 @@ S $\alpha < 1$ detail zesílí, s $\beta < 1$ se hrany stlačí. Obě větve se 
 
 @img(remap.png, 700, Funkce r_g kolem g: uvnitř pásu sigma_r detail, beze změny nebo zesílený, vně pásu hrana se sklonem beta)
 
+""" + answer(SOLUTION_REMAP) + r"""
+
 Přemapovat obrázek zvlášť pro každý koeficient by trvalo dlouho. Rychlá verze (Aubry a kol., 2014) obrázek přemapuje jen pro několik hodnot $g$ s krokem $\sigma_r$ a pro každou postaví Laplaceovu pyramidu. Koeficient v místě $p$ pak lineárně proloží mezi dvěma pyramidami, jejichž $g$ leží kolem $g_i(p)$. Filtr pracuje na logaritmu jasu, kde $\sigma_r = 1$ je jeden expoziční stupeň, a barvu pak vynásobí stejným poměrem jako jas, $2^{\,\text{nový} - \text{starý}}$.
 
-### 🎯 Úkol 8: přemapování
+""" + answer(LOCAL_NP) + r"""
 
-Napište `remap(x, g, sigma_r, alpha, beta)` podle vzorce. `x` je pole, `g` číslo. Funkce `local_laplacian` je hotová. Kontrola pod funkcí zkusí čtyři hodnoty.
-
-<details><summary>💡 Nápověda</summary>
-
-1. `d = x - g` a `t = np.abs(d) / sigma_r`.
-2. Spočítejte obě větve pro celé pole, každou s `np.sign(d)`, a vyberte `np.where(t <= 1, detail, hrana)`.
-</details>
-
-<details><summary>🔑 Řešení</summary>
-
-""" + answer(SOLUTION_REMAP) + r"""
+**Otázka: proč základ a detail udělají kolem lamp svatozář, a lokální Laplaceův filtr ne?** Rozmazání neví, kde je hrana. Základ kolem lampy je průměr lampy a tmavého okolí, je tedy jasnější než okolí, a stlačení ho stáhne dolů i s okolím. Lokální filtr se pro každý koeficient ptá, jak daleko je pixel od hodnoty $g$ v tom místě. Lampa je od tmavého okolí dál než $\sigma_r$, a tak je pro okolí hranou: její rozdíl se jen stlačí, nikdy se nepřičte k detailu. Detail okolí, kresba mraků, zůstane, protože je od $g$ blíž než $\sigma_r$.
 </details>
 """)
 
-code(REMAP_GIVEN + "\n\n\n" + LOCAL_NP + """
-
-
-got = remap(np.array([-3.0, -0.5, 0.25, 2.0]), 0.0, 1.0, 0.5, 0.4)
-want = np.array([-1.8, -0.7071, 0.5, 1.4])
-print("remap: ok" if np.allclose(got, want, atol=1e-3) else f"remap gives {np.round(got, 4)}, expected {want}")
-""", solve=[(REMAP_GIVEN, SOLUTION_REMAP)])
-
-md(r"""
-Buňka níže zapíše dvě vrstvy: `Global` s automatickou expozicí a křivkou ACES, jako v sekci 2, a `Local`, kde před expozicí a křivkou proběhne lokální Laplaceův filtr. Porovnejte je kolem lamp, na mracích a na raketě.
-""")
-
-code(f"""
-sigma_r, alpha, beta = {SIGMA_R}, {ALPHA}, {BETA}
-start = time.perf_counter()
-local = lin * 2.0 ** (local_laplacian(L, sigma_r, alpha, beta) - L)[..., None]
-print(f"local Laplacian: {{(time.perf_counter() - start) * 1000:.0f}} ms")
-doc.new_layer("Global", rgba(linear_to_srgb(aces(lin * auto_exposure(lin)))))
-doc.new_layer("Local", rgba(linear_to_srgb(aces(local * auto_exposure(local)))))
-""")
-
-md(r"""
-> **❓ Otázka**
-> Proč základ a detail udělají kolem lamp svatozář, a lokální Laplaceův filtr ne?
-
-<details><summary>🔑 Odpověď</summary>
-
-Rozmazání neví, kde je hrana. Základ kolem lampy je průměr lampy a tmavého okolí, je tedy jasnější než okolí, a stlačení ho stáhne dolů i s okolím. Lokální filtr se pro každý koeficient ptá, jak daleko je pixel od hodnoty $g$ v tom místě. Lampa je od tmavého okolí dál než $\sigma_r$, a tak je pro okolí hranou: její rozdíl se jen stlačí, nikdy se nepřičte k detailu. Detail okolí, kresba mraků, zůstane, protože je od $g$ blíž než $\sigma_r$.
-</details>
-
-> **❓ Otázka**
-> Zkuste `alpha` 0.5. Co se stane s oblohou, a proč?
-
-<details><summary>🔑 Odpověď</summary>
-
-Obloha se rozpadne na skvrny. Fotka byla původně osmibitová, a plynulý přechod oblohy se skládá z drobných schodů. Pro filtr jsou to malé rozdíly, tedy detail, a $t^\alpha$ je zesílí nejvíc ze všeho, protože u nuly roste nejstrměji. Je to stejný problém jako šum u druhé derivace. Paris a kol. proto rozdíly menší než úroveň šumu nechávají beze změny. Nakonec vraťte `alpha` na 1.
-</details>
-""")
 
 # --- Summary ------------------------------------------------------------------
 md(r"""
 ## Shrnutí
 
 - Světlo ve scéně má rozsah i dvacet expozičních stupňů, obrazovka asi osm. Počítá se v lineárním světle a stlačí se až na konci.
-- Tónová křivka stlačí jasné plynule. Reinhard je nejjednodušší, ACES má tvar S a filmový vzhled.
+- Tonemapper křivka stlačí jasné plynule. Reinhard je nejjednodušší, ACES má tvar S a filmový vzhled.
 - Automatická expozice posune geometrický průměr jasu na klíč. Průměr celého obrázku je redukce, kterou GPU sčítá ve stromu.
 - `{proměnná}` v prvním řádku buňky dosadí hodnotu z Pythonu.
-- Záře je světlo nad prahem, rozmazané a přičtené před tónovou křivkou.
+- Bloom je světlo nad prahem, rozmazané a přičtené před tonemapper křivkou.
 - Křivka po složkách posouvá odstín jasných barev. Stlačení jasu a pak sytosti v OKLabu odstín zachová.
-- Laplaceova pyramida rozloží obrázek podle velikosti detailů a složí ho zpět přesně. Lokální Laplaceův filtr v ní stlačí hrany a detail nechá, bez svatozáře.
 
-### Co jsme vynechali
+<details><summary>📖 Co jsme vynechali</summary>
 
 - **Histogram a percentily.** Expozice podle histogramu ignoruje nejtmavší a nejjasnější procenta pixelů.
 - **Lokální Laplaceův filtr na GPU.** Každá úroveň pyramidy je kernel nad menším obrázkem a pyramidy pro všechna $g$ jdou spočítat najednou. Darktable ho má v modulu místního kontrastu.
 - **Moderní křivky.** AgX a Khronos PBR Neutral řeší posun odstínu přímo v křivce. Blender má obě, Godot zatím jen AgX.
 - **HDR obrazovky.** Obrazovka s jasem přes 1000 nitů ukáže víc než 1, a tonemapper pak stlačuje jen to, co se nevejde ani do ní.
+- **Tonemapper v Kritě.** Stejný postup v NumPy by šel zabalit do filtru pro Kritu, jako v ostatních lekcích.
 
-### Bonusové úkoly
+</details>
+
+<details><summary>🎯 Bonusové úkoly</summary>
 
 1. **Postupná adaptace.** V NumPy spočítejte expozici pro sérii snímků se změnou jasu a posouvejte ji k cíli o pár procent na snímek.
 2. **Histogram.** Spočítejte v NumPy histogram logaritmu jasu a expozici podle mediánu místo průměru. Jak se liší?
-3. **Barevná záře.** Obarvěte záři barvou z výběru `source_color`, převedenou do lineárního světla, nebo ji zesilte jen v jednom kanálu, jako u starých objektivů.
+3. **Barevný bloom.** Obarvěte bloom barvou z výběru `source_color`, převedenou do lineárního světla, nebo ho zesilte jen v jednom kanálu, jako u starých objektivů.
 4. **AgX.** Najděte popis křivky AgX a napište ji jako čtvrtou volbu `curve`.
-5. **Lokální kontrast v Kritě.** Přidejte do tonemapperu volbu `local` s posuvníky `alpha` a `beta`.
-""")
+5. **Přemapování pro lokální filtr.** Podle vzorce $r_g$ ve složené části o lokálním kontrastu napište v NumPy `remap(x, g, sigma_r, alpha, beta)` a ověřte, že pro $\alpha = \beta = 1$ nic nemění a že v $t = 1$ jsou obě větve spojité. Zkuste pak `alpha` 0.5: obloha se rozpadne na skvrny, protože plynulý přechod oblohy se skládá z drobných schodů a $t^\alpha$ je zesílí nejvíc.
 
-md(r"""
-### Nápady na semestrální práci
+</details>
 
-- Tonemapper do Krity s histogramem v dialogu, lokální expozicí a předvolbami křivek.
-- Simulace objektivu: záře, odlesky (*lens flare*), vinětace a chromatická aberace z jedné vrstvy HDR.
+<details><summary>📖 Nápady na semestrální práci</summary>
+
+- Tonemapper s histogramem v dialogu, lokální expozicí a předvolbami křivek.
+- Simulace objektivu: bloom, odlesky (*lens flare*), vinětace a chromatická aberace z jedné vrstvy HDR.
 - Složení HDR ze tří fotek s různou expozicí (*exposure bracketing*) a jeho tone mapping.
+
+</details>
 """)
+
 
 
 def build():

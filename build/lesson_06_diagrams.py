@@ -146,9 +146,9 @@ def bloom_steps(hdr):
     y = luminance(hdr)
     bright = hdr * (np.maximum(y - nb.THRESHOLD, 0) / np.maximum(y, 1e-4))[..., None]
     glow = blur(bright, nb.SIGMA)
-    panels = [(aces(hdr * e), "tónová křivka"), (aces(bright * e), f"světlo nad prahem {nb.THRESHOLD:g}"),
+    panels = [(aces(hdr * e), "tonemapper křivka"), (aces(bright * e), f"světlo nad prahem {nb.THRESHOLD:g}"),
               (aces(glow * e), "rozmazané"),
-              (aces((hdr + nb.STRENGTH * glow) * e), "se září")]
+              (aces((hdr + nb.STRENGTH * glow) * e), "s bloomem")]
     crop = (slice(230, 427), slice(40, 600))
     fig, axes = plt.subplots(2, 2, figsize=(13, 5.0), gridspec_kw={"wspace": 0.03, "hspace": 0.16})
     for ax, (picture, title) in zip(axes.ravel(), panels):
@@ -247,7 +247,7 @@ def local_tonemap(hdr):
     """The lamps by a global curve, by a blurred base and detail, and by the local Laplacian filter."""
     L = log_luminance(hdr)
     base = blur(L[..., None], 16)[..., 0]
-    logs = [(L, "tónová křivka pro celý obrázek"),
+    logs = [(L, "tonemapper křivka pro celý obrázek"),
             (nb.BETA * base + (L - base), "základ a detail: svatozář kolem lamp"),
             (local_laplacian(L, nb.SIGMA_R, nb.ALPHA, nb.BETA), "lokální Laplaceův filtr")]
     crop = (slice(330, 427), slice(110, 330))
@@ -260,11 +260,29 @@ def local_tonemap(hdr):
     save(fig, "local_tonemap.png")
 
 
+def ideas(hdr):
+    """What the brainstorm's ideas would give, with the lesson's own arithmetic."""
+    e = auto_exposure(hdr)
+    logged = np.log2(1e-4 + hdr)
+    pictures = [("idea_clip.png", np.clip(hdr, 0, 1), "ořezat"),
+                ("idea_scale.png", hdr / hdr.max(), "vydělit největší hodnotou"),
+                ("idea_log.png", (logged - logged.min()) / np.ptp(logged), "logaritmus všeho"),
+                ("idea_blur_all.png", aces(blur(hdr, nb.SIGMA) * e), "rozmazat celý obrázek")]
+    for name, picture, title in pictures:
+        srgb = picture if name == "idea_log.png" else linear_to_srgb(np.clip(picture, 0, 1))
+        fig, ax = plt.subplots(figsize=(4.2, 3.0))
+        ax.imshow(np.clip(srgb, 0, 1))
+        ax.set_title(title, fontsize=11)
+        bare(ax)
+        save(fig, name)
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     make_hdr()
     hdr = load_hdr()
     exposure_strip(hdr)
+    ideas(hdr)
     dynamic_range(hdr)
     tone_curves()
     reduce_tree()
