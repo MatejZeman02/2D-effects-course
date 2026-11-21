@@ -261,7 +261,7 @@ for ax, title in zip(axes, ("přechod mezi rohy", "směrnice (derivace)")):
 axes[0].set_yticks([0, 1])
 axes[1].set_yticks([0, 1, 1.5, 1.875])
 axes[1].set_yticklabels(["0", "1", "1.5", "1.875"])
-axes[0].legend(fontsize=9, frameon=False, loc="upper left")
+fig.legend(*axes[0].get_legend_handles_labels(), fontsize=10, frameon=False, ncol=3, loc="upper center", bbox_to_anchor=(0.5, 0.0))
 save(fig, "smoothstep.png")
 
 
