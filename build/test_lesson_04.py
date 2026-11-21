@@ -25,7 +25,7 @@ import lesson_04_notebook as nb  # noqa: E402
 import params  # noqa: E402
 
 N = nb.SIDE
-MODES = ["Deblur", "Low pass", "High pass"]
+MODES = ["Deblur", "Deblur motion", "Low pass", "High pass"]
 
 
 def namespace(*sources):
@@ -56,12 +56,13 @@ def defaults():
 
 @pytest.fixture(scope="module")
 def solved():
-    return namespace(nb.HELPERS_NP, nb.SOLUTION_SPECTRUM, nb.SOLUTION_GAUSSIAN, nb.SOLUTION_BLUR,
-                     nb.SOLUTION_WIENER, nb.PARAMS_NP, nb.SOLUTION_APPLY)
+    return namespace(nb.HELPERS_NP, nb.SOLUTION_SPECTRUM, nb.SOLUTION_GAUSSIAN, nb.MOTION_NP,
+                     nb.SOLUTION_FILTER, nb.SOLUTION_WIENER, nb.PARAMS_NP, nb.APPLY_NP)
 
 
 def test_the_template_reads_params(defaults):
-    assert defaults == {"mode": "Deblur", "sigma": nb.BLUR_SIGMA, "noise": 0.01}
+    assert defaults == {"mode": "Deblur", "sigma": nb.BLUR_SIGMA, "length": nb.MOTION_LENGTH,
+                        "angle": nb.MOTION_ANGLE, "noise": 0.01}
 
 
 def test_the_photos_are_the_canvas_size():
@@ -83,7 +84,7 @@ def test_every_layer_is_made_before_it_is_read():
     for cell in code_cells():
         first = cell.splitlines()[0]
         reads = re.findall(r'^%%gmacs "([^"]+)"', first)
-        reads += re.findall(r'(?:doc\.layer|sara\.bench)\("([^"]+)"', cell)
+        reads += re.findall(r'doc\.layer\("([^"]+)"', cell)
         reads += re.findall(r'source="([^"]+)"', cell)
         for name in reads:
             assert name in made, f"{name} is read before any cell makes it"
@@ -131,8 +132,8 @@ def test_gaussian_filter_is_the_spectrum_of_the_kernels_weights(solved):
     assert np.allclose(tall, tall[(-np.arange(64)) % 64][:, (-np.arange(48)) % 48])
 
 
-def test_blur_fft_matches_the_blur_kernel(photo, solved):
-    """blur_fft in linear light is the kernel's wrapped, weighted sum of 4 sigma around each pixel."""
+def test_filter_fft_matches_the_blur_kernel(photo, solved):
+    """filter_fft with the Gaussian H in linear light is the kernel's wrapped, weighted sum of 4 sigma around each pixel."""
     sigma = 1.5
     r = int(np.ceil(4 * sigma))
     lin = solved["srgb_to_linear"](photo[..., :3].astype(np.float64))
@@ -143,7 +144,7 @@ def test_blur_fft_matches_the_blur_kernel(photo, solved):
             total += k * np.roll(lin, (-dy, -dx), axis=(0, 1))
             weight += k
     gpu = solved["linear_to_srgb"](total / weight)
-    blurred = np.dstack([solved["blur_fft"](lin[..., c], sigma) for c in range(3)])
+    blurred = np.dstack([solved["filter_fft"](lin[..., c], solved["gaussian_filter"](N, N, sigma)) for c in range(3)])
     assert np.abs(gpu - solved["linear_to_srgb"](blurred)).max() < 0.003
     assert np.allclose(blurred.mean(axis=(0, 1)), lin.mean(axis=(0, 1)))     # H is 1 at zero frequency
 
@@ -152,9 +153,34 @@ def test_wiener_undoes_a_clean_blur(solved):
     """Without noise and with K near zero the filter gives back the picture the blur was made from."""
     rng = np.random.default_rng(4)
     picture = rng.random((64, 48))
-    blurred = solved["blur_fft"](picture, 1.0)
+    H = solved["gaussian_filter"](*picture.shape, 1.0)
+    blurred = solved["filter_fft"](picture, H)
     assert np.abs(blurred - picture).max() > 0.1
-    assert np.abs(solved["wiener"](blurred, 1.0, 1e-14) - picture).max() < 1e-6
+    assert np.abs(solved["wiener"](blurred, H, 1e-14) - picture).max() < 1e-6
+
+
+def test_wiener_undoes_a_motion_blur(solved):
+    """The line's H changes sign and has near zeros, and the same wiener still gives the picture back."""
+    rng = np.random.default_rng(5)
+    picture = rng.random((64, 64))
+    H = solved["motion_filter"](64, 64, 9, 30)
+    assert H.real.min() < -0.05 and np.isclose(H[0, 0], 1)
+    blurred = solved["filter_fft"](picture, H)
+    assert np.abs(blurred - picture).max() > 0.1
+    assert np.abs(solved["wiener"](blurred, H, 1e-3) - picture).mean() < 0.15
+
+
+def test_the_text_photo_is_synthetic_and_wiener_reads_it():
+    """text_motion.png is what the diagram script makes, and the lesson's filter at K = 1e-3 brings back the ink."""
+    shipped = np.asarray(Image.open(ROOT / nb.IMG / "text_motion.png").convert("RGB"))
+    ink = diagrams.text_ink()
+    assert np.array_equal(diagrams.text_photo(ink), shipped)
+    fixed = diagrams.deblur_text(shipped.astype(np.float64) / 255, 1e-3).mean(axis=2)
+    blurred = shipped.astype(np.float64).mean(axis=2) / 255
+    dark = ink > 0.5
+    before = blurred[~dark].mean() - blurred[dark].mean()
+    after = fixed[~dark].mean() - fixed[dark].mean()
+    assert after > 2.0 * before, (before, after)
 
 
 def test_wiener_sharpens_the_lesson_photo(photo, blurry, solved):
@@ -163,7 +189,7 @@ def test_wiener_sharpens_the_lesson_photo(photo, blurry, solved):
     H = solved["gaussian_filter"](N, N, nb.BLUR_SIGMA)
     divided = np.fft.ifft2(np.fft.fft2(lin[..., 0]) / H).real
     assert np.abs(divided).max() > 100
-    fixed = np.dstack([solved["wiener"](lin[..., c], nb.BLUR_SIGMA, 0.01 ** 2) for c in range(3)])
+    fixed = np.dstack([solved["wiener"](lin[..., c], H, 0.01 ** 2) for c in range(3)])
     before = np.abs(blurry[..., :3] - photo[..., :3]).mean()
     after = np.abs(np.clip(solved["linear_to_srgb"](fixed), 0, 1) - photo[..., :3]).mean()
     assert after < 0.8 * before, (before, after)
@@ -176,15 +202,15 @@ def test_the_blurred_photo_is_the_lessons_blur(photo):
 
 
 def test_unfinished_cells_are_harmless(photo, defaults):
-    space = namespace(nb.HELPERS_NP, nb.SPECTRUM_GIVEN, nb.GAUSSIAN_GIVEN, nb.BLUR_GIVEN, nb.WIENER_GIVEN,
-                      nb.PARAMS_NP, nb.APPLY_GIVEN)
+    space = namespace(nb.HELPERS_NP, nb.SPECTRUM_GIVEN, nb.GAUSSIAN_GIVEN, nb.FILTER_GIVEN, nb.WIENER_GIVEN,
+                      nb.MOTION_NP, nb.PARAMS_NP, nb.APPLY_NP)
     black = space["spectrum"](np.fft.fft2(photo[..., 0]))
     assert black.shape == (N, N, 4) and np.all(black[..., :3] == 0) and np.all(black[..., 3] == 1)
     assert np.all(space["gaussian_filter"](N, N, 3.0) == 1)
     channel = photo[..., 1]
-    assert np.array_equal(space["blur_fft"](channel, 3.0), channel)
-    assert np.array_equal(space["wiener"](channel, 3.0, 1e-4), channel)
-    assert np.array_equal(space["apply"](photo, **defaults), photo)
+    H = space["gaussian_filter"](N, N, 3.0)
+    assert np.array_equal(space["filter_fft"](channel, H), channel)
+    assert np.array_equal(space["wiener"](channel, H, 1e-4), channel)
     # the given inverse filter with the unfinished H shows the photo it was given
     lin = space["srgb_to_linear"](photo[..., :3])
     H = space["gaussian_filter"](N, N, nb.BLUR_SIGMA)
@@ -204,7 +230,7 @@ def test_the_solution_runs(blurry, defaults, solved):
 
 
 def test_the_goal_is_the_solution(blurry, solved):
-    """The hidden Goal cell runs the same filter, PARAMS and source as section 5."""
+    """The hidden Goal cell runs the same filter, PARAMS and source as section 7."""
     called = {}
 
     class Sara:
@@ -217,7 +243,7 @@ def test_the_goal_is_the_solution(blurry, solved):
     assert called["source"] == "astronaut_blur" and called["target"] == "Goal"
     assert called["params"] == solved["PARAMS"]
     for mode in MODES:
-        values = {"mode": mode, "sigma": 2.5, "noise": 0.02}
+        values = {"mode": mode, "sigma": 2.5, "length": 15, "angle": -20, "noise": 0.02}
         assert np.array_equal(called["apply"](blurry, **values), solved["apply"](blurry, **values)), mode
 
 
@@ -228,7 +254,7 @@ def test_the_pictures_exist():
         text = "".join(cell["source"])
         shown |= set(re.findall(r'src="(imgs/4/[^"]+)"', text))
         shown |= set(re.findall(r'"(imgs/4/[^"]+\.png)"', text))
-    assert len(shown) >= 7, shown
+    assert len(shown) >= 10, shown
     for path in shown:
         assert (ROOT / path).is_file(), path
     sources = (ROOT / nb.IMG / "SOURCES.md").read_text()

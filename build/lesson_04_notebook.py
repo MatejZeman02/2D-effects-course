@@ -23,6 +23,8 @@ OUT = ROOT / "lesson_04_frequency_domain.ipynb"
 IMG = "imgs/4"
 SIDE = 512                    # the photos' side and the canvas's, the kernels' N
 BLUR_SIGMA = 2.0              # the blur astronaut_blur.png was made with
+MOTION_LENGTH = 21            # the line text_motion.png was blurred along, in pixels
+MOTION_ANGLE = 12             # and its angle in degrees, counterclockwise
 cells = []
 
 
@@ -205,66 +207,81 @@ def gaussian_filter(h, w, sigma):
     fx = np.fft.fftfreq(w)[None, :]
     return np.exp(-2 * np.pi ** 2 * sigma ** 2 * (fx ** 2 + fy ** 2))'''
 
-BLUR_GIVEN = '''\
-def blur_fft(channel, sigma):
-    """channel, an (h, w) array, blurred by a Gaussian of sigma pixels through its spectrum."""
+FILTER_GIVEN = '''\
+def filter_fft(channel, H):
+    """channel, an (h, w) array, filtered through its spectrum by H, an array of the same shape."""
     # TODO: the spectrum times H, transformed back
     return channel.copy()'''
 
-SOLUTION_BLUR = '''\
-def blur_fft(channel, sigma):
-    """channel, an (h, w) array, blurred by a Gaussian of sigma pixels through its spectrum."""
-    H = gaussian_filter(*channel.shape, sigma)
+SOLUTION_FILTER = '''\
+def filter_fft(channel, H):
+    """channel, an (h, w) array, filtered through its spectrum by H, an array of the same shape."""
     return np.fft.ifft2(np.fft.fft2(channel) * H).real'''
 
 WIENER_GIVEN = '''\
-def wiener(channel, sigma, K):
-    """channel without the Gaussian blur of sigma pixels, K the noise's power to the signal's."""
+def wiener(channel, H, K):
+    """channel without the blur H, K the noise's power to the signal's."""
     # TODO: the spectrum times conj(H) / (|H|^2 + K), transformed back
     return channel.copy()'''
 
 SOLUTION_WIENER = '''\
-def wiener(channel, sigma, K):
-    """channel without the Gaussian blur of sigma pixels, K the noise's power to the signal's."""
-    G = np.fft.fft2(channel)
-    H = gaussian_filter(*channel.shape, sigma)
-    F = G * np.conj(H) / (np.abs(H) ** 2 + K)
-    return np.fft.ifft2(F).real'''
+def wiener(channel, H, K):
+    """channel without the blur H, K the noise's power to the signal's."""
+    W = np.conj(H) / (np.abs(H) ** 2 + K)
+    return np.fft.ifft2(np.fft.fft2(channel) * W).real'''
+
+# Given, not a task: H of a blur along a line, which has zeros and changes sign, unlike the Gaussian's.
+MOTION_NP = '''\
+def motion_filter(h, w, length, angle):
+    """H of a blur along a straight line of length pixels at angle degrees, (h, w), in np.fft.fft2's order."""
+    line = np.zeros((h, w))
+    t = np.radians(angle)
+    for s in np.linspace(-length / 2, length / 2, int(4 * length) + 1):
+        x, y = s * np.cos(t), -s * np.sin(t)                 # y points down in a picture
+        x0, y0 = int(np.floor(x)), int(np.floor(y))
+        fx, fy = x - x0, y - y0
+        for dx, dy, weight in ((0, 0, (1 - fx) * (1 - fy)), (1, 0, fx * (1 - fy)),
+                               (0, 1, (1 - fx) * fy), (1, 1, fx * fy)):
+            line[(y0 + dy) % h, (x0 + dx) % w] += weight     # a negative step wraps to the end of the array
+    return np.fft.fft2(line / line.sum())'''
 
 PARAMS_NP = f'''\
 PARAMS = {{
-    "mode": ["Deblur", "Low pass", "High pass"],
+    "mode": ["Deblur", "Deblur motion", "Low pass", "High pass"],
     "sigma": ({BLUR_SIGMA}, 0.5, 8.0),
+    "length": ({MOTION_LENGTH}, 1, 40),
+    "angle": ({MOTION_ANGLE}, -90, 90),
     "noise": (0.01, 0.001, 0.1, 0.001),
 }}'''
 
-APPLY_GIVEN = '''\
-def apply(img, mode, sigma, noise):
-    out = img.copy()
-    # TODO: the three modes in linear RGB, High pass from the sRGB values
-    return out'''
-
-SOLUTION_APPLY = '''\
-def apply(img, mode, sigma, noise):
+APPLY_NP = '''\
+def apply(img, mode, sigma, length, angle, noise):
     out = img.copy()
     lin = srgb_to_linear(img[..., :3])
+    h, w = img.shape[:2]
     for c in range(3):
         if mode == "Deblur":
-            lin[..., c] = wiener(lin[..., c], sigma, noise ** 2)
+            lin[..., c] = wiener(lin[..., c], gaussian_filter(h, w, sigma), noise ** 2)
+        elif mode == "Deblur motion":
+            lin[..., c] = wiener(lin[..., c], motion_filter(h, w, length, angle), noise ** 2)
         else:
-            lin[..., c] = blur_fft(lin[..., c], sigma)
+            lin[..., c] = filter_fft(lin[..., c], gaussian_filter(h, w, sigma))
     out[..., :3] = linear_to_srgb(lin)
     if mode == "High pass":
         out[..., :3] = img[..., :3] - out[..., :3] + 0.5
     return out'''
 
+# What the Krita section's first cell holds besides the lesson's own helpers: the finished functions.
+KRITA_HELPERS = "\n\n\n".join([CONVERT_NP, SOLUTION_GAUSSIAN, MOTION_NP, SOLUTION_FILTER, SOLUTION_WIENER])
+
+# The goal runs the finished filter inside a function, so the student's own half-written
+# gaussian_filter and wiener keep their names in the notebook.
+_FLAT_GOAL = lesson_writer.used_only(KRITA_HELPERS + "\n\n\n" + PARAMS_NP + "\n\n\n" + APPLY_NP, keep=("apply", "PARAMS"))
 GOAL = ("# The filter of section 7, hidden because you write it yourself.\n"
         "def _goal():\n"
-        + textwrap.indent("\n\n".join(piece.replace("\n\n\n", "\n\n") for piece in
-                                        [CONVERT_NP, SOLUTION_GAUSSIAN, SOLUTION_BLUR, SOLUTION_WIENER, SOLUTION_APPLY]), "    ")
-        + "\n\n    return apply\n\n\n"
-        + PARAMS_NP
-        + '\n\nsara.live(_goal(), PARAMS, source="astronaut_blur", target="Goal")')
+        + textwrap.indent(_FLAT_GOAL, "    ")
+        + "\n\n    return apply, PARAMS\n\n\n"
+        + '_apply, _params = _goal()\nsara.live(_apply, _params, source="astronaut_blur", target="Goal")')
 
 # --- The interactive pictures ---------------------------------------------------
 # Hidden cells: what they draw is the lesson, how they draw it is not. Each one
@@ -948,15 +965,19 @@ def answer(snippet, lang="python"):
 md(r"""
 # Lekce 4: Frekvenční oblast
 
-Na konci lekce budete mít filtr, který rozmazanou fotku zaostří. Rozmazání se nedá vrátit pixel po pixelu, ve spektru obrázku je to ale obyčejné násobení, a to se vrátit dá. Nejdřív si na interaktivních obrázcích ukážete, co spektrum je a jak ho číst. Pak spočítáte Fourierovu transformaci na GPU i v NumPy a fotku přes frekvence rozmažete a zaostříte.
+Na konci lekce budete mít filtr, který rozmazanou fotku zaostří, i text rozmazaný pohybem fotoaparátu. Rozmazání se nedá vrátit pixel po pixelu, ve spektru obrázku je to ale obyčejné násobení, a to se vrátit dá. Nejdřív si na interaktivních obrázcích ukážete, co spektrum je a jak ho číst. Pak spočítáte Fourierovu transformaci a fotku přes frekvence rozmažete a zaostříte.
 
-Spusťte obě buňky. První otevře v Sáře nový dokument s plátnem 512 × 512 a fotky jako vrstvy. Fotka `astronaut_blur.png` je ostrá fotka `astronaut.png` rozmazaná Gaussem. Druhá buňka připraví interaktivní obrázky. Ty mají kód schovaný: stačí buňku spustit a hýbat nabídkami a posuvníky nad obrázkem. Kdo chce vědět, jak se kreslí, buňku si rozbalí.
+Spusťte obě buňky. První otevře v Sáře nový dokument s plátnem 512 × 512 a fotky jako vrstvy. Druhá připraví interaktivní obrázky.
+
+<details><summary>📖 K čemu jsou fotky a schovaný kód</summary>
+
+Fotka `astronaut_blur.png` je ostrá fotka `astronaut.png` rozmazaná Gaussem. Interaktivní obrázky mají kód schovaný: stačí buňku spustit a hýbat nabídkami a posuvníky nad obrázkem. Kdo chce vědět, jak se kreslí, buňku si rozbalí.
+</details>
 """)
 
 code("""
 import sys
 sys.path.insert(0, "lib")            # sara.py and its helpers live in lib/
-import time
 import numpy as np
 import sara
 
@@ -968,7 +989,7 @@ blurry = doc.import_image("imgs/4/astronaut_blur.png")  # a layer called "astron
 code(TOOLS, hidden=True)
 
 md(r"""
-### Nové funkce v této lekci
+<details><summary>📖 Nové funkce v této lekci</summary>
 
 **Sára v Pythonu**
 
@@ -993,31 +1014,81 @@ md(r"""
 | `np.log1p(x)` | $\ln(1 + x)$ po prvcích | 1 |
 | `1j` | imaginární jednotka | 4 |
 | `np.fft.fftfreq(n)` | frekvence `n` koeficientů v pořadí, v jakém je vrací `np.fft.fft2` | 1, 5 |
+
+</details>
 """)
 
 md(r"""
 ## Cíl lekce
-
-Buňka níže spustí na rozmazanou fotku hotový filtr, jehož kód je schovaný. Režim `Deblur` fotku zaostří, `Low pass` rozmaže a `High pass` nechá jen detaily. Vyzkoušejte, co dělá posuvník `noise` u režimu `Deblur`, hlavně blízko nuly.
 """)
 
 code(GOAL, hidden=True)
+
+# --- Brainstorming --------------------------------------------------------------
+md(r"""
+## Jak byste to udělali?
+
+V cíli zvolte `Deblur`: rozmazaná fotka je zase ostrá. Jak byste rozmazanou fotku zaostřili, když víte, čím byla rozmazaná?
+
+<details><summary>💭 Nápady</summary>
+
+Dobrý nápad splní tři věci: vrátí rozmazání, ne jen zdůrazní hrany, nezesílí šum, který fotka má, a zvládne rozmazání jakékoli velikosti.
+
+<details><summary>Zostřující maska nebo zostřující jádro</summary>
+
+Konvoluce z lekce 3, třeba fotka plus rozdíl mezi fotkou a jejím rozmazáním. Hrany jsou ostřejší, jenže rozmazání se tím nevrací: co rozmazání smazalo, zůstane smazané a kolem hran vznikají světlé lemy. Hodí se na fotku, která je mírně měkká, ne na fotku, o které víme, čím byla rozmazaná.
+
+@img(idea_unsharp.png, 780, Rozmazaná fotka, ta samá fotka po zostřující masce a ostrá fotka)
+
+</details>
+
+<details><summary>Soustava rovnic</summary>
+
+Každý pixel rozmazané fotky je vážený součet pixelů ostré, takže ostrou fotku dá řešení soustavy rovnic. Má ale tolik neznámých, kolik má fotka pixelů, v našem případě 262 144, a matice soustavy by měla 262 144 řádků a sloupců. Přímo to nejde. Ukáže se ale, že ve spektru se soustava rozpadne na samostatné rovnice, jednu na frekvenci, a každá se vyřeší dělením. Sekce 5 a 6.
+
+</details>
+
+<details><summary>Vydělit spektrum fotky spektrem rozmazání</summary>
+
+Přesně tak, sekce 6. Naivně to ale nestačí: fotka má šum a dělení zesílí šum na frekvencích, které rozmazání skoro smazalo. Vyjde šum místo fotky. Opraví to Wienerův filtr.
+
+@img(idea_inverse.png, 780, Rozmazaná fotka, výsledek dělení spektra spektrem rozmazání, což je jen šum, a ostrá fotka)
+
+</details>
+
+<details><summary>Opakovaně rozmazání odhadovat a odečítat</summary>
+
+Iterativní dekonvoluce, třeba Richardson-Lucy, začne s rozmazanou fotkou a po desítkách kroků dá velmi dobrý výsledek. Je ale pomalá, každý krok je jedno rozmazání celé fotky. Wiener je jeden krok.
+
+</details>
+
+<details><summary>Neuronová síť</summary>
+
+Funguje i bez znalosti rozmazání, ale potřebuje natrénovat na mnoha fotkách a detaily, které rozmazání smazalo, si domýšlí. Tady je nepoužijeme.
+
+</details>
+
+</details>
+""")
 
 # --- 1. A picture as a sum of waves ---------------------------------------------
 md(r"""
 ## 1. Obrázek jako součet vln
 
-Každý obrázek se dá zapsat jako součet **vln**, obrázků s průběhem kosinu. Vlna má **frekvenci** $(u, v)$: na šířku obrázku se do ní vejde $u$ period a na výšku $v$ period. Kromě frekvence má **amplitudu**, jak je silná, a **fázi**, o kolik je posunutá. **Fourierova transformace** k obrázku najde právě ty vlny, ze kterých se skládá. Je to tatáž informace, jen jinak zapsaná: převod nic neztratí a zpětná transformace vrátí původní obrázek přesně.
+Rozmazání je pro každý pixel vážený součet jeho okolí a takový součet se těžko vrací. Potřebujeme zápis obrázku, ve kterém je rozmazání jednoduché. Takový zápis je součet **vln**, obrázků s průběhem kosinu. Vlna má **frekvenci** $(u, v)$: na šířku obrázku se do ní vejde $u$ period a na výšku $v$ period. Kromě frekvence má **amplitudu**, jak je silná, a **fázi**, o kolik je posunutá. **Fourierova transformace** k obrázku najde právě ty vlny, ze kterých se skládá. Je to tatáž informace, jen jinak zapsaná: převod nic neztratí a zpětná transformace vrátí původní obrázek přesně.
 
-Obrázek níže skládá fotku z několika jejích vln. Vlny jsou rozdělené podle frekvence do tří pásem: **nízké** (modře, do 6 period na obrázek), **střední** (oranžově, do 24 period) a **vysoké** (zeleně). Z každého pásma se berou jen ty nejsilnější. Posuvník `vln v pásmu` začíná na jedné vlně z každého pásma. Posouvejte ho doprava a sledujte, co které pásmo do součtu přidá a kde jeho vlny leží ve spektru vlevo.
+Obrázek níže skládá fotku z několika jejích vln, rozdělených podle frekvence do tří pásem: **nízké** (modře), **střední** (oranžově) a **vysoké** (zeleně). Z každého pásma se berou jen ty nejsilnější. Posouvejte posuvník `vln v pásmu` doprava a sledujte, co které pásmo do součtu přidá a kde jeho vlny leží ve spektru vlevo.
 
-Obrázek začíná v rozlišení 64 × 64. Spektrum má stejně koeficientů jako obrázek pixelů, takže je vidět celé a každá vlna v něm je jeden čtvereček. Vysoké vlny jsou pruhy široké pixel nebo dva, jemnější obrázek neunese. Na konci posuvníku jsou všechny vlny a součet je původní obrázek. V nabídce `rozlišení` je i 256 × 256, kde je vln šestnáctkrát víc a ve spektru je vidět jen jeho střed. První vybrané vlny bývají svislé nebo vodorovné pruhy. Patří ke kříži ve spektru, o kterém je otázka v sekci 2.
+<details><summary>📖 Co v obrázku ukazují rozlišení a pásma</summary>
+
+Pásma jsou dělená podle vzdálenosti od středu spektra: nízké do 6 period na obrázek, střední do 24. Obrázek začíná v rozlišení 64 × 64. Spektrum má stejně koeficientů jako obrázek pixelů, takže je vidět celé a každá vlna v něm je jeden čtvereček. Vysoké vlny jsou pruhy široké pixel nebo dva, jemnější obrázek neunese. Na konci posuvníku jsou všechny vlny a součet je původní obrázek. V nabídce `rozlišení` je i 256 × 256, kde je vln šestnáctkrát víc a ve spektru je vidět jen jeho střed. První vybrané vlny bývají svislé nebo vodorovné pruhy. Patří ke kříži ve spektru, o kterém je otázka v sekci 2.
+</details>
 """)
 
 code(COMPOSE, hidden=True)
 
 md(r"""
-Nízké vlny nesou velké plochy a celkový jas, střední tvary, vysoké hrany a detaily. V rozlišení 256 × 256 je fotka čitelná s pěti sty vlnami ve středním a vysokém pásmu (nízké jich má jen 56), asi se třemi procenty všech vln. Podobný princip má ztrátová komprese: JPEG ukládá vysoké frekvence hruběji, protože je oko vidí nejméně.
+Nízké vlny nesou velké plochy a celkový jas, střední tvary, vysoké hrany a detaily. V rozlišení 256 × 256 je fotka čitelná s pěti sty vlnami ve středním a vysokém pásmu, asi se třemi procenty všech vln. Podobný princip má ztrátová komprese: JPEG ukládá vysoké frekvence hruběji, protože je oko vidí nejméně.
 
 ### Jak transformace vlny najde
 
@@ -1037,7 +1108,11 @@ Kernel níže nakreslí do Sáry jednu vlnu. Posuvníky `u` a `v` mění frekven
 code(WAVE)
 
 md(r"""
-Vlna z kernelu je ve spektru jeden bod $(u, v)$ s komplexní hodnotou $c = F(u, v)$, a k němu dvojče v $(-u, -v)$ s hodnotou komplexně sdruženou. Z bodu a z jeho hodnoty se vyčte celá vlna. Pomůže známá vlna v jednom rozměru, $a \cos(f x + o)$, s frekvencí $f$, amplitudou $a$ a posunem $o$. Ve 2D je to
+Vlna z kernelu je ve spektru jeden bod $(u, v)$ s komplexní hodnotou $c = F(u, v)$, a k němu dvojče v $(-u, -v)$ s hodnotou komplexně sdruženou. Obrázek pod touto buňkou se překreslí, když pohnete posuvníky kernelu: vlevo je vektor $(u, v)$ v rovině spektra, uprostřed $c$ v komplexní rovině a vpravo řez vlnou kolmo na pruhy.
+
+<details><summary>📖 Jak z bodu spektra přečíst vlnu</summary>
+
+Pomůže známá vlna v jednom rozměru, $a \cos(f x + o)$, s frekvencí $f$, amplitudou $a$ a posunem $o$. Ve 2D je to
 
 $$a \cos\left(\frac{2\pi}{N}(u x + v y) + o\right), \qquad c = \frac{N^2}{2}\, a\, e^{i o}$$
 
@@ -1050,11 +1125,10 @@ a každé číslo z 1D má ve spektru své místo:
 | hodnota $c$, velikost $\lvert c \rvert$ | amplituda | $a$ | jak silná (kontrastní) vlna je |
 | hodnota $c$, úhel $\arg c$ | fáze | $o$ | o kolik je vlna posunutá vůči počátku (levému hornímu pixelu) |
 
-V 1D má vlna jen jeden směr, osu $x$. Ve 2D může kmitat kterýmkoli směrem, a ten nese druhé číslo polohy. Vlna z kernelu má $a = 0.5$, proto je v obrázku pod ní $\lvert c \rvert / N^2 = 0.25$.
-
-Obrázek níže se překreslí, když pohnete posuvníky kernelu nad ním. Vlevo je vektor $(u, v)$ v rovině spektra, s osou $v$ dolů jako ve vykresleném spektru, a čárkovaně směr pruhů. Uprostřed je $c$ v komplexní rovině, vydělené počtem pixelů $N^2$, a čárkovaně hodnota dvojčete. Vpravo je řez vlnou kolmo na pruhy: vzdálenost dvou vrcholů je vlnová délka, $512 / \sqrt{u^2 + v^2}$ pixelů, a fáze posune první vrchol od počátku.
+V 1D má vlna jen jeden směr, osu $x$. Ve 2D může kmitat kterýmkoli směrem, a ten nese druhé číslo polohy. Vlna z kernelu má $a = 0.5$, proto je v obrázku $\lvert c \rvert / N^2 = 0.25$. Vzdálenost dvou vrcholů v řezu je vlnová délka, $512 / \sqrt{u^2 + v^2}$ pixelů, a fáze posune první vrchol od počátku.
 
 **Součet dvou vln.** Transformace je lineární, a tak součet dvou vln se stejným $(u, v)$ je zase jedna vlna té frekvence a její $c$ je součet obou $c$, jako sčítání šipek. Se stejnou fází se amplitudy sečtou, s fází posunutou o 180° se vlny vyruší. Vlny s blízkými frekvencemi dají **rázy**, $\cos a + \cos b = 2 \cos\frac{a + b}{2} \cos\frac{a - b}{2}$: rychlou vlnu, jejíž síla pomalu kolísá. V obrázku je to moiré, v sekci 2 ho ukáže volba `dvě blízké kosinusovky`.
+</details>
 """)
 
 code(UV, hidden=True)
@@ -1083,18 +1157,17 @@ Velikosti koeficientů se liší o mnoho řádů. Koeficient nulové frekvence j
 
 ### 🎯 Úkol 1: spektrum
 
-Napište funkci `spectrum(F)`. Dostane pole komplexních koeficientů `F` z `np.fft.fft2` a vrátí šedý obrázek spektra, který jde ukázat v Sáře. Kroky:
+Napište funkci `spectrum(F)`, která z pole komplexních koeficientů `F` z `np.fft.fft2` udělá šedý obrázek spektra, který jde ukázat v Sáře:
 
-1. **Přesunout.** `np.fft.fftshift(F)` dá nulovou frekvenci doprostřed.
-2. **Velikost.** `np.abs` vezme z každého komplexního čísla jeho velikost, amplitudu vlny.
-3. **Logaritmus.** `np.log1p` spočítá $\ln(1 + x)$.
-4. **Rozsah 0 až 1.** Vydělte pole jeho největší hodnotou, `m.max()`, a `rgba` z něj udělá obrázek.
+$$\text{jas} = \frac{\ln\bigl(1 + |F|\bigr)}{\max \ln\bigl(1 + |F|\bigr)}$$
 
-Buňka pod funkcí ji vyzkouší na vrstvě `Wave` z kernelu výše. Vlna je šedá, takže stačí její červený kanál.
+s nulovou frekvencí uprostřed. Buňka pod funkcí ji vyzkouší na vrstvě `Wave` z kernelu výše. Vlna je šedá, takže stačí její červený kanál.
 
 <details><summary>💡 Nápověda</summary>
 
-Každý krok je jedno volání. Mezivýsledek si uložte do proměnné, třeba `m`, a v dalším kroku pracujte s ní.
+1. `np.fft.fftshift(F)` dá nulovou frekvenci doprostřed.
+2. `np.abs` vezme z každého komplexního čísla jeho velikost, `np.log1p` spočítá $\ln(1 + x)$.
+3. Vydělte pole jeho největší hodnotou, `m.max()`, a `rgba` z něj udělá obrázek. Mezivýsledek si uložte do proměnné, třeba `m`.
 </details>
 
 <details><summary>🔑 Řešení</summary>
@@ -1106,14 +1179,17 @@ Každý krok je jedno volání. Mezivýsledek si uložte do proměnné, třeba `
 code(SPECTRUM_GIVEN + "\n\n\n" + WAVE_SPECTRUM, solve=[(SPECTRUM_GIVEN, SOLUTION_SPECTRUM)])
 
 md(r"""
-Spektrum vlny jsou tři světlé pixely, v Sáře si střed vrstvy `Wave spectrum` přibližte. Buňka vypíše jejich frekvence $(u, v)$. Prostřední pixel je nulová frekvence, průměrný jas vlny. Dva další leží souměrně kolem středu, $u$ pixelů vodorovně a $v$ pixelů svisle od něj. Posuňte posuvníky `u` a `v`, spusťte buňku se spektrem znovu a body se posunou. Posuvník `phase` vlnu posune, ale spektrum nezmění.
+Spektrum vlny jsou tři světlé pixely, v Sáře si střed vrstvy `Wave spectrum` přibližte. Prostřední je nulová frekvence, průměrný jas vlny, a dva další leží souměrně kolem středu, $u$ pixelů vodorovně a $v$ svisle. Posuňte posuvníky `u` a `v`, spusťte buňku znovu a body se posunou. Posuvník `phase` vlnu posune, ale spektrum nezmění.
 
-> **❓ Otázka**
-> Vlna má jednu frekvenci $(u, v)$. Proč má spektrum dva body, druhý v $(-u, -v)$?
+<details><summary>❓ Otázka: proč má vlna ve spektru dva body?</summary>
+
+Vlna má jednu frekvenci $(u, v)$. Proč má spektrum dva body, druhý v $(-u, -v)$?
 
 <details><summary>🔑 Odpověď</summary>
 
 Kosinus je součet dvou komplexních vln s opačnou frekvencí, $\cos\varphi = \frac{1}{2}\left(e^{i\varphi} + e^{-i\varphi}\right)$. Totéž platí pro každý reálný obrázek, viz Souměrnost spektra v sekci 2. Fázi `phase` nese úhel koeficientů, ne jejich velikost.
+</details>
+
 </details>
 
 Teď spektrum fotky, ze světlosti:
@@ -1125,13 +1201,16 @@ doc.new_layer("Spectrum", spectrum(np.fft.fft2(L))).show()
 """)
 
 md(r"""
-Spektrum je komplexní a kreslit se dá po částech. Obrázek níže ukazuje všechny vedle sebe:
+Spektrum je komplexní a kreslit se dá po částech. Obrázek níže ukazuje všechny vedle sebe, vlevo nahoře je vždy obrázek, ze kterého spektrum vzniklo. Při posunu 0 má kosinusovka spektrum jen reálné a sinusovka kromě DC složky jen imaginární. Posuvník `posun` posune obrázek doprava a reálná a imaginární část se přelévají jedna do druhé. U fotky jsou reálná i imaginární část změť znamének a čitelná je jen amplituda. Proto se jako spektrum obvykle kreslí amplituda.
+
+<details><summary>📖 Co jednotlivé části spektra znamenají</summary>
 
 - **Reálná část** $\mathrm{Re}\,F$ je skalární součin obrázku s kosinem, **imaginární** $\mathrm{Im}\,F$ se sinem se znaménkem minus. Červená je kladná, modrá záporná, v logaritmu se znaménkem.
 - **Obě části dohromady:** jas je amplituda, odstín poměr obou částí. Purpurová je podíl reálné části na energii vlny, $\mathrm{Re}^2 / |F|^2$, zelená podíl imaginární, $\mathrm{Im}^2 / |F|^2$. Obě barvy jsou stejně světlé a smíchané napůl dají šedou. Purpurový bod je vlna typu kosinus, zelený typu sinus, šedý obojí stejně, tedy fáze 45°, 135° a tak dál. Znaménko se v barvě ztratí, to nese fáze.
 - **Amplituda** $|F| = \sqrt{\mathrm{Re}^2 + \mathrm{Im}^2}$ je délka šipky z obrázku se skalárním součinem, **fáze** $\arg F$ její úhel.
 
-Při posunu 0 má kosinusovka spektrum jen reálné a sinusovka kromě DC složky jen imaginární. DC složka je průměrný jas a je vždy reálná. Reálná část je souměrná podle středu, imaginární má na protějších bodech opačné znaménko. Posuvník `posun` posune obrázek doprava a reálná a imaginární část se přelévají jedna do druhé. U fotky jsou reálná i imaginární část změť znamének a čitelná je jen amplituda. Proto se jako spektrum obvykle kreslí amplituda.
+DC složka je průměrný jas a je vždy reálná. Reálná část je souměrná podle středu, imaginární má na protějších bodech opačné znaménko.
+</details>
 """)
 
 code(PARTS, hidden=True)
@@ -1143,7 +1222,7 @@ md(r"""
 - **Střed** je nulová frekvence, **DC složka** $F(0, 0)$: součet všech pixelů, tedy průměrný jas krát počet pixelů.
 - **Blízko středu** jsou nízké frekvence, velké plochy a celkový tvar. **Daleko od středu** jsou vysoké, hrany, detaily a šum.
 - **Směr:** pruhy a hrany dají ve spektru body nebo čáru **kolmo** na sebe. Svislá hrana se mění podél $x$, a tak dá vodorovnou čáru.
-- **Souměrnost:** spektrum je souměrné podle středu a jedna kosinusovka dá dva body. Podrobně část Souměrnost spektra níže.
+- **Souměrnost:** spektrum je souměrné podle středu a jedna kosinusovka dá dva body.
 
 Obrázek níže ukazuje dvojice obrázek a spektrum. Vyberte obrázek v nabídce a posuvníkem `velikost` ho zužujte a rozšiřujte. Konstanta, bod, hrana a fotky žádnou velikost nemají a posuvník je nemění. Graf vpravo je vodorovný řez spektrem přes střed, v logaritmu. Pod obrázkem je vysvětlení dvojice.
 """)
@@ -1151,30 +1230,33 @@ Obrázek níže ukazuje dvojice obrázek a spektrum. Vyberte obrázek v nabídce
 code(SPECTRA, hidden=True)
 
 md(r"""
-> **❓ Otázka**
-> Vyberte fotku. Spektrum má přes střed světlou vodorovnou a svislou čáru, i když fotka žádné takové hrany nemá. Odkud se vzaly, a proč s Hannovým oknem zmizí?
+<details><summary>❓ Otázka: odkud se vzal kříž přes střed?</summary>
+
+Vyberte fotku. Spektrum má přes střed světlou vodorovnou a svislou čáru, i když fotka žádné takové hrany nemá. Odkud se vzaly, a proč s Hannovým oknem zmizí?
 
 <details><summary>🔑 Odpověď</summary>
 
 Transformace počítá s obrázkem, jako by se opakoval dokola jako dlaždice: za pravým okrajem pokračuje levý, pod dolním horní. Okraje fotky na sebe nenavazují, a kde se potkají, vznikne skok, svislá hrana po celé výšce a vodorovná po celé šířce. Ty dají ve spektru čáry kolmo na ně. Hannovo okno fotku k okrajům plynule ztlumí k nule, dlaždice pak na sebe navazují a skok zmizí.
 </details>
 
-### Rozsah a tvar spektra
+</details>
 
-Obrázek o $W \times H$ pixelech má spektrum o $W \times H$ koeficientech: stejně čísel ve stejném obdélníku. Proto převod nic neztratí a nic nepřidá. Nejde ale o přiřazení jedna k jedné, koeficient na nějakém místě nepatří pixelu na stejném místě. Každý koeficient je součet přes všechny pixely a každý pixel je součet všech vln. Stejný je jen počet a tvar, informace je jen rozložená jinak.
+<details><summary>📖 Rozsah a tvar spektra</summary>
 
-Které frekvence ve spektru jsou, určuje rozlišení:
+Obrázek o $W \times H$ pixelech má spektrum o $W \times H$ koeficientech: stejně čísel ve stejném obdélníku. Proto převod nic neztratí a nic nepřidá. Nejde ale o přiřazení jedna k jedné, koeficient na nějakém místě nepatří pixelu na stejném místě. Každý koeficient je součet přes všechny pixely a každý pixel je součet všech vln.
 
-- **Nejnižší** nenulová frekvence je jedna perioda na celý obrázek, $u = 1$. Pomalejší vlna by na dlaždici nenavazovala a transformace ji složí z několika jiných, jako fotku s okraji, které na sebe nenavazují.
-- **Nejvyšší** je $W / 2$ period na šířku a $H / 2$ na výšku, sousední pixely střídavě tmavé a světlé. To je Nyquistova mez ze sekce 3. Indexy proto jdou od $-W / 2$ do $W / 2 - 1$ a od $-H / 2$ do $H / 2 - 1$.
+- **Nejnižší** nenulová frekvence je jedna perioda na celý obrázek, $u = 1$. Pomalejší vlna by na dlaždici nenavazovala.
+- **Nejvyšší** je $W / 2$ period na šířku a $H / 2$ na výšku, sousední pixely střídavě tmavé a světlé. To je Nyquistova mez ze sekce 3. Indexy proto jdou od $-W / 2$ do $W / 2 - 1$.
 
-Pásma v sekci 1 a filtry v sekci 5 měří vzdálenost od středu, kruhem, ale spektrum je obdélník. Ani tím se nic neztratí. Kruh až po Nyquistovu mez se do spektra vejde celý, okraje se ho dotknou. Rohy za ním jsou šikmé vlny, které jsou ve vodorovném i svislém směru blízko meze, a jejich hustota pruhů je až $\sqrt{2}$-krát vyšší. Jsou to nejjemnější šikmé detaily.
+Pásma v sekci 1 a filtry v sekci 5 měří vzdálenost od středu, kruhem, ale spektrum je obdélník. Kruh až po Nyquistovu mez se do spektra vejde celý. Rohy za ním jsou šikmé vlny, které jsou ve vodorovném i svislém směru blízko meze.
 
-U obdélníkového obrázku záleží na jednotkách. Index $u$ počítá periody na šířku, $v$ na výšku. Když je obrázek dvakrát širší než vysoký, leží stejná hustota pruhů vodorovně na dvakrát větším indexu než svisle a kruh stejné hustoty je v indexech elipsa. Přepočet na **periody na pixel**, $u / W$ a $v / H$, dělá `np.fft.fftfreq`. V těchto jednotkách jde každé spektrum od $-0.5$ do $0.5$ v obou směrech a kruh je kruh. Proto masky filtrů v této lekci počítají s `np.fft.fftfreq`, ne s indexy, a fungují na obrázku jakéhokoli tvaru. Obrázky v lekci jsou čtverce, tam oba zápisy splývají.
+U obdélníkového obrázku záleží na jednotkách. Index $u$ počítá periody na šířku, $v$ na výšku, a kruh stejné hustoty pruhů je v indexech elipsa. Přepočet na **periody na pixel**, $u / W$ a $v / H$, dělá `np.fft.fftfreq`. V těchto jednotkách jde každé spektrum od $-0.5$ do $0.5$ v obou směrech a kruh je kruh. Proto masky filtrů v této lekci počítají s `np.fft.fftfreq`, ne s indexy, a fungují na obrázku jakéhokoli tvaru.
 
 @img(spectrum_shape.png, 900, Fotka 512 krát 256 pixelů, její spektrum jako obdélník 512 krát 256 koeficientů s elipsami stejné hustoty pruhů 0.25 a 0.5 periody na pixel, a totéž spektrum v periodách na pixel jako čtverec od minus 0.5 do 0.5, kde jsou elipsy kruhy)
 
-### Souměrnost spektra
+</details>
+
+<details><summary>📖 Souměrnost spektra</summary>
 
 Obrázek má reálné pixely, a proto jeho spektrum splňuje
 
@@ -1182,9 +1264,7 @@ $$F(-u, -v) = \overline{F(u, v)}$$
 
 Bod a jeho protějšek přes střed mají stejnou amplitudu a opačnou fázi. Důvod je v odpovědi na otázku v sekci 1: reálná vlna je součet dvou komplexních vln s opačnou frekvencí a jejich imaginární části se vyruší, jen když jsou oba koeficienty komplexně sdružené. Každý pár bodů je tak jedna reálná vlna a druhá polovina spektra nenese nic nového.
 
-Souměrnost je **středová**, ne osová. Protějšek bodu $(u, v)$ je $(-u, -v)$, ne $(-u, v)$. Šikmé pruhy proto dají body v protilehlých kvadrantech, třeba vpravo nahoře a vlevo dole. Zrcadlově souměrná je amplituda jen tehdy, když je zrcadlově souměrný sám obrázek.
-
-Víc o spektru řekne, jak je obrázek souměrný kolem počátku, levého horního pixelu:
+Souměrnost je **středová**, ne osová. Protějšek bodu $(u, v)$ je $(-u, -v)$, ne $(-u, v)$. Šikmé pruhy proto dají body v protilehlých kvadrantech.
 
 | Obrázek | Spektrum |
 |---|---|
@@ -1193,25 +1273,22 @@ Víc o spektru řekne, jak je obrázek souměrný kolem počátku, levého horn�
 | lichý, $f(-x, -y) = -f(x, y)$ | čistě imaginární |
 | souměrný zleva doprava | amplituda souměrná zleva doprava |
 
-Kosinusovka s fází 0 je sudá, a proto má v sekci 1 spektrum jen reálné. Sinusovka je lichá kolem šedé, a tak je její spektrum imaginární všude kromě DC složky. Posun sudost rozbije, sdružená souměrnost ale zůstane.
+Kosinusovka s fází 0 je sudá, a proto má spektrum jen reálné. Sinusovka je lichá kolem šedé, a tak je její spektrum imaginární všude kromě DC složky. Posun sudost rozbije, sdružená souměrnost ale zůstane.
 
-Dvě podrobnosti u okrajů spektra:
+- Některé body jsou protějškem samy sobě: DC složka, a u sudého $N$ i frekvence $N/2$, protože $-N/2$ je v DFT tentýž index. Jejich hodnota je proto reálná.
+- Po `fftshift` je nulová frekvence na indexu $N/2$ a první řádek je frekvence $-N/2$. Jeho protějšek $+N/2$ je tentýž řádek, a nakreslené spektrum je proto souměrné až na první řádek a první sloupec.
+- **Polovina spektra stačí.** `np.fft.rfft2` počítá jen polovinu spektra, zhruba za polovinu času a paměti, a `np.fft.irfft2` z ní obrázek vrátí.
+- **Maska musí souměrnost zachovat**, $H(-u, -v) = \overline{H(u, v)}$, jinak zpětná transformace vyjde komplexní. Gaussova i kruhová maska ji mají samy. Vrubový filtr z bonusových úkolů musí vynulovat oba body páru.
 
-- Některé body jsou protějškem samy sobě: DC složka, a u sudého $N$ i frekvence $N/2$, protože $-N/2$ je v DFT tentýž index. Jejich hodnota je proto reálná. Vlna s frekvencí $N/2$, střídání černé a bílé po pixelu, nemá jinou fázi než to, jestli začíná černou nebo bílou.
-- Po `fftshift` je nulová frekvence na indexu $N/2$ a první řádek je frekvence $-N/2$. Jeho protějšek $+N/2$ je tentýž řádek a vlastní místo v poli nemá. Nakreslené spektrum je proto souměrné až na první řádek a první sloupec.
+</details>
 
-Co z toho plyne v praxi:
-
-- **Polovina spektra stačí.** $N^2$ reálných pixelů dá $N^2$ komplexních koeficientů, dvakrát tolik čísel, a souměrnost tu polovinu navíc přesně určuje. `np.fft.rfft2` proto počítá jen polovinu spektra, pole $N \times (N/2 + 1)$, zhruba za polovinu času a paměti, a `np.fft.irfft2` z ní obrázek vrátí. Filtr z této lekce by s nimi bral frekvence masky z `np.fft.rfftfreq`.
-- **Maska musí souměrnost zachovat**, $H(-u, -v) = \overline{H(u, v)}$, jinak zpětná transformace nevyjde reálná. Gaussova i kruhová maska ji mají samy. Vrubový filtr z bonusových úkolů proto musí vynulovat oba body páru. S jedním vynulovaným bodem by vyšla komplexní čísla, `.real` by imaginární část zahodilo a rušivá vlna by se jen zeslabila na polovinu.
-
-### Vlastnosti
+<details><summary>📖 Vlastnosti transformace</summary>
 
 | Vlastnost | Obrázek | Spektrum |
 |---|---|---|
 | linearita | $a f + b g$ | $a F + b G$ |
 | posun | $f(x - x_0, y - y_0)$ | $F \cdot e^{-2\pi i (u x_0 + v y_0)/N}$: amplituda stejná, mění se jen fáze |
-| otočení | o úhel $\alpha$ | spektrum se otočí přibližně o tentýž úhel. Otočený obrázek už na okrajích nenavazuje jako dlaždice a ve spektru přibude neotočený kříž, jako v otázce výše |
+| otočení | o úhel $\alpha$ | spektrum se otočí přibližně o tentýž úhel, a ve spektru přibude neotočený kříž z okrajů |
 | změna měřítka | $f(ax, ay)$ | přibližně $\frac{1}{a^2} F(u / a, v / a)$: co se v obrázku zúží, ve spektru se roztáhne |
 | derivace | $\partial f / \partial x$ | $\frac{2\pi i u}{N} F$: násobení frekvencí, tedy horní propust. Proto derivace a Sobel z lekce 3 zesilují šum |
 | konvoluce | $f * g$ | $F \cdot G$ |
@@ -1220,6 +1297,7 @@ Co z toho plyne v praxi:
 | Parsevalova rovnost | $\sum \lvert f \rvert^2$ | $\frac{1}{N^2} \sum \lvert F \rvert^2$, energie se zachová |
 
 Obrázek níže změní písmeno A a ukáže, co se stane se spektrem. Horní řádek je původní A, dolní změněné. Ve sloupci fáze je úhel vyjádřený barvou, šedé jsou slabé vlny, na jejichž fázi nezáleží. Poslední sloupec je rozdíl fáze změněného a původního A, tmavá barva znamená beze změny. Pod obrázkem je Parsevalova rovnost pro změněný obrázek.
+</details>
 """)
 
 code(PROPERTIES, hidden=True)
@@ -1230,16 +1308,14 @@ Co si z obrázku odnést:
 - **Posun** amplitudu nezmění vůbec, jen fázi, a to úhlem, který s frekvencí rovnoměrně roste: rozdíl fází jsou rovné pruhy.
 - **Konvoluce je ve spektru násobení**, nejdůležitější vlastnost lekce. Rozmazání vynásobí spektrum Gaussem, který od středu klesá, a vysoké frekvence ztlumí. Stojí na ní sekce 5 a 6.
 - **Fáze nese tvar.** Obrázek s amplitudou fotky a fází písmene A vypadá jako A, a obráceně. Fáze říká, kde jsou hrany, amplituda hlavně kolik čeho v obrázku je.
-""")
 
-md(r"""
-### Proč spektra fotek vypadají skoro stejně
-
-Spektrum skoro každé fotky je stejná rozmazaná hvězda: světlý střed, který plynule tmavne ke krajům. Fotky se přitom liší, v čem tedy? Svět má strukturu ve všech velikostech najednou. Fotka obsahuje velké plochy (nebe, zeď), menší tvary (obličej, okno) i jemné detaily (vlasy, textura), a čím je detail menší, tím je jeho vlna slabší. Amplituda proto klesá s frekvencí zhruba stejně u každé fotky, u obrázků v této lekci zhruba jako $1 / f^{1.5}$, a v logaritmu to dává stejný hladký kopec. Na amplitudě se fotky liší jen málo. Liší se fází, která říká, kde přesně hrany leží.
-
-Spektra níže mají jas roztažený tak, aby byly vidět i slabé části.
+Spektrum skoro každé fotky je stejná rozmazaná hvězda: světlý střed, který plynule tmavne ke krajům. Čím je detail menší, tím je jeho vlna slabší, a v logaritmu to dává stejný hladký kopec. Spektra níže mají jas roztažený tak, aby byly vidět i slabé části.
 
 @img(spectrum_anatomy.png, 900, Lenna a její spektrum s popsanými částmi A až E, totéž spektrum s Hannovým oknem, spektra fotky astronautky a cihel s oknem a graf průměrné amplitudy podle frekvence, kde fotky klesají skoro stejně a cihly mají hrb)
+
+<details><summary>📖 Proč spektra fotek vypadají skoro stejně a co z nich vybočuje</summary>
+
+Svět má strukturu ve všech velikostech najednou. Fotka obsahuje velké plochy (nebe, zeď), menší tvary (obličej, okno) i jemné detaily (vlasy, textura), a čím je detail menší, tím je jeho vlna slabší. Amplituda proto klesá s frekvencí zhruba stejně u každé fotky, u obrázků v této lekci zhruba jako $1 / f^{1.5}$. Na amplitudě se fotky liší jen málo. Liší se fází, která říká, kde přesně hrany leží.
 
 | Část | Co ji dělá |
 |---|---|
@@ -1251,22 +1327,24 @@ Spektra níže mají jas roztažený tak, aby byly vidět i slabé části.
 | **F** body a vějíře | opakovaný vzor, třeba cihly, látka nebo plot. Rozteč bodů je převrácená perioda vzoru |
 
 Hvězdu tedy čtěte podle toho, co z ní *vybočuje*: paprsek znamená výraznou hranu, body opakovaný vzor, menší hvězda rozmazanou fotku (D klesá rychleji) a zrnitý okraj šum (E je výš).
+</details>
 
-> **❓ Otázka**
-> Rozmazaná fotka `astronaut_blur` má spektrum menší než `astronaut`. Která část hvězdy se změnila a proč?
+<details><summary>❓ Otázka: co se změní ve spektru rozmazané fotky?</summary>
+
+Rozmazaná fotka `astronaut_blur` má spektrum menší než `astronaut`. Která část hvězdy se změnila a proč?
 
 <details><summary>🔑 Odpověď</summary>
 
 Změnila se část D. Rozmazání vynásobí spektrum Gaussem, který k vysokým frekvencím klesá k nule, takže hvězda dohasíná dřív a tmavý okraj E začíná blíž ke středu. Střed A zůstal, průměrný jas a velké plochy rozmazání nemění.
 </details>
-""")
 
-md(r"""
-### Spektrum šumu
+</details>
 
-**Bílý šum** je obrázek, ve kterém je každý pixel náhodný a na sousedech nezávislý. V průměru má všechny frekvence stejně silné, a jméno má po bílém světle, které také obsahuje všechny barvy. Spektrum jednoho konkrétního šumu ale rovné není. Každý koeficient je zase náhodné číslo: amplituda kolísá kolem společného průměru a fáze je úplně náhodná. Spektrum bílého šumu tak vypadá jako další bílý šum, zrnitá plocha bez středu, kříže i paprsků. Vybočuje jen DC složka uprostřed, průměrný jas šumu. Souměrnost podle středu zůstává, protože šum je reálný obraz. Rovnou plochu ukáže teprve průměr, buď přes mnoho různých šumů, posuvník `průměr přes`, nebo přes kružnice kolem středu, graf vpravo.
+<details><summary>📖 Spektrum šumu</summary>
 
-Šum dostane „barvu“, když se jeho spektrum vynásobí maskou $1 / f^\beta$, kde $f$ je vzdálenost od středu. Tak vznikl růžový a hnědý šum v obrázku níže. V nabídce je i Voroného šum z lekce 2 a Perlinův šum, gradientní šum, který lekce 2 zmiňuje na konci. Graf má obě osy v logaritmu, a $1 / f^\beta$ je v něm přímka se sklonem $-\beta$. Šedá čára je pro srovnání fotka astronautky.
+**Bílý šum** je obrázek, ve kterém je každý pixel náhodný a na sousedech nezávislý. V průměru má všechny frekvence stejně silné, a jméno má po bílém světle, které také obsahuje všechny barvy. Spektrum jednoho konkrétního šumu ale rovné není. Každý koeficient je zase náhodné číslo: amplituda kolísá kolem společného průměru a fáze je úplně náhodná. Spektrum bílého šumu tak vypadá jako další bílý šum, zrnitá plocha bez středu, kříže i paprsků. Vybočuje jen DC složka uprostřed. Rovnou plochu ukáže teprve průměr, buď přes mnoho různých šumů, posuvník `průměr přes`, nebo přes kružnice kolem středu, graf vpravo.
+
+Šum dostane „barvu“, když se jeho spektrum vynásobí maskou $1 / f^\beta$, kde $f$ je vzdálenost od středu. Tak vznikl růžový a hnědý šum v obrázku pod touto částí. V nabídce je i Voroného šum z lekce 2 a Perlinův šum, gradientní šum. Graf má obě osy v logaritmu, a $1 / f^\beta$ je v něm přímka se sklonem $-\beta$. Šedá čára je pro srovnání fotka astronautky.
 
 | Obraz | Průměrná amplituda | Sklon v grafu | Jak vypadá |
 |---|---|---|---|
@@ -1278,55 +1356,64 @@ md(r"""
 | Perlinův nebo Voroného šum, pět oktáv | $1 / f^{\,1 - \log_2 \text{gain}}$ | $\log_2(\text{gain}) - 1$ | kopce všech velikostí, jako terén |
 | Voroného šum | hrb u velikosti buněk, nad ním zhruba $1 / f^{2.5}$ | žádná přímka | buňky s ostrými švy |
 
-Perlinův a Voroného šum mají jinou povahu. Mají jednu velikost útvarů, kopců nebo buněk, a jejich spektrum je proto **prstenec**: slabé uvnitř, kde by byly útvary větší, a nad prstencem klesá. Perlinův šum je hladký a klesá prudce. Voroného šum má na švech mezi buňkami zlom, a zlom drží vysoké frekvence déle. Sklon v popisku grafu se u nich měří až nad hrbem.
+Perlinův a Voroného šum mají jednu velikost útvarů a jejich spektrum je proto **prstenec**: slabé uvnitř, kde by byly útvary větší, a nad prstencem klesá. Voroného šum má na švech mezi buňkami zlom, a zlom drží vysoké frekvence déle.
+
+Násobení bílého šumu maskou $1 / f^\beta$ se říká **spektrální syntéza** a dělají se tak terény i mraky. Fraktální šum z lekce 2 dojde k podobnému výsledku jinou cestou, sčítá oktávy, prstence šumu jedné velikosti, a ty se poskládají vedle sebe do přímky. Sklon přímky ale není $\log_2 \text{gain}$, je o jedničku strmější, protože každá další oktáva má prstenec dvakrát větší a dvakrát širší, se čtyřikrát víc koeficienty, a její energie se mezi ně rozdělí:
+
+$$\log_2(\text{gain}) - 1$$
+
+S `gain` 0.5 z lekce 2 je to $-2$: terén je hladší než hnědý šum i než fotka. Sklon fotek, zhruba $-1.5$, dá `gain` asi 0.7. Vyzkoušejte to posuvníky `oktávy` a `gain` u Perlinova a Voroného šumu v obrázku níže.
+</details>
 """)
 
 code(NOISES, hidden=True)
 
 md(r"""
 Odtud je vidět i část E hvězdy: šum snímače a zaokrouhlení do osmi bitů jsou skoro bílý šum, ve spektru rovné dno, a kde fotka klesne pod ně, zbyde jen šum. Proto Wienerův filtr v sekci 6 frekvence pod úrovní šumu nezesiluje: z fotky v nich nic nezbylo.
-
-Násobení bílého šumu maskou $1 / f^\beta$ se říká **spektrální syntéza** a dělají se tak terény i mraky. Fraktální šum z lekce 2 dojde k podobnému výsledku jinou cestou. Sčítá oktávy, prstence šumu jedné velikosti, každou dvakrát jemnější a `gain`krát slabší, a prstence se poskládají vedle sebe do přímky. Vyzkoušejte to posuvníky `oktávy` a `gain` u Perlinova a Voroného šumu, na ostatní šumy nemají vliv.
-
-Sklon přímky ale není $\log_2 \text{gain}$, je o jedničku strmější. Každá další oktáva má prstenec dvakrát větší a dvakrát širší, se čtyřikrát víc koeficienty, a její energie se rozdělí mezi ně. Na jeden koeficient tak připadne amplituda ještě dvakrát menší a sklon je
-
-$$\log_2(\text{gain}) - 1$$
-
-S `gain` 0.5 z lekce 2 je to $-2$: terén je hladší než hnědý šum i než fotka. Hnědý šum, sklon $-1$, dá `gain` 1, všechny oktávy stejně silné. Sklon fotek, zhruba $-1.5$, dá `gain` asi 0.7.
 """)
 
 # --- 3. Sampling and aliasing ------------------------------------------------------
 md(r"""
-## 3. Vzorkování a aliasing
+## 3. Vzorkování a aliasing (nepovinné)
 
-Obrázek je vzorkovaný: z plynulého světla zná jen hodnotu v každém pixelu. Vzorkování je násobení plynulého obrazu hřebenem bodů s roztečí $T$, jedním pixelem. Hřeben dá ve spektru zase hřeben, a násobení je ve spektru konvoluce. Konvoluce s hřebenem nakopíruje spektrum na každý jeho bod, takže se spektrum periodicky opakuje s roztečí vzorkovací frekvence. Jakmile signál obsahuje frekvence nad polovinou této rozteče, kopie se překryjí a vysoká frekvence se tváří jako nízká. Tomu se říká **aliasing**: moiré na proužkované košili v televizi, schody na šikmých hranách nebo kola auta ve filmu, která se točí pozpátku.
+Obrázek je vzorkovaný: z plynulého světla zná jen hodnotu v každém pixelu. Jakmile signál obsahuje frekvence nad polovinou vzorkovací frekvence, vysoká frekvence se tváří jako nízká. Tomu se říká **aliasing**: moiré na proužkované košili v televizi, schody na šikmých hranách nebo kola auta ve filmu, která se točí pozpátku. **Nyquistova věta:** vzorků musí být víc než dvakrát tolik, kolik má signál period. Obrázek o $N$ pixelech unese nejvýš $N / 2$ period, střídání černá, bílá, černá.
 
-**Nyquistova věta:** vzorků musí být víc než dvakrát tolik, kolik má signál period. Dvojka je právě ta polovina rozteče kopií. Obrázek o $N$ pixelech unese nejvýš $N / 2$ period, střídání černá, bílá, černá. Obrázek níže nahoře vzorkuje vlnu šestnácti vzorky. Posuvníkem `frekvence` přejděte přes 8 a sledujte, jakou vlnu vzorky ukazují.
+<details><summary>📖 Proč se frekvence přeloží</summary>
 
-Dole je fotka focená přes síťku proti hmyzu v okně a dva způsoby, jak ji zmenšit $k$-krát. Síťka je do fotky dokreslená: tmavé dráty každých 4.2 pixelu, pootočené o 4°. Vlevo je výřez původní fotky pixel na pixel, aby byla síťka vidět. Celá by se na obrazovce zmenšila a moiré by udělala už obrazovka.
+Vzorkování je násobení plynulého obrazu hřebenem bodů s roztečí $T$, jedním pixelem. Hřeben dá ve spektru zase hřeben, a násobení je ve spektru konvoluce. Konvoluce s hřebenem nakopíruje spektrum na každý jeho bod, takže se spektrum periodicky opakuje s roztečí vzorkovací frekvence. Dvojka z Nyquistovy věty je právě ta polovina rozteče kopií: jakmile signál sahá dál, kopie se překryjí.
+</details>
+
+Obrázek níže nahoře vzorkuje vlnu šestnácti vzorky. Posuvníkem `frekvence` přejděte přes 8 a sledujte, jakou vlnu vzorky ukazují. Dole je fotka focená přes síťku proti hmyzu v okně a dva způsoby, jak ji zmenšit $k$-krát. Síťka je do fotky dokreslená: tmavé dráty každých 4.2 pixelu, pootočené o 4°. Vlevo je výřez původní fotky pixel na pixel, aby byla síťka vidět.
 """)
 
 code(SAMPLING, hidden=True)
 
 md(r"""
-**Jak číst fotku za síťkou.** Síťka má frekvenci $1 / 4.2 \approx 0.238$ periody na pixel, těsně pod Nyquistovou mezí 0.25 obrázku zmenšeného na polovinu.
+Obrana proti aliasingu je jediná: před zmenšením odstranit frekvence, které menší obrázek neunese, tedy obrázek rozmazat. Proto dobré programy obrázek před zmenšením filtrují.
 
-- **Každý $k$-tý pixel, $k = 4$.** Vzorkovací frekvence je $1 / 4 = 0.25$ a síťka je jen o kousek pod ní, takže vzorky trefují dráty skoro pokaždé ve stejné fázi, jako šestnáct vzorků vlny s patnácti periodami v grafu nahoře. Fáze se posouvá pomalu, o jednu periodu zhruba za 48 původních pixelů, a z toho jsou široké šikmé pruhy přes celou fotku. Šikmé jsou proto, že je síťka pootočená. To je **moiré**: rozdíl dvou blízkých frekvencí, síťky a vzorkování.
-- **$k = 8$.** Vzorkovací frekvence je 0.125 a síťka leží blízko jejího dvojnásobku, takže moiré vyjde podobné, jen hustší na malém obrázku. Rozpadá se i fotka sama: její jemné detaily jsou nad mezí 0.0625.
-- **$k = 2$.** Mez je 0.25 a síťka pod ní zůstane. Malý obrázek ji nese správně, jen ostré hrany drátů, vyšší harmonické síťky, se trochu přeloží.
+<details><summary>📖 Jak číst fotku za síťkou</summary>
+
+Síťka má frekvenci $1 / 4.2 \approx 0.238$ periody na pixel, těsně pod Nyquistovou mezí 0.25 obrázku zmenšeného na polovinu.
+
+- **Každý $k$-tý pixel, $k = 4$.** Vzorkovací frekvence je $1 / 4 = 0.25$ a síťka je jen o kousek pod ní, takže vzorky trefují dráty skoro pokaždé ve stejné fázi, jako šestnáct vzorků vlny s patnácti periodami v grafu nahoře. Fáze se posouvá pomalu a z toho jsou široké šikmé pruhy přes celou fotku. To je **moiré**: rozdíl dvou blízkých frekvencí, síťky a vzorkování.
+- **$k = 8$.** Vzorkovací frekvence je 0.125 a síťka leží blízko jejího dvojnásobku, takže moiré vyjde podobné, jen hustší. Rozpadá se i fotka sama: její jemné detaily jsou nad mezí 0.0625.
+- **$k = 2$.** Mez je 0.25 a síťka pod ní zůstane. Malý obrázek ji nese správně, jen ostré hrany drátů se trochu přeloží.
 - **Vpravo**, napřed rozmazat, pak vzorkovat. Síťka se rozmaže do rovnoměrného ztmavení dřív, než se může přeložit, a fotka zůstane čistá.
+</details>
 
-**Jak číst zónovou desku**, druhou volbu v nabídce `obrázek`. Deska je $\frac{1}{2} + \frac{1}{2}\cos(\pi r^2 / N)$, kruhy, které od středu houstnou: ve vzdálenosti $r$ pixelů od středu mají frekvenci $r / N$ period na pixel. Každé místo desky tak patří jedné frekvenci a deska je obrázek a zároveň mapa svého spektra. Uprostřed je frekvence 0, ve středu okraje, $r = N / 2$, Nyquistova mez, půl periody na pixel.
+<details><summary>📖 Jak číst zónovou desku</summary>
+
+Zónová deska, druhá volba v nabídce `obrázek`, je $\frac{1}{2} + \frac{1}{2}\cos(\pi r^2 / N)$, kruhy, které od středu houstnou: ve vzdálenosti $r$ pixelů od středu mají frekvenci $r / N$ period na pixel. Každé místo desky tak patří jedné frekvenci a deska je obrázek a zároveň mapa svého spektra. Uprostřed je frekvence 0, ve středu okraje, $r = N / 2$, Nyquistova mez.
 
 - **Vlevo**, celá deska 512 × 512. Kruhy jsou správně skoro až k okrajům. Jen u okrajů a v rozích jsou slabé falešné oblouky: frekvence tam mez dosáhne, v rozích ji přesáhne.
-- **Uprostřed**, každý $k$-tý pixel. Malý obrázek má mez $k$-krát nižší, $0.5 / k$ periody na původní pixel, a deska ji překročí už $N / (2k)$ pixelů od středu, pro $k = 4$ po 64 pixelech. Dál se kruhy přeloží na nízké frekvence. Kde frekvence desky dosáhne celé vzorkovací frekvence, $1 / k$, trefí vzorky vlnu pokaždé ve stejné fázi a vidí konstantu, stejně jako šestnáct vzorků vlny se šestnácti periodami v grafu nahoře, zkuste `frekvence` 16. Tam vznikne falešný střed s vlastními kruhy, každých $N / k$ původních pixelů, tedy $k$ středů na šířku obrázku, ty u okrajů useknuté. Jsou to kopie spektra ze začátku sekce, tady vidět přímo, protože poloha na desce je frekvence.
-- **Vpravo**, napřed rozmazat Gaussem se $\sigma = k / 2$ pixelu, pak vzít každý $k$-tý pixel. Rozmazání ztlumí frekvence, které malý obrázek neunese, dřív, než se přeloží. Zbude střed desky a dál rovná šeď. Detail se ztratil, ale menší obrázek by ho stejně neunesl, a nic falešného nepřibylo. Slabé zbytky kruhů nahoře a dole jsou frekvence, které Gauss jen ztlumil: na nové mezi propustí ještě asi 30 %. Silnější rozmazání je odstraní, ale vezme i víc skutečného detailu.
+- **Uprostřed**, každý $k$-tý pixel. Malý obrázek má mez $k$-krát nižší, $0.5 / k$ periody na původní pixel, a deska ji překročí už $N / (2k)$ pixelů od středu. Dál se kruhy přeloží na nízké frekvence. Kde frekvence desky dosáhne celé vzorkovací frekvence, $1 / k$, trefí vzorky vlnu pokaždé ve stejné fázi a vidí konstantu. Tam vznikne falešný střed s vlastními kruhy, každých $N / k$ původních pixelů. Jsou to kopie spektra, tady vidět přímo, protože poloha na desce je frekvence.
+- **Vpravo**, napřed rozmazat Gaussem se $\sigma = k / 2$ pixelu, pak vzít každý $k$-tý pixel. Rozmazání ztlumí frekvence, které malý obrázek neunese, dřív, než se přeloží. Zbude střed desky a dál rovná šeď. Slabé zbytky kruhů jsou frekvence, které Gauss jen ztlumil: na nové mezi propustí ještě asi 30 %.
+</details>
 
-Posuvníkem `zmenšení` zkuste $k = 2$ a $k = 8$. Pravý obrázek si nechá tím menší kus středu, čím je $k$ větší.
-
-Obrana proti aliasingu je tedy jediná: před zmenšením odstranit frekvence, které menší obrázek neunese, tedy obrázek rozmazat. Proto dobré programy obrázek před zmenšením filtrují.
+<details><summary>📖 Rekonstrukce: nejbližší soused, bilineární a bikubická interpolace</summary>
 
 Opačný směr, **rekonstrukce** plynulého obrazu ze vzorků, potřebuje každé zvětšení, otočení a zoom. Ideální rekonstrukce ořízne ze spektra jen prostřední kopii obdélníkovou maskou, a to je v obrázku konvoluce se sinc, s vlnkami kolem hran jako ideální maska v sekci 5. Interpolace proto sinc přibližují kratšími jádry: **nejbližší soused** je konvoluce s obdélníkem, **bilineární** interpolace s trojúhelníkem a **bikubická** s kubickým jádrem, které je sinc blíž. Lanczosovo jádro je useknutá sinc. Mezi těmito filtry volí nástroj transformace v Kritě.
+</details>
 """)
 
 # --- 4. The DFT in a kernel ---------------------------------------------------
@@ -1337,7 +1424,7 @@ md(r"""
 
 $$G(u, y) = \frac{1}{N}\sum_{x=0}^{N-1} f(x, y)\, e^{-2\pi i\, ux/N}, \qquad F(u, v) = \frac{1}{N}\sum_{y=0}^{N-1} G(u, y)\, e^{-2\pi i\, vy/N}$$
 
-Každý průchod sčítá $N$ hodnot na pixel místo $N^2$. Dělení $N$ v obou průchodech drží čísla malá, výsledek je `np.fft.fft2` dělené $N^2$.
+Dělení $N$ v obou průchodech drží čísla malá, výsledek je `np.fft.fft2` dělené $N^2$.
 
 Komplexní číslo uloží kernel do `vec2`, reálnou část do `x` a imaginární do `y`, a vrstva ho nese v červeném a modrém kanálu. Na pohled by byla vrstva skoro černá, protože nulová frekvence je tisíckrát silnější než ostatní. Funkce `shown` proto zapíše do zeleného kanálu, na oko nejjasnějšího, logaritmus velikosti, jako se kreslí spektrum. Zelená je jen pro oko, další průchod čte jen červený a modrý kanál. Vlna $e^{-i\varphi}$ je v kernelu `vec2(cos(angle), sin(angle))` s úhlem `angle` rovným $-\varphi$. Kernel transformuje světlost, kterou do vrstvy `Lightness` zapíše buňka níže:
 """)
@@ -1354,9 +1441,7 @@ code(DFT_ROWS)
 
 md(r"""
 Vrstva `DFT rows` je zeleně spektrum každého řádku zvlášť, ve stejném pořadí jako u `np.fft.fft`: nulová frekvence v levém sloupci, kladné frekvence doprava a záporné od pravého okraje. Svislé hrany fotky dají světlé vodorovné pruhy, protože každý řádek, který hranu protíná, má hodně vysokých frekvencí.
-""")
 
-md(r"""
 ### 🎯 Úkol 2: transformace sloupců
 
 Napište druhý průchod, přes sloupce vrstvy `DFT rows`. Vstup je tu už komplexní, a dvě komplexní čísla se násobí podle
@@ -1381,7 +1466,7 @@ Nedokončený kernel výsledek prvního průchodu jen opíše, takže spektrum b
 code(DFT_COLUMNS.format(columns=COLUMNS_GIVEN), solve=[(COLUMNS_GIVEN, SOLUTION_COLUMNS)])
 
 md(r"""
-Vrstva `DFT` je zeleně spektrum fotky v pořadí `np.fft.fft2`: nulová frekvence v levém horním rohu a nízké frekvence ve všech čtyřech rozích, jako na obrázku s `fftshift` v sekci 1. Buňka níže ukáže spektrum spočítané na GPU se středem uprostřed, mělo by vypadat stejně jako spektrum fotky výše.
+Vrstva `DFT` je zeleně spektrum fotky v pořadí `np.fft.fft2`: nulová frekvence v levém horním rohu a nízké frekvence ve všech čtyřech rozích. Buňka níže ukáže spektrum spočítané na GPU se středem uprostřed, mělo by vypadat stejně jako spektrum fotky výše.
 """)
 
 code("""
@@ -1391,43 +1476,23 @@ doc.new_layer("Spectrum GPU", spectrum(F_gpu)).show()
 """)
 
 md(r"""
-### Rychlost
+<details><summary>📖 Proč kernel nestačí a FFT je rychlejší</summary>
 
-Vzorec ze sekce 1 je **diskrétní Fourierova transformace** (DFT): $N$ vzorků dá $N$ frekvencí. Spočítaná přímo potřebuje pro každou z $N$ frekvencí $N$ násobení, v jednom rozměru $N^2$ operací. Ve 2D má obrázek $N \times N$ pixelů: přímý vzorec sčítá pro každou z $N^2$ frekvencí všech $N^2$ pixelů, $N^4$ operací. Průchod po řádcích a pak po sloupcích, jako kernel výše, dá $N^3$. **FFT** je algoritmus, který dá přesně tentýž výsledek za $N \log_2 N$ operací: rozdělí vzorky na sudé a liché, spočítá dvě transformace poloviční délky a složí je, a tak dál až k délce 1. Po řádcích a sloupcích je to ve 2D $N^2 \log_2 N$.
+Vzorec ze sekce 1 je **diskrétní Fourierova transformace** (DFT): $N$ vzorků dá $N$ frekvencí. Spočítaná přímo potřebuje pro každou z $N$ frekvencí $N$ násobení, v jednom rozměru $N^2$ operací. Ve 2D sčítá přímý vzorec pro každou z $N^2$ frekvencí všech $N^2$ pixelů, $N^4$ operací. Průchod po řádcích a pak po sloupcích, jako kernel výše, dá $N^3$. **FFT** je algoritmus, který dá přesně tentýž výsledek za $N \log_2 N$ operací: rozdělí vzorky na sudé a liché, spočítá dvě transformace poloviční délky a složí je, a tak dál až k délce 1. Po řádcích a sloupcích je to ve 2D $N^2 \log_2 N$.
 
-Buňka změří FFT v NumPy a oba průchody na GPU. Kernel by v hotovém filtru četl a zapisoval vrstvy na GPU, NumPy musí vrstvu nejdřív přečíst a výsledek zapsat zpátky. Proto buňka měří i čtení a zápis vrstvy, zvlášť.
-""")
+Kernel se proto vyplatí tam, kde není potřeba celá transformace: pár vybraných frekvencí, nebo malé okolí pixelu jako u konvoluce. Algoritmus FFT jde napsat i na GPU, jako $\log_2 N$ průchodů za sebou, a knihovny jako VkFFT nebo cuFFT to dělají. Buňka `%%gmacs` ale spouští jeden kernel, a proto zbytek lekce počítá NumPy.
 
-code("""
-times = []
-for _ in range(5):
-    start = time.perf_counter()
-    np.fft.fft2(L)
-    times.append(time.perf_counter() - start)
+<details><summary>❓ Otázka: kolikrát déle by to trvalo pro 4096 × 4096?</summary>
 
-rows = sara.bench("DFT rows", runs=10)
-columns = sara.bench("DFT", runs=10)
-
-start = time.perf_counter()
-photo.read()
-read_ms = (time.perf_counter() - start) * 1000
-start = time.perf_counter()
-doc.layer("Lightness").write(rgba(L))
-write_ms = (time.perf_counter() - start) * 1000
-
-print(f"NumPy fft2:          {min(times) * 1000:8.2f} ms")
-print(f"GPU, both passes:    {rows.gpu_ms + columns.gpu_ms:8.2f} ms")
-print(f"reading a layer:     {read_ms:8.2f} ms")
-print(f"writing a layer:     {write_ms:8.2f} ms")
-""")
-
-md(r"""
-> **❓ Otázka**
-> Kolikrát déle by oba způsoby počítaly obrázek 4096 × 4096, v každém směru osmkrát větší? Který byste pro něj zvolili?
+Kolikrát déle by oba způsoby počítaly obrázek 4096 × 4096, v každém směru osmkrát větší?
 
 <details><summary>🔑 Odpověď</summary>
 
-Kernel sčítá v každém průchodu $N$ hodnot pro každý z $N^2$ pixelů, práce roste s $N^3$ a osmkrát větší strana je $8^3$, tedy 512krát víc práce. FFT potřebuje řádově $N^2 \log_2 N$ operací, tedy $64 \cdot 12 / 9$, asi 85krát víc. Čtení a zápis vrstvy rostou s počtem pixelů, 64krát. Pro velký obrázek proto vyhraje FFT i s přenosem. Kernel se vyplatí tam, kde není potřeba celá transformace: pár vybraných frekvencí, nebo malé okolí pixelu jako u konvoluce v další sekci. Algoritmus FFT jde napsat i na GPU, jako $\log_2 N$ průchodů za sebou, a knihovny jako VkFFT nebo cuFFT to dělají. Buňka `%%gmacs` ale spouští jeden kernel.
+Kernel sčítá v každém průchodu $N$ hodnot pro každý z $N^2$ pixelů, práce roste s $N^3$ a osmkrát větší strana je $8^3$, tedy 512krát víc práce. FFT potřebuje řádově $N^2 \log_2 N$ operací, tedy $64 \cdot 12 / 9$, asi 85krát víc.
+</details>
+
+</details>
+
 </details>
 """)
 
@@ -1447,20 +1512,20 @@ $f_x$ a $f_y$ jsou frekvence v periodách na pixel, $u / N$ a $v / N$, od $-0.5$
 
 @img(convolution.png, 900, Nahoře konvoluce fotky s Gaussovým jádrem, dole táž operace ve spektru jako násobení spektra fotky spektrem jádra)
 
-Rozmazání je jeden z filtrů, které spektrum násobí maskou $H$. Postup je vždy stejný: transformace obrázku, násobení maskou, zpětná transformace a reálná část. Obrázek níže zkouší několik masek:
+Rozmazání je jeden z filtrů, které spektrum násobí maskou $H$. Postup je vždy stejný: transformace obrázku, násobení maskou, zpětná transformace a reálná část. Obrázek níže zkouší několik masek: dolní propust nechá nízké frekvence a výsledek je rozmazaný, horní propust (*high pass*) nechá jen hrany a detaily, pásmová (*band pass*) jen prstenec frekvencí.
 
-- **Dolní propust** (*low pass*) nechá nízké frekvence a výsledek je rozmazaný.
-- **Horní propust** (*high pass*), třeba $1 - H$ Gaussovy dolní propusti, nechá jen hrany a detaily.
-- **Pásmová propust** (*band pass*) nechá jen prstenec frekvencí.
-- **Ideální** dolní propust, uvnitř kruhu 1 a venku 0, udělá kolem hran vlnky (*ringing*). Ostrý okraj masky je v obrázku funkce sinc, jako obdélník v sekci 2. Proto se používají hladké masky, Gaussova nebo Butterworthova.
+<details><summary>📖 Ideální maska a vlnky kolem hran</summary>
+
+**Ideální** dolní propust, uvnitř kruhu 1 a venku 0, udělá kolem hran vlnky (*ringing*). Ostrý okraj masky je v obrázku funkce sinc, jako obdélník v sekci 2. Proto se používají hladké masky, Gaussova nebo Butterworthova.
 
 Maska musí mít nulovou frekvenci tam, kde ji má spektrum. Obrázek masku počítá rovnou s frekvencemi z `np.fft.fftfreq`, ve stejném pořadí jako spektrum, a jen ji kreslí se středem uprostřed. Masku nakreslenou se středem uprostřed by před násobením vrátil do pořadí spektra `np.fft.ifftshift`.
+</details>
 """)
 
 code(FILTERS, hidden=True)
 
 md(r"""
-Kernel níže rozmaže fotku přímo, váženým součtem okolí v lineárním RGB, jako v lekci o konvoluci. Tam jste rozmazání rozdělili na dva průchody, tady je pro jednoduchost v jednom. Soused za okrajem plátna se bere z protějšího okraje, stejně jako u transformace.
+Kernel níže rozmaže fotku přímo, váženým součtem okolí v lineárním RGB, jak znáte z lekce 3. Je to jen v jednom průchodu místo dvou, protože oddělitelnost tu nepotřebujeme. Soused za okrajem plátna se bere z protějšího okraje, stejně jako u transformace.
 """)
 
 code(BLUR_GPU)
@@ -1468,22 +1533,24 @@ code(BLUR_GPU)
 md(r"""
 ### 🎯 Úkol 3: Gauss ve frekvencích
 
-Napište `gaussian_filter(h, w, sigma)`, pole $H$ tvaru (h, w) s frekvencemi ve stejném pořadí, v jakém je vrací `np.fft.fft2`, a `blur_fft(channel, sigma)`, která kanál rozmaže přes spektrum.
+Napište `gaussian_filter(h, w, sigma)`, pole $H$ podle vzorce výše tvaru (h, w) s frekvencemi ve stejném pořadí, v jakém je vrací `np.fft.fft2`, a `filter_fft(channel, H)`, která kanál vynásobí $H$ ve spektru:
+
+$$g = \mathcal{F}^{-1}\bigl\{\mathcal{F}\{f\} \cdot H\bigr\}$$
 
 <details><summary>💡 Nápověda</summary>
 
 1. Frekvence v periodách na pixel dá `np.fft.fftfreq(n)`.
 2. Frekvence řádků udělejte sloupcem tvaru (h, 1) a frekvence sloupců řádkem tvaru (1, w), jako polohy v lekci o šumu. NumPy z nich spočítá celé pole.
-3. `blur_fft`: transformace, násobení $H$, zpětná transformace `np.fft.ifft2`. Výsledek je komplexní s imaginární částí skoro nulovou, vraťte `.real`.
+3. `filter_fft`: transformace, násobení $H$, zpětná transformace `np.fft.ifft2`. Výsledek je komplexní s imaginární částí skoro nulovou, vraťte `.real`.
 </details>
 
 <details><summary>🔑 Řešení</summary>
 
-""" + answer(SOLUTION_GAUSSIAN + "\n\n\n" + SOLUTION_BLUR) + r"""
+""" + answer(SOLUTION_GAUSSIAN + "\n\n\n" + SOLUTION_FILTER) + r"""
 </details>
 """)
 
-code(GAUSSIAN_GIVEN + "\n\n\n" + BLUR_GIVEN, solve=[(GAUSSIAN_GIVEN, SOLUTION_GAUSSIAN), (BLUR_GIVEN, SOLUTION_BLUR)])
+code(GAUSSIAN_GIVEN + "\n\n\n" + FILTER_GIVEN, solve=[(GAUSSIAN_GIVEN, SOLUTION_GAUSSIAN), (FILTER_GIVEN, SOLUTION_FILTER)])
 
 md(r"""
 Buňka rozmaže fotku přes spektrum a zapíše ji do vrstvy `Blur FFT`, která má vypadat jako `Blur GPU`. Pokud jste posuvníkem kernelu hýbali, nastavte `sigma` v buňce na jeho hodnotu.
@@ -1492,36 +1559,28 @@ Buňka rozmaže fotku přes spektrum a zapíše ji do vrstvy `Blur FFT`, která 
 code("""
 sigma = 3.0                                    # the kernel's sigma
 lin = srgb_to_linear(photo.read()[..., :3])
-blurred = rgba(linear_to_srgb(np.dstack([blur_fft(lin[..., c], sigma) for c in range(3)])))
+H = gaussian_filter(512, 512, sigma)
+blurred = rgba(linear_to_srgb(np.dstack([filter_fft(lin[..., c], H) for c in range(3)])))
 doc.new_layer("Blur FFT", blurred).show()
 """)
 
 md(r"""
 Kernel sčítá okolí do vzdálenosti $4\sigma$ a vzorkuje Gauss po pixelech, $H$ je spektrum Gaussovy křivky bez useknutí, proto se vrstvy nepatrně liší.
-""")
 
-code("""
-times = []
-for _ in range(5):
-    start = time.perf_counter()
-    for c in range(3):
-        blur_fft(lin[..., c], sigma)
-    times.append(time.perf_counter() - start)
+<details><summary>❓ Otázka: proč ztmavl a zčervenal horní okraj rozmazané fotky?</summary>
 
-t = sara.bench("Blur GPU", runs=10)
-print(f"NumPy FFT:  {min(times) * 1000:8.2f} ms")
-print(f"GPU kernel: {t.gpu_ms:8.2f} ms")
-""")
-
-md(r"""
-> **❓ Otázka**
-> Nastavte posuvník `sigma` kernelu na 8, v buňce s vrstvou `Blur FFT` `sigma = 8.0`, a spusťte ji i měření znovu. Proč čas kernelu vzrostl a čas FFT ne? A proč horní okraj rozmazané fotky ztmavl a zčervenal?
+Podívejte se na horní okraj vrstvy `Blur FFT` a na to, co je na fotce u dolního okraje.
 
 <details><summary>🔑 Odpověď</summary>
 
-Kernel sčítá čtverec o straně $2 \cdot 4\sigma + 1$ pixelů, takže jeho čas roste s $\sigma^2$, rozdělený na dva průchody s $\sigma$. FFT násobí každý koeficient číslem $H$ jednou, ať je $\sigma$ jakákoli. Malé rozmazání obrázku, který už je na GPU, je proto práce pro kernel, velké rozmazání pro FFT.
-
 Transformace bere obrázek jako dlaždici, která se opakuje dokola, a násobení spektra je proto konvoluce dokola: horní okraj se rozmaže s dolním, kde je oranžový skafandr a černá přilba. Kernel tu dělá totéž, aby výsledky šly porovnat. Jak se tomu vyhnout, ukazuje bonusový úkol 2.
+</details>
+
+</details>
+
+<details><summary>📖 Kdy rozmazání spočítat kernelem a kdy přes FFT</summary>
+
+Kernel sčítá čtverec o straně $2 \cdot 4\sigma + 1$ pixelů, takže jeho čas roste s $\sigma^2$, rozdělený na dva průchody s $\sigma$. FFT násobí každý koeficient číslem $H$ jednou, ať je $\sigma$ jakákoli. Malé rozmazání obrázku, který už je na GPU, je proto práce pro kernel, velké rozmazání pro FFT.
 </details>
 """)
 
@@ -1529,7 +1588,7 @@ Transformace bere obrázek jako dlaždici, která se opakuje dokola, a násoben�
 md(r"""
 ## 6. Wienerova dekonvoluce
 
-Když je rozmazání násobení spektra číslem $H$, mělo by jít vrátit dělením. Fotka `astronaut_blur` je fotka `astronaut` rozmazaná Gaussem se $\sigma = 2$ v lineárním RGB, s okraji dokola, a uložená v osmi bitech na kanál. Buňka její spektrum vydělí $H$ z úkolu 3:
+Rozmazání je ve spektru násobení číslem $H$, a tak by se mělo dát vrátit dělením. Fotka `astronaut_blur` je fotka `astronaut` rozmazaná Gaussem se $\sigma = 2$ v lineárním RGB, s okraji dokola, a uložená v osmi bitech na kanál. Zkusme to naivně: buňka spektrum rozmazané fotky vydělí $H$ z úkolu 3.
 """)
 
 code(f"""
@@ -1540,23 +1599,58 @@ doc.new_layer("Inverse filter", rgba(linear_to_srgb(divided))).show()
 """)
 
 md(r"""
-Vyšel šum. Uložení v osmi bitech zaokrouhlilo každý pixel až o 1/510 v hodnotách sRGB, a to je šum na všech frekvencích stejně silný. U vysokých frekvencí je $H$ tak malé, že ve spektru rozmazané fotky zbyl skoro jen ten šum, a dělení ho zvětší tolikrát, kolikrát je $H$ menší než 1. **Wienerův filtr** dělí jen tam, kde je signál silnější než šum:
+Vyšel šum. Uložení v osmi bitech zaokrouhlilo každý pixel až o 1/510 v hodnotách sRGB, a to je šum na všech frekvencích stejně silný. U vysokých frekvencí je $H$ tak malé, že ve spektru rozmazané fotky zbyl skoro jen ten šum, a dělení ho zvětší tolikrát, kolikrát je $H$ menší než 1. Potřebujeme filtr, který dělí jen tam, kde je signál silnější než šum. Odvodíme ho.
 
-$$\hat F = G \cdot \frac{\overline{H}}{|H|^2 + K}$$
+### Odvození Wienerova filtru
 
-$G$ je spektrum rozmazané fotky, $\overline{H}$ komplexně sdružené $H$ a $K$ poměr výkonu šumu k výkonu signálu. Kde je $|H|^2$ mnohem větší než $K$, je zlomek skoro $1 / H$. Kde je mnohem menší, je zlomek skoro $\overline{H} / K$, tedy skoro nula, a frekvence, na kterých je jen šum, filtr ztlumí.
+Ve spektru platí pro každou frekvenci zvlášť
+
+$$G = H F + N$$
+
+kde $F$ je spektrum ostré fotky, $H$ rozmazání, $N$ spektrum šumu a $G$ spektrum fotky, kterou máme. Hledáme číslo $W$, kterým $G$ vynásobíme, aby $\hat F = W G$ bylo co nejblíž $F$. Měřítkem je střední kvadratická chyba, průměr přes všechny možné šumy:
+
+$$E\,|F - W G|^2$$
+
+Do chyby dosadíme $G$. Rozdíl se rozloží na část, kterou rozmazání nevrátilo, a na zesílený šum:
+
+$$F - W G = (1 - W H)\,F - W N$$
+
+Šum je nezávislý na fotce, takže se smíšený člen v průměru vyruší. Zbyde součet výkonů, $S = E|F|^2$ je výkon signálu a $P = E|N|^2$ výkon šumu:
+
+$$E\,|F - W G|^2 = |1 - W H|^2\, S + |W|^2\, P$$
+
+První člen chce $W = 1 / H$, aby rozmazání zmizelo. Druhý chce $W = 0$, aby se nezesiloval šum. $W$ je komplexní a chybu najdeme nejmenší tak, že ji zderivujeme podle $\overline{W}$ a položíme nule:
+
+$$-\overline{H}\,(1 - W H)\,S + W P = 0$$
+
+Roznásobíme a $W$ vytkneme:
+
+$$W \left( |H|^2 S + P \right) = \overline{H}\, S$$
+
+Vydělíme $S$ a poměr výkonů šumu a signálu označíme $K = P / S$:
+
+$$\boxed{\,W = \frac{\overline{H}}{|H|^2 + K}\,}, \qquad \hat F = W\, G$$
+
+Zkouška dvou mezních případů:
+
+- **Žádný šum**, $K = 0$: $W = \overline{H} / |H|^2 = 1 / H$, obyčejné dělení z naivního pokusu.
+- **$H$ blízko nuly**: čitatel je skoro nula a jmenovatel aspoň $K$, takže $W$ zůstane malé a frekvence, které rozmazání smazalo, se nezesílí.
 
 @img(wiener.png, 760, Zesílení podle frekvence: rozmazání H klesá k nule, dělení 1/H roste nade všechny meze a Wienerův filtr nejdřív roste a pak klesá)
 
-Gaussovo $H$ je reálné a kladné, sdružené se sebou samým. Rozmazání pohybem má $H$ komplexní a tam na sdružení záleží.
+Gaussovo $H$ je reálné a kladné. Rozmazání po úsečce má $H$ také reálné, ale s nulami a zápornými hodnotami. Obecné jádro, třeba posunuté, má $H$ komplexní, a tam na sdružení záleží.
 
 ### 🎯 Úkol 4: Wienerův filtr
 
-Napište `wiener(channel, sigma, K)`, kanál bez Gaussova rozmazání se směrodatnou odchylkou `sigma`. Buňka pod funkcí ho použije s $K = 0.01^2$.
+Napište `wiener(channel, H, K)`, kanál bez rozmazání $H$:
+
+$$\hat f = \mathcal{F}^{-1}\left\{\mathcal{F}\{g\} \cdot \frac{\overline{H}}{|H|^2 + K}\right\}$$
+
+Buňka pod funkcí ji použije na `astronaut_blur` s $K = 0.01^2$.
 
 <details><summary>💡 Nápověda</summary>
 
-1. Spektrum kanálu, $H$ z `gaussian_filter` pro tvar kanálu, vzorec, zpětná transformace a reálná část.
+1. Nejdřív spočítejte $W$ z $H$ a $K$, pak jako `filter_fft`: transformace, násobení $W$, zpětná transformace a reálná část.
 2. Sdružené číslo dává `np.conj`, $|H|^2$ je `np.abs(H) ** 2`.
 </details>
 
@@ -1569,19 +1663,77 @@ Napište `wiener(channel, sigma, K)`, kanál bez Gaussova rozmazání se směrod
 code(WIENER_GIVEN + f"""
 
 
-fixed = np.dstack([wiener(lin_blurry[..., c], {BLUR_SIGMA}, 0.01 ** 2) for c in range(3)])
+fixed = np.dstack([wiener(lin_blurry[..., c], H, 0.01 ** 2) for c in range(3)])
 doc.new_layer("Deblurred", rgba(linear_to_srgb(fixed))).show()
 """, solve=[(WIENER_GIVEN, SOLUTION_WIENER)])
 
 md(r"""
 Fotka je ostřejší než `astronaut_blur`: jsou vidět oči, pramínky vlasů a švy skafandru. Ostrá jako `astronaut` není, nejjemnější detaily rozmazání ztlumilo pod úroveň šumu a ty se vrátit nedají. Kolem kontrastních hran mohou být slabé vlnky.
 
-> **❓ Otázka**
-> Zkuste místo $K = 0.01^2$ hodnoty $0.001^2$ a $0.1^2$. Co se stane a proč?
+<details><summary>❓ Otázka: co udělá jiné K?</summary>
+
+Zkuste místo $K = 0.01^2$ hodnoty $0.001^2$ a $0.1^2$. Co se stane a proč?
 
 <details><summary>🔑 Odpověď</summary>
 
 S malým $K$ je filtr blízko dělení $1 / H$: vrací i vysoké frekvence, kde je skoro jen šum, a fotka je zrnitá. S velkým $K$ filtr ztlumí většinu frekvencí, kde $H$ trochu kleslo, a fotka zůstane rozmazaná. $K$ vyvažuje ostrost proti šumu. Správná hodnota závisí na tom, kolik šumu fotka má: ve fotce z mobilu ve tmě víc než v osmibitovém zaokrouhlení.
+</details>
+
+</details>
+
+### Text rozmazaný pohybem
+
+Skutečný problém: při focení tabule nebo dokumentu se fotoaparát zachvěje a písmena se rozmažou po úsečce. Takové rozmazání má jádro, úsečku délky `length` pod úhlem `angle`, a jeho $H$ je sinc podél směru pohybu: klesá, mění znaménko a má nuly. Funkce `motion_filter` ho spočítá, je hotová a vy ji jen použijete. Wienerův filtr z úkolu 4 funguje beze změny, dostane jiné $H$.
+
+Fotka `text_motion.png` je rozmazaná po úsečce dlouhé 21 pixelů pod úhlem 12°, s šumem snímače a zaokrouhlením do osmi bitů. Přečíst z ní nejde nic. Buňka ji načte, nastaví filtr a posuvníky `length` a `angle` hledají rozmazání, `noise` je odmocnina z $K$.
+""")
+
+code(MOTION_NP)
+
+code('''
+text = doc.import_image("imgs/4/text_motion.png")     # a layer called "text_motion"
+''')
+
+code('''
+PARAMS_TEXT = {
+    "length": (21, 1, 40),
+    "angle": (12, -90, 90),
+    "noise": (0.03, 0.001, 0.1, 0.001),
+}
+
+
+def sharpen_text(img, length, angle, noise):
+    out = img.copy()
+    lin = srgb_to_linear(img[..., :3])
+    H = motion_filter(*img.shape[:2], length, angle)
+    for c in range(3):
+        lin[..., c] = wiener(lin[..., c], H, noise ** 2)
+    out[..., :3] = linear_to_srgb(lin)
+    return out
+
+
+sara.live(sharpen_text, PARAMS_TEXT, source="text_motion", target="Text deblurred")
+''')
+
+md(r"""
+Správná `length` a `angle` je ostrý text, jiná dá duchy a pruhy. Přečtete "Počítačová grafika" i drobné řádky pod ní. Posuvník `noise` zkuste od nuly nahoru: fotka má víc šumu než Astronaut, a proto potřebuje větší $K$.
+
+<details><summary>❓ Otázka: proč má text větší K než astronaut?</summary>
+
+Fotka textu je tmavá, s šumem snímače, a při malém $K$ je zrnitá. Podívejte se na obrázek níže a rozhodněte, které $K$ je nejlepší.
+
+@img(text_wiener.png, 900, Rozmazaný text a Wienerův filtr s K rovným 1e-5, 1e-3 a 1e-1, kde první je zrnitý, druhý čitelný a třetí stále rozmazaný)
+
+<details><summary>🔑 Odpověď</summary>
+
+Nejlepší je prostřední, $K = 10^{-3}$. S $10^{-5}$ filtr zesílí šum na frekvencích, kde rozmazání má nuly, a text zmizí v zrnu a pruzích. S $10^{-1}$ šum nevadí, ale filtr ztlumí i užitečné frekvence a písmena zůstanou rozmazaná. Šum fotky je silnější než zaokrouhlení astronauta, proto je i správné $K$ větší.
+</details>
+
+</details>
+
+<details><summary>ℹ️ Je to skutečná fotka?</summary>
+
+Ne, `text_motion.png` je syntetická. Skript v `build/lesson_04_diagrams.py` napíše text, nasvítí ho s vinětací, rozmaže po úsečce se známým jádrem a přidá šum snímače a zaokrouhlení do osmi bitů. Díky tomu znáte správnou `length` a `angle` a víte, co čekat. Chcete-li vlastní, vyfoťte text s pohybem ruky, uložte do `imgs/4/` a změňte cestu v buňce. Rozmazání neznáte a musíte ho hledat posuvníky, a čím je fotka větší, tím víc výpočet trvá. Fotka z mobilu bývá komprimovaná JPEG a ten přidá artefakty, které Wiener nezvládne.
 </details>
 """)
 
@@ -1589,54 +1741,61 @@ S malým $K$ je filtr blízko dělení $1 / H$: vrací i vysoké frekvence, kde 
 md(r"""
 ## 7. Do Krity
 
-Filtr do Krity je celý v NumPy. Má tři režimy, všechny počítají v lineárním RGB:
+Filtr do Krity je celý v NumPy a je hotový. Má čtyři režimy, všechny počítají v lineárním RGB:
 
-- `Deblur`: Wienerův filtr s rozmazáním `sigma`.
+- `Deblur`: Wienerův filtr s Gaussovým rozmazáním `sigma`.
+- `Deblur motion`: Wienerův filtr s rozmazáním po úsečce `length` a `angle`.
 - `Low pass`: Gaussovo rozmazání `sigma`.
 - `High pass`: obrázek minus rozmazaný obrázek plus 0.5, tedy jen detaily kolem šedé. Odečítá se v hodnotách sRGB, tak jak je vrstva ukládá, rozmazaný obrázek už zakódovaný do sRGB.
 
-Posuvník `noise` je odmocnina z $K$, poměr velikosti šumu k velikosti signálu. Posuvník v něm je rovnoměrnější: $K$ od $0.0001$ do $0.01$ je `noise` od 0.01 do 0.1.
+Posuvník `noise` je odmocnina z $K$, poměr velikosti šumu k velikosti signálu. Posuvník v něm je rovnoměrnější: $K$ od $0.000001$ do $0.01$ je `noise` od 0.001 do 0.1.
 
-### 🎯 Úkol 5: frekvenční filtr
-
-Napište `apply` se třemi režimy. Hotový filtr dá s výchozími hodnotami totéž co `Goal` z úvodu.
-
-<details><summary>💡 Nápověda</summary>
-
-1. Převeďte obrázek do lineárního RGB, filtrujte každý ze tří kanálů zvlášť (`wiener` s $K$ = `noise ** 2`, nebo `blur_fft`) a výsledek zakódujte zpět do sRGB.
-2. `High pass` odečítá až zakódovaný rozmazaný obrázek od původního `img`.
-3. Alfa kanál zůstává z `img`.
-</details>
-
-<details><summary>🔑 Řešení</summary>
-
-""" + answer(SOLUTION_APPLY) + r"""
-</details>
+První buňka jsou pomocné funkce, ty znáte z úkolů výše. Druhá je `PARAMS` a `apply`.
 """)
 
-code(PARAMS_NP + "\n\n\n" + APPLY_GIVEN + """
+code(KRITA_HELPERS)
+
+code(PARAMS_NP + "\n\n\n" + APPLY_NP + """
 
 
 sara.live(apply, PARAMS, source="astronaut_blur", target="Filter NumPy")
-""", solve=[(APPLY_GIVEN, SOLUTION_APPLY)])
+""")
 
 md(r"""
-### 🎯 Úkol 6: filtr v Kritě
+S výchozími hodnotami vyjde totéž co `Goal` z úvodu. Kdo chce `Deblur motion` vyzkoušet, vybere ho a spustí na vrstvě `text_motion`.
 
-Vložte filtr do `pga_filter/effect.py` s `TITLE = "Frequency filter"` a vyzkoušejte ho na vlastní fotce. Rozmažte ji v Kritě Gaussovým rozmazáním a zkuste ji režimem `Deblur` zaostřit. Krita měří rozmazání poloměrem, ne směrodatnou odchylkou, takže `sigma` hledejte posuvníkem.
+<details><summary>📖 Co se v NumPy mění oproti kernelu</summary>
 
-<details><summary>💡 Nápověda</summary>
+| Kernel | NumPy |
+|---|---|
+| jedno vlákno na pixel | operace na celém poli najednou |
+| `src[at]` čte okolí pixelu | `np.fft.fft2` vidí celý obrázek, žádné okolí |
+| `uniform` jsou widgety | `PARAMS` dává widgety, `apply` je dostane jako argumenty |
+| barvy `vec4` | pole `float32` tvaru (h, w, 4) |
+| transformace jsou dva průchody kernelů | transformaci dělá jedno volání `np.fft.fft2` |
+| konvoluce jako součet okolí | násobení spektra, a proto stejná cena pro každou $\sigma$ |
 
-1. Do `effect.py` patří buňka s pomocnými funkcemi, vaše `gaussian_filter`, `blur_fft`, `wiener`, `PARAMS` a `apply`.
-2. Filtr dostane výběr, nebo celou vrstvu, a transformace ho bere jako dlaždici. U okraje výběru proto rozmazání přebírá barvy z protějšího okraje.
+Kernel transformaci spočítat umí, jako v úkolu 2, ale pomalu, a Krita pouští jen NumPy.
 </details>
 
-> **❓ Otázka**
-> Duplikujte vrstvu. Na spodní spusťte `Low pass`, na horní `High pass` se stejnou `sigma` a horní vrstvě nastavte režim prolnutí Grain Merge. Vrstvy dohromady vypadají jako původní obrázek. Proč?
+### 🎯 Úkol 5: filtr v Kritě
+
+Zkopírujte obě buňky výše do `krita/pga_filter/effect.py`: nahraďte vším, co je pod `import numpy as np`, a nastavte `TITLE = "Frequency filter"`. Pak ho vyzkoušejte na vlastní fotce: rozmažte ji v Kritě Gaussovým rozmazáním a režimem `Deblur` zkuste zaostřit. Krita měří rozmazání poloměrem, ne směrodatnou odchylkou, takže `sigma` hledejte posuvníkem.
+
+<details><summary>ℹ️ Vybraná oblast má barvy z protějšího okraje?</summary>
+
+Filtr dostane výběr, nebo celou vrstvu, a transformace ho bere jako dlaždici. U okraje výběru proto rozmazání přebírá barvy z protějšího okraje. Opravit to jde odrazem okrajů, bonusový úkol 2.
+</details>
+
+<details><summary>❓ Otázka: proč Grain Merge s High pass vrátí původní obrázek?</summary>
+
+Duplikujte vrstvu. Na spodní spusťte `Low pass`, na horní `High pass` se stejnou `sigma` a horní vrstvě nastavte režim prolnutí Grain Merge. Vrstvy dohromady vypadají jako původní obrázek. Proč?
 
 <details><summary>🔑 Odpověď</summary>
 
 Grain Merge sečte vrstvy a odečte 0.5. `High pass` je obrázek minus `Low pass` plus 0.5, takže součet je `Low pass` + obrázek − `Low pass` + 0.5 − 0.5, tedy obrázek, až na zaokrouhlení a ořezání do rozsahu vrstvy. Retušéři tomu říkají frekvenční separace (*frequency separation*): na spodní vrstvě sjednotí barvu pleti a struktura kůže na horní vrstvě zůstane.
+</details>
+
 </details>
 """)
 
@@ -1644,21 +1803,18 @@ Grain Merge sečte vrstvy a odečte 0.5. `High pass` je obrázek minus `Low pass
 md(r"""
 ## Shrnutí
 
-- Obrázek je součet vln. Fourierova transformace dá pro každou frekvenci komplexní číslo $F(u, v)$, skalární součin obrázku s vlnou: amplituda $|F|$ říká, kolik té vlny obrázek obsahuje, fáze $\arg F$, kam je posunutá. Převod nic neztratí.
+- Obrázek je součet vln. Fourierova transformace dá pro každou frekvenci komplexní číslo $F(u, v)$: amplituda $|F|$ říká, kolik té vlny obrázek obsahuje, fáze $\arg F$, kam je posunutá.
 - Spektrum se kreslí s nulovou frekvencí uprostřed (`np.fft.fftshift`) a v logaritmu.
-- Transformace v kernelu sčítá $N$ hodnot na pixel v každém ze dvou průchodů, práce roste s $N^3$. FFT dá tentýž výsledek za $N^2 \log N$ a pro velké obrázky vyhraje i s přenosem vrstvy na CPU a zpátky.
-- Konvoluce v obrázku je násobení ve spektru, filtr je násobení spektra maskou. Rozmazání přes FFT trvá stejně dlouho pro každou $\sigma$, kernel s $\sigma^2$.
-- Rozmazání se dá vrátit dělením spektra jen tam, kde je signál silnější než šum. Wienerův filtr to zařídí jedním číslem $K$.
+- Konvoluce v obrázku je násobení ve spektru a filtr je násobení spektra maskou $H$.
+- Rozmazání se vrací dělením spektra, ale jen tam, kde je signál silnější než šum. Wienerův filtr $\overline{H} / (|H|^2 + K)$ to zařídí jedním číslem $K$, pro Gaussovo i pohybové rozmazání.
 
-### Na co si dát pozor
+<details><summary>📖 Na co si dát pozor a dvojice, které je dobré znát</summary>
 
 - Posun mění jen fázi, amplitudu ne.
 - Co je v obrázku úzké, je ve spektru široké, a naopak.
 - Aliasing nastane, když vzorků není víc než dvakrát tolik, kolik má signál period.
 - Ostrá, ideální maska dělá kolem hran vlnky.
 - Transformace bere obrázek jako dlaždici: okraje se rozmazávají s protějšími a spektrum má přes střed kříž.
-
-### Dvojice, které je dobré znát
 
 | Obrázek | Spektrum |
 |---|---|
@@ -1671,24 +1827,31 @@ md(r"""
 | hřeben bodů s roztečí $T$ | hřeben bodů s roztečí $N / T$ |
 | Gauss krát kosinus (Gabor) | dva Gaussy na frekvenci kosinu |
 
-### Co jsme vynechali
+</details>
 
-- **Slepá dekonvoluce.** Tady jste věděli, jakým Gaussem byla fotka rozmazaná. U skutečné fotky rozmazané pohybem nebo špatným zaostřením tvar rozmazání neznáte a musí se odhadnout z fotky samotné.
+<details><summary>📖 Co jsme vynechali</summary>
+
+- **Slepá dekonvoluce.** Tady jste věděli, čím byla fotka rozmazaná. U skutečné fotky tvar rozmazání neznáte a musí se odhadnout z fotky samotné.
 - **Komplexní obraz.** Nepovinný notebook `lesson_04b_complex_image.ipynb` dá komplexní číslo každému pixelu, barvě v OKLabu a gradientu. Násobení pak otáčí odstíny, a spektrum takového obrazu souměrné není.
 
-### Bonusové úkoly
+</details>
 
-1. **Vrubový filtr** (*notch filter*). Přičtěte k fotce vlnu z kernelu „Wave“ jako pravidelné rušení. Najděte ve spektru její dva body, vynulujte je a fotku transformujte zpátky.
-2. **Okraje bez dlaždice.** Rozšiřte kanál před `blur_fft` o odraz okrajů, `np.pad(channel, r, mode="reflect")` s `r` kolem $4\sigma$, a výsledek ořízněte. Porovnejte okraje rozmazané fotky s těmi původními.
-3. **Rozmazání pohybem.** Jádro je úsečka délky `length` pixelů pod úhlem `angle`. Nakreslete ji do pole velikosti obrázku se středem v rohu `[0, 0]` (záporné posuny jsou na konci pole), $H$ je `np.fft.fft2` toho pole.
-""")
+<details><summary>🎯 Bonusové úkoly</summary>
 
-md(r"""
-### Nápady na semestrální práci
+1. **Vrubový filtr** (*notch filter*). Přičtěte k fotce vlnu z kernelu "Wave" jako pravidelné rušení. Najděte ve spektru její dva body, vynulujte je a fotku transformujte zpátky.
+2. **Okraje bez dlaždice.** Rozšiřte kanál před `filter_fft` o odraz okrajů, `np.pad(channel, r, mode="reflect")` s `r` kolem $4\sigma$, a výsledek ořízněte. Porovnejte okraje rozmazané fotky s těmi původními.
+3. **Odhad délky rozmazání.** Box rozmazání délky $L$ má ve spektru nuly na frekvencích $k / L$. Zobrazte spektrum fotky `text_motion`, najděte ve směru pohybu první tmavý pruh a z jeho polohy odhadněte `length`.
+4. **Zostřující maska.** Porovnejte Wienera na `astronaut_blur` s fotkou plus dvakrát rozdíl fotky a jejího rozmazání. Co zvládne jedno a co druhé?
+
+</details>
+
+<details><summary>📖 Nápady na semestrální práci</summary>
 
 - Frekvenční separace jedním příkazem: plugin, který z vrstvy udělá dvojici `Low pass` a `High pass` s režimem Grain Merge, připravenou k retuši.
 - Odstranění pravidelného vzoru, třeba rastru z naskenovaného tisku: filtr najde ve spektru jasné body mimo střed a ztlumí je.
-- Zaostření rozmazání pohybem s posuvníky délky a úhlu a náhledem jádra.
+- Zaostření rozmazání pohybem s náhledem jádra a automatickým odhadem délky a úhlu.
+
+</details>
 """)
 
 

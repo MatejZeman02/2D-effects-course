@@ -13,4 +13,9 @@ image database's 512 × 512 version.
 | `lenna.png` | Lena Forsén, a scan of the Playboy centrefold of November 1972, the USC-SIPI test image | copyright Playboy Enterprises, not freely licensed, used here as the traditional test image |
 
 `astronaut_blur.png` is `astronaut.png` blurred by the lesson's own
-`blur_fft`, and the diagram script writes it again on every run.
+`filter_fft`, and the diagram script writes it again on every run.
+
+`text_motion.png` is synthetic, not a real photo. The diagram script sets
+a few lines of text, lights them with a vignette, blurs them along a line with
+the lesson's `motion_filter`, adds shot and read noise and rounds to eight bits.
+Its other pictures are drawn by the same script.
