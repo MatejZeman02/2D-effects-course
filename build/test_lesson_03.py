@@ -143,19 +143,12 @@ def test_the_enums_are_matched_by_name():
     for name in ("BLUR", "SHARPEN", "SRGB", "LINEAR", "OKLAB"):
         assert f"case {name}:" in nb.SPACES, name
     for name in ("ZERO", "CLAMP", "MIRROR", "WRAP"):
-        assert f"case {name}:" in nb.EDGES.replace(nb.FETCH_STUB, nb.SOLUTION_FETCH), name
+        assert f"case {name}:" in nb.EDGES, name
 
 
 def test_the_shared_row_fits_the_largest_sigma():
     assert "R_MAX = 24" in nb.SHARED and int(np.ceil(3 * 8.0)) == 24
     assert 'halo=32 sigma=3' in nb.SHARED.splitlines()[0]
-
-
-def test_unfinished_cells_are_harmless(photo, defaults):
-    space = namespace(nb.HELPERS_NP, nb.BLUR_NP_GIVEN, nb.PARAMS_NP, nb.APPLY_GIVEN)
-    a = photo[..., :3]
-    assert np.array_equal(space["blur"](a, 3.0), a)
-    assert np.array_equal(space["apply"](photo, **defaults), photo)
 
 
 def test_the_solution_runs(photo, defaults, solved):
@@ -173,7 +166,7 @@ def test_the_solution_runs(photo, defaults, solved):
 
 
 def test_the_goal_is_the_solution(photo, solved):
-    """The hidden Goal cell runs the same filter, PARAMS and source as section 6."""
+    """The hidden Goal cell runs the same filter, PARAMS and source as section 7."""
     called = {}
 
     class Sara:
@@ -197,7 +190,77 @@ def test_the_pictures_exist():
         text = "".join(cell["source"])
         shown |= set(re.findall(r'src="(imgs/3/[^"]+)"', text))
         shown |= set(re.findall(r'"(imgs/3/[^"]+\.png)"', text))
-    assert len(shown) >= 8, shown
+    assert len(shown) >= 16, shown
     for path in shown:
         assert (ROOT / path).is_file(), path
     assert "`coffee.png`" in (ROOT / nb.IMG / "SOURCES.md").read_text()
+
+
+def markdown_text():
+    return "\n".join("".join(c["source"]) for c in nb.cells if c["cell_type"] == "markdown")
+
+
+def test_the_krita_port_is_given_and_one_task_copies_it():
+    """The NumPy cells run as they are, with no TODO, and the only task of section 7 is the copy."""
+    cells = code_cells()
+    assert not [c for c in cells if "TODO" in c and "def apply" in c]
+    text = markdown_text()
+    assert text.count("### 🎯 Úkol") == 5
+    assert "TITLE = \"Blur and sharpen\"" in text
+    assert "def apply" in nb.SOLUTION_APPLY and "def blur" in nb.SOLUTION_BLUR_NP
+    assert "sara.live(apply, PARAMS" in cells[-1]
+
+
+def test_every_task_is_preceded_by_its_formula():
+    """A $$ formula stands in its section above the task's details (the Krita copy needs none)."""
+    seen = ""
+    for cell in nb.cells:
+        if cell["cell_type"] != "markdown":
+            continue
+        text = "".join(cell["source"])
+        if text.startswith("## "):
+            seen = ""
+        if text.startswith("### 🎯 Úkol") and "Úkol 5" not in text:
+            assert "$$" in seen + text.split("<details>")[0], text.splitlines()[0]
+        seen += text
+
+
+def test_the_lesson_opens_with_a_brainstorm_after_the_goal():
+    text = markdown_text()
+    assert text.index("## Cíl lekce") < text.index("## Jak byste to udělali?") < text.index("## 1. Rozmazání")
+    assert "A jak ve fotce najít hrany?" in text and "A jak rozmazat, aby hrany zůstaly?" in text
+    assert text.count("<details><summary>💭 Nápady</summary>") == 3
+    assert "```" not in markdown_text().split("## 1. Rozmazání")[0]
+
+
+def test_no_heading_hides_in_a_details_and_every_details_closes():
+    for cell in nb.cells:
+        if cell["cell_type"] != "markdown":
+            continue
+        text = "".join(cell["source"])
+        assert text.count("<details") == text.count("</details>"), text[:60]
+    open_ = 0
+    for cell in nb.cells:
+        if cell["cell_type"] != "markdown":
+            continue
+        fenced = False
+        for line in "".join(cell["source"]).splitlines():
+            fenced ^= line.startswith("```")
+            if line.startswith("#") and not fenced:
+                assert open_ == 0, line
+            open_ += line.count("<details") - line.count("</details>")
+    assert open_ == 0
+
+
+def test_the_prose_has_no_semicolon_or_long_dash():
+    for cell in nb.cells:
+        text = "".join(cell["source"])
+        if cell["cell_type"] == "markdown":
+            text = re.sub(r"\$[^$]*\$", "", text)
+        assert "\u2014" not in text and "\u2013" not in text, text[:60]
+        assert ";" not in text.replace("&nbsp;", ""), text[:60]
+
+
+def test_the_goal_holds_no_unused_helper():
+    assert "def srgb_to_linear" in nb.GOAL and "M2_INV" in nb.GOAL
+    assert "def gaussian_1d" in nb.GOAL and "TODO" not in nb.GOAL

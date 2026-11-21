@@ -378,6 +378,88 @@ def bilateral():
     save(fig, "bilateral.png")
 
 
+# --- The brainstorm's ideas, each a few panels of the photo's cup and spoon. ----------
+CROP = (slice(330, 570), slice(560, 800))     # the spoon and the cup's rim, 240 x 240
+
+
+def crop():
+    return load("coffee.png")[CROP][..., :3]
+
+
+def idea(name, panels, width=3.0):
+    """One row of (title, picture) panels, a grey picture drawn as lightness."""
+    fig, axes = plt.subplots(1, len(panels), figsize=(width * len(panels), 2.45), gridspec_kw={"wspace": 0.05})
+    for ax, (title, img) in zip(axes, panels):
+        ax.imshow(np.clip(img, 0, 1), cmap="gray" if img.ndim == 2 else None, vmin=0, vmax=1, interpolation="nearest")
+        ax.set_title(title, fontsize=11)
+        bare(ax)
+    save(fig, name)
+
+
+def box_mean(img, radius):
+    """The mean of the (2 radius + 1) square around each pixel, edges clamped."""
+    side = 2 * radius + 1
+    h, w = img.shape[:2]
+    p = np.pad(img, ((radius, radius), (radius, radius), (0, 0)), mode="edge")
+    c = np.cumsum(np.cumsum(np.pad(p, ((1, 0), (1, 0), (0, 0))), axis=0), axis=1)
+    return (c[side:side + h, side:side + w] - c[:h, side:side + w] - c[side:side + h, :w] + c[:h, :w]) / side ** 2
+
+
+def ideas():
+    img = crop()
+    whole = np.zeros_like(img) + load("coffee.png")[..., :3].mean(axis=(0, 1))
+    idea("idea_mean_all.png", [("původní", img), ("průměr celé fotky", whole)])
+    side = 17
+    h, w = img.shape[:2]
+    cut = img[:h // side * side, :w // side * side]
+    blocks = cut.reshape(h // side, side, w // side, side, 3).mean(axis=(1, 3)).repeat(side, 0).repeat(side, 1)
+    idea("idea_blocks.png", [("původní", cut), ("průměr čtverců mřížky", blocks)])
+    rng = np.random.default_rng(3)
+    ys, xs = np.mgrid[0:h, 0:w]
+    ys = np.clip(ys + rng.integers(-8, 9, (h, w)), 0, h - 1)
+    xs = np.clip(xs + rng.integers(-8, 9, (h, w)), 0, w - 1)
+    idea("idea_random.png", [("původní", img), ("náhodný soused do 8 pixelů", img[ys, xs])])
+    small = Image.fromarray((img * 255).astype(np.uint8)).resize((w // 8, h // 8), Image.BOX)
+    back = np.asarray(small.resize((w, h), Image.BILINEAR), np.float32) / 255
+    idea("idea_resize.png", [("původní", img), (f"zmenšená 8krát ({w // 8} px)", np.asarray(small, np.float32) / 255),
+                             ("zase zvětšená", back)])
+    L = lightness(np.dstack([img, np.ones(img.shape[:2], np.float32)]))
+    p = np.pad(L, 1, mode="edge")
+    right = np.abs(p[1:-1, 2:] - p[1:-1, :-2])
+    down = np.abs(p[2:, 1:-1] - p[:-2, 1:-1])
+    idea("idea_diff.png", [("světlost", L), ("rozdíl vlevo a vpravo", 3 * right), ("rozdíl nahoře a dole", 3 * down)])
+    idea("idea_threshold.png", [("světlost", L), ("světlost nad 0.6", (L > 0.6).astype(float))])
+    soft = blur(srgb_to_linear(img.astype(np.float64)), 3.0)
+    Ls = to_oklab(soft)[..., 0]
+    idea("idea_dog.png", [("světlost", L), ("rozmazaná, $\\sigma = 3$", Ls), ("rozdíl, zesílený 4krát", 4 * np.abs(L - Ls))])
+
+
+def spaces():
+    """Blur and sharpen of the spoon in sRGB, linear RGB and OKLab, the same mean and the same amount."""
+    img = load("coffee.png")[330:480, 640:790, :3].astype(np.float64)
+    lin = srgb_to_linear(img)
+    to_space = {"sRGB": (lambda c: c, lambda c: c),
+                "lineární RGB": (srgb_to_linear, lambda c: linear_to_srgb(np.maximum(c, 0))),
+                "OKLab": (lambda c: to_oklab(srgb_to_linear(c)),
+                          lambda c: linear_to_srgb(np.maximum(oklab_to_linear(c), 0)))}
+    fig, axes = plt.subplots(2, 3, figsize=(9.6, 6.6), gridspec_kw={"wspace": 0.04, "hspace": 0.12})
+    for col, (name, (into, back)) in enumerate(to_space.items()):
+        c = into(img)
+        mean = box_mean(c, 8)
+        fine = box_mean(c, 2)
+        axes[0, col].imshow(np.clip(back(mean), 0, 1))
+        axes[0, col].set_title(name, fontsize=12)
+        axes[1, col].imshow(np.clip(back(c + 2.0 * (c - fine)), 0, 1))
+    axes[0, 0].set_ylabel("rozmazání", fontsize=12)
+    axes[1, 0].set_ylabel("zaostření", fontsize=12)
+    for ax in axes.flat:
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for s in ax.spines.values():
+            s.set_visible(False)
+    save(fig, "spaces.png")
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     make_photo()
@@ -390,6 +472,8 @@ def main():
     bilateral()
     second_derivative()
     numpy_shifts()
+    ideas()
+    spaces()
     print("wrote", sorted(p.name for p in OUT.glob("*.png")))
 
 

@@ -11,11 +11,12 @@ A picture from imgs/3 is written as @img(file, width, alt text).
 The solutions are constants near the top, so the markdown shows exactly the
 code that test_lesson_03.py runs.
 
-The lesson opens on the problem: the mean of the whole photo, then of a grid
-of squares, then of a square around each pixel. Separability is explained by
-the associativity of convolution, and the bilateral filter follows the
-Gaussian. Shared memory and the second derivative are optional sections at
-the end, after the Krita part, so the class path fits 90 minutes.
+The lesson opens with a brainstorm of how to blur and how to find edges, then
+goes from the mean of the whole photo to a square around each pixel. Separability
+is explained by the associativity of convolution, and the bilateral filter follows
+the Gaussian. The edge rules, the colour spaces, the shared memory and the second
+derivative are folded or optional. The NumPy port in section 7 is given, and the
+only task there is copying it into Krita.
 """
 import re
 import textwrap
@@ -283,9 +284,6 @@ def pixel(ivec2 at) -> vec4:
             weight += k
     return vec4(linear_srgb_to_srgb(total / weight), 1.0)"""
 
-FETCH_STUB = """\
-        # TODO: CLAMP, MIRROR and WRAP, each reads src at a position inside the canvas"""
-
 SOLUTION_FETCH = """\
         case CLAMP:
             return src[clamp(p, ivec2(0), SIZE - 1)]
@@ -317,7 +315,7 @@ def fetch(ivec2 p) -> vec4:
             if inside:
                 return src[p]
             return vec4(0.0, 0.0, 0.0, 1.0)
-{FETCH_STUB}
+{SOLUTION_FETCH}
     return vec4(0.0, 0.0, 0.0, 1.0)
 
 
@@ -433,24 +431,12 @@ def oklab_to_linear(lab):
     return ((lab @ M2_INV.T) ** 3) @ M1_INV.T
 
 
-def rgba(a):
-    """An opaque picture from an (h, w, 3) colour array."""
-    a = np.asarray(a, dtype=np.float32)
-    return np.dstack([a, np.ones(a.shape[:2], np.float32)])
-
-
 def gaussian_1d(sigma):
     """The weights of a Gaussian of sigma pixels out to 3 sigma, summing to one."""
     r = int(np.ceil(3 * sigma))
     x = np.arange(-r, r + 1)
     k = np.exp(-x ** 2 / (2 * sigma ** 2))
     return k / k.sum()'''
-
-BLUR_NP_GIVEN = '''\
-def blur(a, sigma):
-    """a, (h, w, c), blurred by a Gaussian of sigma pixels: rows, then columns, edges clamped."""
-    # TODO: pad by the radius, then the weighted sum of shifted views, once along each axis
-    return a.copy()'''
 
 SOLUTION_BLUR_NP = '''\
 def blur(a, sigma):
@@ -469,12 +455,6 @@ PARAMS = {
     "sigma": (3.0, 0.5, 16.0),
     "amount": (1.0, 0.0, 4.0),
 }'''
-
-APPLY_GIVEN = '''\
-def apply(img, mode, sigma, amount):
-    out = img.copy()
-    # TODO: Blur and Sharpen in linear light
-    return out'''
 
 SOLUTION_APPLY = '''\
 def apply(img, mode, sigma, amount):
@@ -512,13 +492,19 @@ def answer(snippet, lang="python"):
 md(r"""
 # Lekce 3: Konvoluce, rozmazání a hrany
 
-Fotku rozmažete, zaostříte a najdete v ní hrany, rychle na GPU i jako filtr v Kritě.
+Na konci lekce budete mít filtr, který fotku rozmaže nebo zaostří, rychle na GPU i jako filtr v Kritě. Cestou napíšete konvoluci s libovolnou maticí, Gaussovo rozmazání ve dvou průchodech, rozmazání, které nechá hrany, a Sobelův detektor hran.
+
+Spusťte buňku. Otevře nový dokument a vloží do něj fotku jako vrstvu `coffee`.
+
+<details><summary>📖 K čemu je plátno 1200 × 800</summary>
+
+Je stejně velké jako fotka. Kernely z ní čtou a píšou do vrstev o stejné velikosti.
+</details>
 """)
 
 code(f"""
 import sys
 sys.path.insert(0, "lib")            # sara.py and its helpers live in lib/
-import time
 import numpy as np
 import sara
 
@@ -527,7 +513,7 @@ photo = doc.import_image("imgs/3/coffee.png")            # a layer called "coffe
 """)
 
 md(r"""
-### Nové funkce v této lekci
+<details><summary>📖 Nové funkce v této lekci</summary>
 
 **Kernel v buňce `%%gmacs`**
 
@@ -537,8 +523,8 @@ md(r"""
 | `at / side` | celočíselné dělení, u `ivec2` po složkách | 1 |
 | `uniform float weights[9]` | matice 3 × 3 jako mřížka políček pod buňkou, čtená po řádcích | 2 |
 | `min`, `max`, `clamp` na `ivec2`, `floor` na `vec2` a převod `ivec2(...)` | po složkách | 5 |
-| `kernel`, `image`, `params:`, `dst[pixel] = v` | celý kernel místo funkce `pixel`, s obrázky a parametry | 8 |
-| `shared`, `barrier()`, `local_id`, `group_id` | sdílená paměť skupiny vláken, čekání na celou skupinu a čísla vlákna a skupiny | 8 |
+| `kernel`, `image`, `params:`, `dst[pixel] = v` | celý kernel místo funkce `pixel`, s obrázky a parametry | nepovinné |
+| `shared`, `barrier()`, `local_id`, `group_id` | sdílená paměť skupiny vláken, čekání na celou skupinu a čísla vlákna a skupiny | nepovinné |
 
 **NumPy**
 
@@ -547,6 +533,8 @@ md(r"""
 | `img.mean(axis=(0, 1))` | průměr přes všechny řádky a sloupce, jedna barva | 1 |
 | `np.pad(a, šířky, mode=...)` | pole rozšířené o okraje podle pravidla, `"edge"`, `"symmetric"`, `"wrap"` nebo `"constant"` | 7 |
 | `a[:, i:i + w]` | výřez pole, pohled na stejná data bez kopie | 7 |
+
+</details>
 """)
 
 md(r"""
@@ -554,6 +542,139 @@ md(r"""
 """)
 
 code(GOAL, hidden=True)
+
+# --- Brainstorming --------------------------------------------------------------
+md(r"""
+## Jak byste to udělali?
+
+V cíli přepínejte `mode` mezi `Blur` a `Sharpen` a zvětšujte `sigma`. Fotka se rozmaže, nebo zaostří. Jak byste rozmazání spočítali, když kernel vidí fotku a polohu svého pixelu?
+
+<details><summary>💭 Nápady</summary>
+
+Dobrý nápad splní tři věci: každý pixel dostane barvu namíchanou z okolí, výsledek se mění plynule a míru rozmazání jde nastavit. Každý pixel se navíc počítá sám z původní fotky, nezávisle na ostatních.
+
+<details><summary>Průměr celé fotky</summary>
+
+Nehodí se. Každý pixel dostane stejnou barvu a z fotky zbude jedna skvrna. Průměr musí být jen z okolí pixelu, sekce 1.
+
+@img(idea_mean_all.png, 520, Původní výřez fotky a jeho průměr přes celou fotku: jedna hnědá barva)
+
+</details>
+
+<details><summary>Průměr čtverců mřížky</summary>
+
+Rozmazání to není, vznikne mozaika. Dva sousední pixely ze dvou čtverců dostanou úplně jiný průměr a hranice čtverců jsou ostré. Sekce 1 ukáže, co s tím.
+
+@img(idea_blocks.png, 520, Původní výřez fotky a mozaika z průměrů čtverců mřížky)
+
+</details>
+
+<details><summary>Průměr čtverce kolem každého pixelu</summary>
+
+Ano, tomu se říká box blur, sekce 1. Sousední pixely mají skoro stejné okolí, výsledek se proto mění plynule. Všem sousedům dává stejnou váhu, a bod se rozmaže do hranaté skvrny. Měkčí rozmazání dá Gauss, sekce 3.
+
+</details>
+
+<details><summary>Barva náhodného souseda</summary>
+
+Nehodí se. Pixel vezme barvu jednoho souseda, a ne průměr, takže vyjde zrnění, ne rozmazání. Průměr mnoha takových pixelů by rozmazání dal, ale to je rovnou průměr okolí.
+
+@img(idea_random.png, 520, Původní výřez fotky a fotka, kde každý pixel vzal barvu náhodného souseda do 8 pixelů: zrnitý obraz)
+
+</details>
+
+<details><summary>Zmenšit fotku a zase zvětšit</summary>
+
+Funguje a je rychlé, zmenšení je průměr čtverců a zvětšení z nich vyhladí přechody. Míru rozmazání ale jde měnit jen po celých násobcích zmenšení a výsledek nevypadá jako rozmazání objektivem. Hry tak dělají rozmazání pro bloom, viz Co jsme vynechali.
+
+@img(idea_resize.png, 780, Původní výřez fotky, jeho osminásobné zmenšení a zvětšení zpátky: rozmazaný obraz)
+
+</details>
+
+<details><summary>Smíchat posunuté kopie fotky</summary>
+
+Ano, a je to totéž co průměr okolí: pixel dostane průměr svých sousedů, jakoby se kopie fotky posunuté o každé `dx` a `dy` sečetly. S různými vahami kopií je to konvoluce, sekce 2, a v NumPy se počítá právě takhle, sekce 7.
+
+</details>
+
+<details><summary>Vynásobit spektrum fotky</summary>
+
+Funguje, rozmazání je ve frekvencích násobení. Pro malé poloměry je to zbytečně složité, ukáže to lekce 4.
+
+</details>
+
+</details>
+
+A jak ve fotce najít hrany?
+
+<details><summary>💭 Nápady</summary>
+
+Hrana je místo, kde se rychle mění světlost. Dobrý nápad najde hrany všech směrů, vyjde z něj síla hrany a neutopí se v šumu.
+
+<details><summary>Práh světlosti</summary>
+
+Nehodí se. Najde světlá místa, ne hrany. Hrana, která odděluje dvě tmavé plochy, pod prahem zmizí, a hrana jen trochu jiné světlosti se k prahu nepřiblíží.
+
+@img(idea_threshold.png, 520, Světlost výřezu fotky a pixely nad prahem 0.6: světlé plochy, ne hrany)
+
+</details>
+
+<details><summary>Rozdíl sousedů</summary>
+
+Skoro. Rozdíl pravého a levého souseda je velký na svislých hranách a nula na vodorovných, potřebujeme tedy dva rozdíly. Jeden pixel k tomu zachytí i šum, proto se rozdíl průměruje přes tři řádky. To je Sobelův operátor, sekce 6.
+
+@img(idea_diff.png, 780, Světlost výřezu fotky, rozdíl vlevo a vpravo s hranami svislými a rozdíl nahoře a dole s hranami vodorovnými)
+
+</details>
+
+<details><summary>Rozdíl fotky a její rozmazané kopie</summary>
+
+Funguje. Rozmazání vyhladí detaily a rozdíl od něj zbude jen na hranách a jemné textuře. Dává sílu hrany, ale ne její směr. Je to blízko druhé derivaci, viz nepovinný konec lekce.
+
+@img(idea_dog.png, 780, Světlost výřezu fotky, její rozmazání a rozdíl obou, který svítí na hranách)
+
+</details>
+
+<details><summary>Jádro hran</summary>
+
+Ano, je to konvoluce s maticí, jejíž váhy sečtené dají nulu, takže na ploše zbude černá. Vyzkoušíte ji v sekci 2.
+
+</details>
+
+<details><summary>Cannyho detektor</summary>
+
+Sobel, ztenčení hran na jeden pixel a dva prahy dají čisté čáry. Stojí na Sobelovi, proto se podíváme na něj, Canny je v části Co jsme vynechali.
+
+</details>
+
+</details>
+
+A jak rozmazat, aby hrany zůstaly?
+
+<details><summary>💭 Nápady</summary>
+
+Dobrý nápad vyhladí plochy a šum a hrany nechá ostré.
+
+<details><summary>Rozmazat jen tam, kde nejsou hrany</summary>
+
+Jde to, hrany najde Sobel a použije se jako maska. Maska je ale ostrá a hrany zůstanou i se šumem, který je k nim přimíchaný. Lepší je rovnou nemíchat sousedy z druhé strany hrany.
+
+</details>
+
+<details><summary>Medián místo průměru</summary>
+
+Prostřední hodnota z okolí hrany drží a vyhladí šum. Na GPU se ale hodnoty musí třídit pro každý pixel a plochy se změní v malované skvrny. Najdete ho v části Co jsme vynechali.
+
+</details>
+
+<details><summary>Míchat jen sousedy podobné barvy</summary>
+
+Přesně tak. Soused za hranou má jinou barvu, a dostane proto malou váhu. To je bilaterální filtr, sekce 4.
+
+</details>
+
+</details>
+""")
 
 # --- 1. The mean ------------------------------------------------------------------
 md(r"""
@@ -577,9 +698,16 @@ code(MEAN)
 md(r"""
 Vznikla mozaika (*pixelation*), ne rozmazání. Dva sousední pixely ze dvou čtverců dostanou úplně jiný průměr, a hranice čtverců jsou proto ostré.
 
-Přepněte `window` na `Around the pixel`. Teď má každý pixel vlastní čtverec se sebou uprostřed. Sousední pixely mají skoro stejné okolí, a výsledek se proto mění plynule. To je **průměr okolí** (*box blur*), `radius` říká, jak moc rozmazává, a s nulou fotku nezmění.
+Přepněte `window` na `Around the pixel`. Teď má každý pixel vlastní čtverec se sebou uprostřed:
+
+$$g(x, y) = \frac{1}{(2r + 1)^2} \sum_{j=-r}^{r} \sum_{i=-r}^{r} f(x + i,\, y + j)$$
+
+Sousední pixely mají skoro stejné okolí, a výsledek se proto mění plynule. To je **průměr okolí** (*box blur*), `radius` říká, jak moc rozmazává, a s nulou fotku nezmění.
+
+<details><summary>📖 K čemu je halo=64</summary>
 
 Čtverec u okraje sahá za okraj vrstvy. Kolik pixelů za okrajem kernel smí číst, říká Sáře `halo=64` na prvním řádku buňky. Bez něj Sára čte jen 16 pixelů za okraj a dál dostane průhlednou černou.
+</details>
 """)
 
 # --- 2. Convolution ---------------------------------------------------------------
@@ -592,11 +720,18 @@ $$g(x, y) = \sum_{j=-r}^{r} \sum_{i=-r}^{r} w(i, j)\, f(x + i, y + j)$$
 
 @img(convolution_window.png, 900, Okno 3 krát 3 nad mřížkou pixelů, každý pixel okna vynásobený svou váhou a součet zapsaný do pixelu uprostřed)
 
+<details><summary>📖 Konvoluce, nebo korelace</summary>
+
 Přísně vzato konvoluce jádro otáčí o 180°, $f(x - i, y - j)$, a vzorec nahoře je korelace (*correlation*). Pro souměrná jádra, jako je rozmazání, vyjdou stejně.
+</details>
 
 ### 🎯 Úkol 1: konvoluce s maticí
 
-Napište konvoluci s libovolnou maticí 3 × 3. `uniform float weights[9]` se pod buňkou ukáže jako mřížka devíti políček, po řádcích: `weights[0]` až `weights[2]` je horní řádek. Váhu políčka ve sloupci `i` a řádku `j` vrací hotová funkce `weight(i, j)`, která zná i dvě volby pod mřížkou. **symmetry** zrcadlí levý horní kout mřížky do ostatních, `Radial` čte jen roh `weights[0]`, hranu `weights[1]` a střed `weights[4]`. **normalise** vydělí váhy jejich součtem, průměr se tak zadá samými jedničkami. Výchozí hodnoty jsou zaostření. Nedokončený kernel vrací původní pixel.
+Napište konvoluci s maticí 3 × 3, tedy $r = 1$ a políčko $(i, j)$ od 0 do 2 patří sousedovi s posunem $(i - 1, j - 1)$:
+
+$$g(x, y) = \sum_{j=0}^{2} \sum_{i=0}^{2} w(i, j)\, f(x + i - 1,\, y + j - 1)$$
+
+`uniform float weights[9]` se pod buňkou ukáže jako mřížka devíti políček, po řádcích: `weights[0]` až `weights[2]` je horní řádek. Váhu políčka ve sloupci `i` a řádku `j` vrací hotová funkce `weight(i, j)`, která zná i dvě volby pod mřížkou. **symmetry** zrcadlí levý horní kout mřížky do ostatních, `Radial` čte jen roh `weights[0]`, hranu `weights[1]` a střed `weights[4]`. **normalise** vydělí váhy jejich součtem, průměr se tak zadá samými jedničkami. Výchozí hodnoty jsou zaostření. Nedokončený kernel vrací původní pixel.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -626,28 +761,30 @@ Zkuste do mřížky zadat další jádra:
 
 @img(kernel_gallery.png, 900, Výřez fotky po konvoluci se čtyřmi jádry z tabulky: průměr, zaostření, hrany a reliéf)
 
-> **❓ Otázka**
-> Součet vah průměru i zaostření je 1, součet vah hran je 0. Co součet vah říká o tom, co jádro udělá s jednobarevnou plochou?
+<details><summary>❓ Otázka: co říká součet vah?</summary>
+
+Součet vah průměru i zaostření je 1, součet vah hran je 0. Co součet vah říká o tom, co jádro udělá s jednobarevnou plochou?
 
 <details><summary>🔑 Odpověď</summary>
 
 Na ploše jsou všichni sousedé stejní, takže výsledek je barva plochy krát součet vah. Se součtem 1 plocha zůstane, jak byla, a jádro mění jen místa, kde se sousedé liší. Se součtem 0 plocha zčerná a zbydou jen změny, hrany. Proto `normalise` dělí váhy jejich součtem, a když je součet 0, nechá je být.
 </details>
 
-### V jakém prostoru počítat
+</details>
 
-Konvoluce zatím vážila čísla sRGB. Ta nejsou množství světla, a vážený součet proto nemíchá světlo tak, jak ho míchá rozostřený objektiv. Hotový kernel pod textem rozmaže fotku průměrem okolí a zaostří ji jako pixel plus `amount` krát jeho rozdíl od průměru, a to v prostoru, který vyberete v `space`. Přepínejte prostory a v Sáře se zblízka dívejte na lžičku a na okraj hrnku, u rozmazání s `radius` 8.
-""")
+Konvoluce zatím vážila čísla sRGB, ta ale nejsou množství světla. **Rozmazání proto počítáme v lineárním RGB**, které míchá světlo jako objektiv, **zaostření a hrany v OKLabu**, který měří rozdíly, jak je vidí oko.
 
-code(SPACES)
+<details><summary>📖 V jakém prostoru počítat</summary>
 
-md(r"""
-> **❓ Otázka**
-> Ve kterém prostoru vypadá nejlépe rozmazání a ve kterém zaostření? Proč ne v tomtéž?
+Obrázek ukazuje rozmazání a zaostření lžičky stejným průměrem okolí v každém ze tří prostorů.
 
-<details><summary>🔑 Odpověď</summary>
+@img(spaces.png, 760, Rozmazání a zaostření výřezu fotky v sRGB, v lineárním RGB a v OKLabu)
 
-Rozmazání v lineárním RGB. Rozostřený objektiv sčítá světlo, a tak odlesky na lžičce zůstanou velké a jasné, v sRGB a v OKLabu se zmenší a ztmavnou. Zaostření v lineárním RGB naopak nakreslí pod okrajem hrnku černou čáru a nad ním oranžový lem. Rozdíl od průměru je u jasné hrany ve světle obrovský a tmavá strana spadne pod nulu, kde se ořízne. OKLab měří rozdíly tak, jak je vidí oko, takže světlý i tmavý lem vyjdou stejně slabé. sRGB je kódované zhruba podle vnímané světlosti a vyjde skoro stejně. Odteď proto rozmazáváme v lineárním RGB, zaostřujeme a hledáme hrany v OKLabu.
+Rozmazání v lineárním RGB nechá odlesky na lžičce velké a jasné, v sRGB a v OKLabu se zmenší a ztmavnou, protože rozostřený objektiv sčítá světlo. Zaostření v lineárním RGB naopak nakreslí pod okrajem hrnku černou čáru a nad ním světlý lem. Rozdíl od průměru je u jasné hrany ve světle obrovský a tmavá strana spadne pod nulu, kde se ořízne. OKLab měří rozdíly tak, jak je vidí oko, takže světlý i tmavý lem vyjdou stejně slabé. sRGB je kódované zhruba podle vnímané světlosti a vyjde skoro stejně.
+
+Chcete to vidět v Sáře? Vložte kernel do nové buňky a přepínejte `space`.
+
+""" + answer(SPACES, "") + r"""
 </details>
 """)
 
@@ -659,7 +796,7 @@ Průměr okolí udělá z jasného bodu hranatou skvrnu, protože soused v rohu 
 
 $$w(i, j) = e^{-\frac{i^2 + j^2}{2\sigma^2}}$$
 
-Ve vzdálenosti $3\sigma$ je váha asi setina té prostřední, kernel proto sčítá jen do poloměru $r = \lceil 3\sigma \rceil$. Kernel počítá v lineárním RGB, jak ukázal konec sekce 2. Poloměr roste se `sigma` až na 24 pixelů, `halo=32` mu dává rezervu.
+Ve vzdálenosti $3\sigma$ je váha asi setina té prostřední, kernel proto sčítá jen do poloměru $r = \lceil 3\sigma \rceil$. Počítá v lineárním RGB. Poloměr roste se `sigma` až na 24 pixelů, `halo=32` mu dává rezervu.
 """)
 
 code(GAUSS_2D)
@@ -671,11 +808,7 @@ Kernel čte $(2r + 1)^2$ sousedů, při $\sigma = 8$ je to 2401 sousedů na pixe
 
 $$e^{-\frac{i^2 + j^2}{2\sigma^2}} = e^{-\frac{j^2}{2\sigma^2}} \cdot e^{-\frac{i^2}{2\sigma^2}}$$
 
-Konvoluce řádku $g_\text{ř}$ se sloupcem $g_\text{s}$ dá právě matici těchto součinů, takže Gaussovo jádro je $G = g_\text{ř} * g_\text{s}$. Konvoluce je navíc asociativní. Je to součet součinů a ten jde sčítat v libovolném pořadí (posuny $\mathbf{u}, \mathbf{v}, \mathbf{t}$ jsou dvourozměrné):
-
-$$\bigl((f * a) * b\bigr)(\mathbf{x}) = \sum_{\mathbf{v}} b(\mathbf{v}) \sum_{\mathbf{u}} a(\mathbf{u})\, f(\mathbf{x} - \mathbf{u} - \mathbf{v}) = \sum_{\mathbf{t}} \underbrace{\Bigl(\sum_{\mathbf{u} + \mathbf{v} = \mathbf{t}} a(\mathbf{u})\, b(\mathbf{v})\Bigr)}_{(a * b)(\mathbf{t})} f(\mathbf{x} - \mathbf{t}) = \bigl(f * (a * b)\bigr)(\mathbf{x})$$
-
-Proto
+Konvoluce řádku $g_\text{ř}$ se sloupcem $g_\text{s}$ dá právě matici těchto součinů, takže Gaussovo jádro je $G = g_\text{ř} * g_\text{s}$. Konvoluce je navíc asociativní, a proto
 
 $$f * G = f * (g_\text{ř} * g_\text{s}) = (f * g_\text{ř}) * g_\text{s}$$
 
@@ -683,17 +816,31 @@ Stačí rozmazat každý řádek a výsledek pak rozmazat po sloupcích. Dva pr�
 
 @img(separable.png, 900, Dvourozměrné Gaussovo jádro jako součin sloupce a řádku a počet čtených sousedů obou postupů v závislosti na poloměru)
 
-> **❓ Otázka**
-> Je oddělitelný průměr 3 × 3? A jádro hran −1 −1 −1 / −1 8 −1 / −1 −1 −1?
+<details><summary>📖 Proč je konvoluce asociativní</summary>
+
+Je to součet součinů a ten jde sčítat v libovolném pořadí (posuny $\mathbf{u}, \mathbf{v}, \mathbf{t}$ jsou dvourozměrné):
+
+$$\bigl((f * a) * b\bigr)(\mathbf{x}) = \sum_{\mathbf{v}} b(\mathbf{v}) \sum_{\mathbf{u}} a(\mathbf{u})\, f(\mathbf{x} - \mathbf{u} - \mathbf{v}) = \sum_{\mathbf{t}} \underbrace{\Bigl(\sum_{\mathbf{u} + \mathbf{v} = \mathbf{t}} a(\mathbf{u})\, b(\mathbf{v})\Bigr)}_{(a * b)(\mathbf{t})} f(\mathbf{x} - \mathbf{t}) = \bigl(f * (a * b)\bigr)(\mathbf{x})$$
+</details>
+
+<details><summary>❓ Otázka: je oddělitelný průměr a jádro hran?</summary>
+
+Je oddělitelný průměr 3 × 3? A jádro hran −1 −1 −1 / −1 8 −1 / −1 −1 −1?
 
 <details><summary>🔑 Odpověď</summary>
 
 Průměr ano, je to sloupec $(1\;1\;1)^{\mathsf T} / 3$ s řádkem $(1\;1\;1) / 3$. Jádro hran ne. V matici sloupce s řádkem je každý řádek násobkem téhož řádku, ale $(-1\;\,{-1}\;\,{-1})$ a $(-1\;\,8\;\,{-1})$ násobky nejsou.
 </details>
 
+</details>
+
 ### 🎯 Úkol 2: první průchod
 
-Napište první průchod, rozmazání po řádku. Výsledek nechte v lineárním RGB, druhý průchod ho čte tak, jak je, a do sRGB převede až výsledek. V Sáře proto vrstva vypadá tmavší. Nedokončený kernel jen převede pixel do lineárního RGB.
+Napište první průchod, rozmazání po řádku. Pro řádek $y$ a $k(i) = e^{-i^2 / 2\sigma^2}$ je
+
+$$g(x, y) = \frac{\sum_{i=-r}^{r} k(i)\, f(x + i, y)}{\sum_{i=-r}^{r} k(i)}$$
+
+Výsledek nechte v lineárním RGB, druhý průchod ho čte tak, jak je, a do sRGB převede až výsledek. V Sáře proto vrstva vypadá tmavší. Nedokončený kernel jen převede pixel do lineárního RGB.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -711,32 +858,25 @@ Napište první průchod, rozmazání po řádku. Výsledek nechte v lineárním
 code(BLUR_X, solve=[(BLUR_X_STUB, SOLUTION_BLUR_X)])
 
 md(r"""
-Druhý průchod je hotový a čte vrstvu `Blur X`. Po změně `sigma` v prvním průchodu nastavte stejnou hodnotu i ve druhém, sám se nespustí.
+Druhý průchod je hotový a čte vrstvu `Blur X`. Po změně `sigma` v prvním průchodu nastavte stejnou hodnotu i ve druhém, sám se nespustí. Vrstva `Blur Y` má vypadat stejně jako `Gauss 2D`.
 """)
 
 code(BLUR_Y)
 
 md(r"""
-### Kolik to ušetří
+<details><summary>📖 Kolik to ušetří</summary>
 
-Vrstva `Blur Y` má vypadat stejně jako `Gauss 2D`. Kolik času dva průchody ušetří, změří `sara.bench`. Nechte všude `sigma` na 3.
-""")
+Kolik času dva průchody ušetří, změří `sara.bench`. Nechte všude `sigma` na 3 a spusťte v nové buňce:
 
-code("""
+```python
 two_d = sara.bench("Gauss 2D", runs=10)
 rows = sara.bench("Blur X", runs=10)
 columns = sara.bench("Blur Y", runs=10)
 print(f"one pass, 2D:  {two_d.gpu_ms:8.2f} ms")
 print(f"two passes:    {rows.gpu_ms + columns.gpu_ms:8.2f} ms")
-""")
+```
 
-md(r"""
-> **❓ Otázka**
-> Nastavte `sigma` ve všech třech kernelech na 8 a buňku spusťte znovu. Kolikrát se zpomalil `Gauss 2D` a kolikrát dva průchody? Odpovídá to počtu sousedů?
-
-<details><summary>🔑 Odpověď</summary>
-
-Poloměr vzrostl z 9 na 24. Jeden průchod čte $49^2 / 19^2$, asi 6.7krát víc sousedů, dva průchody $98 / 38$, asi 2.6krát víc. Naměřené poměry tomu odpovídají jen zhruba. GPU čte sousedy z rychlé vyrovnávací paměti (*cache*), a u malého poloměru tvoří většinu času spuštění a zápis vrstvy. Dva průchody navíc celou vrstvu `Blur X` jednou zapíšou a znovu přečtou, takže při malém poloměru nemusí vyhrát. Nakonec vraťte `sigma` všude na 3.
+Nastavte `sigma` ve všech třech kernelech na 8 a buňku spusťte znovu. Poloměr vzrostl z 9 na 24. Jeden průchod čte $49^2 / 19^2$, asi 6.7krát víc sousedů, dva průchody $98 / 38$, asi 2.6krát víc. Naměřené poměry tomu odpovídají jen zhruba. GPU čte sousedy z rychlé vyrovnávací paměti (*cache*), a u malého poloměru tvoří většinu času spuštění a zápis vrstvy. Dva průchody navíc celou vrstvu `Blur X` jednou zapíšou a znovu přečtou, takže při malém poloměru nemusí vyhrát. Nakonec vraťte `sigma` všude na 3.
 </details>
 """)
 
@@ -754,7 +894,7 @@ Výsledek se jako u Gausse dělí součtem vah.
 
 ### 🎯 Úkol 3: bilaterální filtr
 
-Doplňte barevnou váhu. Funkce `lab(p)` vrátí barvu pixelu `p` v OKLabu, `centre` je barva pixelu uprostřed a `sigma_color` je $\sigma_c$. Nedokončený kernel je Gauss 2D.
+Doplňte barevnou váhu, druhý činitel vzorce výše. Funkce `lab(p)` vrátí barvu pixelu `p` v OKLabu, `centre` je barva pixelu uprostřed a `sigma_color` je $\sigma_c$. Nedokončený kernel je Gauss 2D.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -773,18 +913,21 @@ code(BILATERAL, solve=[(BILATERAL_STUB, SOLUTION_BILATERAL)])
 md(r"""
 Porovnejte vrstvy `Bilateral` a `Gauss 2D`. S `sigma_color` 0.05 zůstanou okraj hrnku i lžička ostré, podšálek a dřevo se vyhladí. S velkou `sigma_color` se výsledek blíží `Gauss 2D`.
 
-> **❓ Otázka**
-> Proč bilaterální filtr nejde spočítat ve dvou průchodech jako Gauss?
+<details><summary>❓ Otázka: proč to nejde ve dvou průchodech?</summary>
+
+Proč bilaterální filtr nejde spočítat ve dvou průchodech jako Gauss?
 
 <details><summary>🔑 Odpověď</summary>
 
 Barevná váha závisí na barvě pixelu uprostřed, a každý pixel má proto jiné jádro. Filtr není konvolucí s jedním jádrem, a tak na něj asociativita nejde použít. Dva průchody po řádcích a sloupcích se používají jen jako rychlá náhrada s chybami u šikmých hran.
 </details>
+
+</details>
 """)
 
 # --- 5. Edges of the picture -----------------------------------------------------------
 md(r"""
-## 5. Za okrajem obrázku
+## 5. Za okrajem obrázku (nepovinné)
 
 Pixel u okraje nemá sousedy na všech stranách. Co číst za okrajem, je potřeba zvolit:
 
@@ -797,34 +940,26 @@ Pixel u okraje nemá sousedy na všech stranách. Co číst za okrajem, je potř
 
 @img(edge_modes.png, 900, Fotka posunutá doprava dolů a čtyři pravidla pro to, co se objeví za okrajem: černá, natažený okraj, zrcadlo a dlaždice)
 
-Sára sama čte za okrajem nejbližší pixel, tedy Clamp, až do vzdálenosti `halo`. Kernel níže fotku posune o `dx` a `dy` a za okrajem čte podle pravidla `mode`. Rozmazání u okraje čte za okraj stejně, jen méně daleko.
+Sára sama čte za okrajem nejbližší pixel, tedy Clamp, až do vzdálenosti `halo`. Kernel níže je hotový, posune fotku o `dx` a `dy` a za okrajem čte podle pravidla `mode`. Rozmazání u okraje čte za okraj stejně, jen méně daleko.
 
-### 🎯 Úkol 4: pravidla okraje
+<details><summary>📖 Jak fungují Mirror a Wrap</summary>
 
-Doplňte do `fetch` větve `CLAMP`, `MIRROR` a `WRAP`. Každá z pozice `p` spočítá pozici uvnitř plátna a přečte ji. Větev `ZERO` je hotová jako příklad. Výchozí pravidlo je Wrap, nedokončený kernel je proto černý.
-
-<details><summary>💡 Nápověda</summary>
-
-1. Clamp: `clamp` funguje i na `ivec2`, po složkách.
-2. Mirror pro souřadnici $x$ v plátně šířky $W$: záporné $x$ se zrcadlí na $-1 - x$, $x \ge W$ na $2W - 1 - x$. Obojí jde napsat po složkách funkcemi `max` a `min`.
-3. Wrap je zbytek po dělení, který je i pro záporné $x$ od 0 do $W - 1$. Operátor `%` v GLSL na záporných číslech výsledek nezaručuje. Pomůže $x - W \lfloor x / W \rfloor$, s dělením ve `float`.
-</details>
-
-<details><summary>🔑 Řešení</summary>
-
-""" + answer(SOLUTION_FETCH.replace("\n        ", "\n").lstrip()) + r"""
+Clamp je `clamp` po složkách. Mirror pro souřadnici $x$ v plátně šířky $W$ zrcadlí záporné $x$ na $-1 - x$ a $x \ge W$ na $2W - 1 - x$, což jde napsat funkcemi `max` a `min`. Wrap je zbytek po dělení šířkou, který je i pro záporné $x$ od 0 do $W - 1$. Operátor `%` v GLSL na záporných číslech výsledek nezaručuje, proto kernel počítá $x - W \lfloor x / W \rfloor$ s dělením ve `float`.
 </details>
 """)
 
-code(EDGES, solve=[(FETCH_STUB, SOLUTION_FETCH)])
+code(EDGES)
 
 md(r"""
-> **❓ Otázka**
-> Které pravidlo se hodí k rozmazání fotky, které k rozmazání dlaždice textury a proč je Zero u rozmazání skoro vždy špatně?
+<details><summary>❓ Otázka: které pravidlo se k čemu hodí?</summary>
+
+Které pravidlo se hodí k rozmazání fotky, které k rozmazání dlaždice textury a proč je Zero u rozmazání skoro vždy špatně?
 
 <details><summary>🔑 Odpověď</summary>
 
 U fotky Mirror nebo Clamp: za okrajem pokračuje něco podobného tomu, co je u okraje. Clamp u velkého poloměru dělá pruhy z natažených pixelů, Mirror ne. Textura, která se má opakovat, potřebuje Wrap, jinak by se na švech dlaždic objevil skok. Zero přimíchá do okrajů černou a okraje rozmazané fotky ztmavnou. Fourierova transformace v lekci o frekvencích bere obrázek vždy jako dlaždici, tedy Wrap.
+</details>
+
 </details>
 """)
 
@@ -840,9 +975,13 @@ Dvojice derivací $(g_x, g_y)$ je **gradient**. Jeho délka je síla hrany, jeho
 
 @img(sobel.png, 900, Sobelova jádra Gx a Gy, gradient na hraně kolmo na ni a barevné kolo směrů, které kernel používá)
 
-### 🎯 Úkol 5: Sobel
+### 🎯 Úkol 4: Sobel
 
-Spočítejte gradient světlosti OKLab L, `light(p)`, v proměnné `g`: `g.x` je součet s jádrem $G_x$, `g.y` s jádrem $G_y$. Funkce `shade` obarví hranu podle směru, když zapnete `direction`. Nedokončený kernel vrací černou.
+Spočítejte gradient světlosti OKLab L, $L(x, y)$ je `light(p)`, v proměnné `g`:
+
+$$g_x = \sum_{j=-1}^{1} \sum_{i=-1}^{1} G_x(i, j)\, L(x + i, y + j), \qquad g_y = \sum_{j=-1}^{1} \sum_{i=-1}^{1} G_y(i, j)\, L(x + i, y + j)$$
+
+`g.x` je součet s jádrem $G_x$, `g.y` s jádrem $G_y$. Funkce `shade` obarví hranu podle směru, když zapnete `direction`. Nedokončený kernel vrací černou.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -860,12 +999,15 @@ Spočítejte gradient světlosti OKLab L, `light(p)`, v proměnné `g`: `g.x` je
 code(SOBEL, solve=[(SOBEL_STUB, SOLUTION_SOBEL)])
 
 md(r"""
-> **❓ Otázka**
-> Zapněte `direction`. Proč mají dvě strany tenké čáry, třeba okraje lžičky, opačné barvy?
+<details><summary>❓ Otázka: proč mají dvě strany čáry opačné barvy?</summary>
+
+Zapněte `direction`. Proč mají dvě strany tenké čáry, třeba okraje lžičky, opačné barvy?
 
 <details><summary>🔑 Odpověď</summary>
 
 Barva je směr gradientu, od tmavší strany ke světlejší. Tenká světlá čára má tmavé okolí na obou stranách: na jedné straně světlost roste, na druhé klesá, a gradienty míří proti sobě. Opačné směry dostanou na barevném kole opačné barvy. Cannyho detektor hran to využívá: hranu ztenčí na jeden pixel tak, že nechá jen místa, kde je síla největší ve směru gradientu.
+</details>
+
 </details>
 """)
 
@@ -877,121 +1019,91 @@ Krita kernely nespouští a NumPy nemá vlákno na pixel, umí ale celé pole na
 
 @img(numpy_shifts.png, 760, Řádek rozšířený o okraje a pět výřezů posunutých o jeden pixel, každý vynásobený svou vahou a sečtený)
 
-Buňka pod textem má pomocné funkce: převody sRGB a OKLabu, `rgba` a váhy Gaussova jádra `gaussian_1d`. Stačí ji spustit.
+Filtr je níže přepsaný do NumPy hotový. Spusťte obě buňky s kódem a pak třetí. První obsahuje převody barev, váhy Gaussova jádra `gaussian_1d` a `PARAMS`, druhá `blur` a `apply`.
+
+**Zaostření** (*unsharp mask*) přičte k obrázku jeho rozdíl od rozmazaného obrázku. Rozdíl jsou detaily menší než $\sigma$ a `amount` $a$ říká, kolikrát je zesílit:
+
+$$g = f + a\,\bigl(f - \text{blur}(f)\bigr)$$
+
+`Blur` počítá v lineárním RGB, `Sharpen` v OKLabu, jak ukázala sekce 2.
 """)
 
-code(HELPERS_NP)
+code(HELPERS_NP + "\n\n\n" + PARAMS_NP)
 
-md(r"""
-### 🎯 Úkol 6: rozmazání v NumPy
+code(SOLUTION_BLUR_NP + "\n\n\n" + SOLUTION_APPLY)
 
-Napište `blur(a, sigma)`: rozmazání po řádcích a pak po sloupcích, okraj podle pravidla Clamp. Váhy dává `gaussian_1d(sigma)`, pole délky $2r + 1$. Výsledek se zapíše do vrstvy `Blur NumPy`, která má vypadat jako `Gauss 2D` se `sigma` 3.
-
-<details><summary>💡 Nápověda</summary>
-
-1. `np.pad(a, ((0, 0), (r, r), (0, 0)), mode="edge")` rozšíří pole o `r` pixelů vlevo a vpravo.
-2. Výřez `p[:, i:i + w]` je obrázek posunutý o `i - r` pixelů. Sečtěte `k[i]` krát výřez pro všechna `i`.
-3. Pak totéž pro sloupce, s rozšířením v ose 0.
-</details>
-
-<details><summary>🔑 Řešení</summary>
-
-""" + answer(SOLUTION_BLUR_NP) + r"""
-</details>
-""")
-
-code(BLUR_NP_GIVEN + f"""
-
-
-lin = srgb_to_linear(photo.read()[..., :3])
-start = time.perf_counter()
-soft = blur(lin, {SIGMA})
-took = time.perf_counter() - start
-doc.new_layer("Blur NumPy", rgba(linear_to_srgb(soft)))
-print(f"NumPy blur: {{took * 1000:.1f}} ms")
-""", solve=[(BLUR_NP_GIVEN, SOLUTION_BLUR_NP)])
-
-md(r"""
-**Zaostření** (*unsharp mask*) přičte k obrázku jeho rozdíl od rozmazaného obrázku, $f + a\,(f - \text{blur}(f))$. Rozdíl jsou detaily menší než $\sigma$ a `amount` $a$ říká, kolikrát je zesílit. Proč to funguje, ukazuje nepovinná sekce 9.
-
-### 🎯 Úkol 7: filtr
-
-Napište `apply` s režimy `Blur` v lineárním RGB a `Sharpen` v OKLabu. Zaostřená barva může vyjít mimo sRGB, záporné světlo ořízněte na nulu.
-
-<details><summary>💡 Nápověda</summary>
-
-1. Převeďte barvu do lineárního RGB. `Blur` ji rozmaže funkcí `blur`.
-2. `Sharpen` ji převede `linear_to_oklab`, přičte `amount` krát rozdíl od `blur(lab, sigma)` a vrátí `oklab_to_linear`, oříznuté `np.maximum(..., 0.0)`.
-3. Výsledek převeďte do sRGB, alfa zůstává z `img`.
-</details>
-
-<details><summary>🔑 Řešení</summary>
-
-""" + answer(SOLUTION_APPLY) + r"""
-</details>
-""")
-
-code(PARAMS_NP + "\n\n\n" + APPLY_GIVEN + """
-
-
+code("""
 sara.live(apply, PARAMS, source="coffee", target="Filter NumPy")
-""", solve=[(APPLY_GIVEN, SOLUTION_APPLY)])
+""")
 
 md(r"""
-### 🎯 Úkol 8: filtr v Kritě
+Vrstva `Filter NumPy` vypadá stejně jako `Goal`.
 
-Vložte filtr do `pga_filter/effect.py` s `TITLE = "Blur and sharpen"` a vyzkoušejte ho na vlastní fotce. Porovnejte rychlost s Gaussovým rozmazáním, které má Krita vestavěné.
+<details><summary>📖 Co se v NumPy mění oproti kernelu</summary>
+
+Kernel počítá jeden pixel, NumPy celé pole najednou. Tím se liší hlavně tyhle řádky:
+
+| Kernel | NumPy |
+|---|---|
+| `pixel(ivec2 at)` pro jeden pixel | `apply(img, ...)` pro celé pole |
+| cyklus přes `dx` sčítá $2r + 1$ sousedů | `sum(k[i] * p[:, i:i + w] for i in range(len(k)))`, výřezy celého pole |
+| Sára čte za okrajem nejbližší pixel | `np.pad(a, ..., mode="edge")`, Clamp |
+| `srgb_to_linear_srgb`, `linear_srgb_to_oklab` z knihoven | `srgb_to_linear` a `linear_to_oklab` v pomocných funkcích, s maticemi |
+| `halo` a `sigma` jako parametry kernelu | `PARAMS` a argumenty `apply` |
+
+</details>
+
+### 🎯 Úkol 5: filtr v Kritě
+
+V `krita/pga_filter/effect.py` nahraďte všechno pod řádkem `import numpy as np` obsahem obou buněk s kódem výše a nastavte `TITLE = "Blur and sharpen"`. Vyzkoušejte filtr v Kritě na vlastní fotce a porovnejte rychlost s Gaussovým rozmazáním, které má Krita vestavěné.
 
 <details><summary>💡 Nápověda</summary>
 
-1. Do `effect.py` patří pomocné funkce, vaše `blur`, `PARAMS` a `apply`.
+1. Do `effect.py` patří pomocné funkce, `PARAMS`, `blur` a `apply`, nic z buňky se `sara.live`.
 2. Náhled počítá jen malou kopii, pomalé je až Apply na celé fotce. Zkuste filtr nejdřív na výběru. Ve zmenšeném náhledu „Whole region, scaled down“ vypadá rozmazání silnější, skutečnou sílu ukáže „Centre at full size“.
 </details>
 
-> **❓ Otázka**
-> Vystřižený předmět na průhledné vrstvě má po rozmazání kolem sebe tmavý lem. Proč, a jak mu předejít?
+<details><summary>❓ Otázka: proč má vystřižený předmět po rozmazání tmavý lem?</summary>
+
+Vystřižený předmět na průhledné vrstvě má po rozmazání kolem sebe tmavý lem. Proč, a jak mu předejít?
 
 <details><summary>🔑 Odpověď</summary>
 
 Průhledné pixely mají nějakou barvu, obvykle černou, a rozmazání ji přimíchá k barvě předmětu, i když ji nikdo nevidí. Pomůže rozmazávat barvu vynásobenou alfou (*premultiplied alpha*), rozmazat i alfu a výslednou barvu alfou zase vydělit. Průhledný pixel pak k barvě nepřidá nic.
 </details>
+
+</details>
 """)
 
-# --- 8. Shared memory (optional) ---------------------------------------------------
+# --- Optional -----------------------------------------------------------------------
 md(r"""
-## 8. Sdílená paměť (nepovinné)
+## Nepovinné: sdílená paměť a druhá derivace
+
+Obojí je rozšíření, které se do hodiny nevejde.
+
+<details><summary>📖 Sdílená paměť: rychlejší první průchod</summary>
 
 V prvním průchodu čte každé vlákno $2r + 1$ pixelů řádku a sousední vlákna čtou skoro tytéž pixely. Při $\sigma = 8$ přečte GPU každý pixel 49krát a 49krát ho převede ze sRGB. Vlákna jedné **skupiny** (*workgroup*) mají společnou rychlou **sdílenou paměť** (*shared memory*). Skupina si do ní řádek načte jednou, každé vlákno jeden nebo dva pixely, počká na ostatní a pak sčítá ze sdílené paměti.
 
 @img(shared_tile.png, 900, Skupina 64 vláken načte do sdílené paměti svých 64 pixelů a 24 pixelů na každé straně, pak každé vlákno sečte 49 hodnot ze sdílené paměti)
 
-Funkce `pixel` sdílenou paměť nemá, kernel je proto napsaný celý: řádek `kernel` se jménem, obrázky `src` a `dst`, parametry pod `params:` a skupina 64 vláken v řádku. `local_id` je číslo vlákna ve skupině, `group_id` číslo skupiny a `pixel` pozice vlákna v obrázku. `barrier()` počká, až všechna vlákna skupiny dojdou na totéž místo, jinak by vlákno mohlo číst, kam soused ještě nezapsal. Parametr celého kernelu nemá výchozí hodnotu, dává mu ji první řádek buňky, `sigma=3`.
+Funkce `pixel` sdílenou paměť nemá, kernel je proto napsaný celý: řádek `kernel` se jménem, obrázky `src` a `dst`, parametry pod `params:` a skupina 64 vláken v řádku. `local_id` je číslo vlákna ve skupině, `group_id` číslo skupiny a `pixel` pozice vlákna v obrázku. `barrier()` počká, až všechna vlákna skupiny dojdou na totéž místo, jinak by vlákno mohlo číst, kam soused ještě nezapsal. Parametr celého kernelu nemá výchozí hodnotu, dává mu ji první řádek buňky, `sigma=3`. Celý kernel vidí obrázek včetně okraje `halo`, takže jeho `pixel` je posunutý o 32 proti pozici na plátně. Zápis do `dst` na stejný `pixel` přistane na správném místě.
 
-Celý kernel vidí obrázek včetně okraje `halo`, takže jeho `pixel` je posunutý o 32 proti pozici na plátně a `image_size(src)` je o 64 větší než plátno. Zápis do `dst` na stejný `pixel` přistane na správném místě.
-""")
+Vložte kernel do nové buňky a v další buňce změřte oba první průchody:
 
-code(SHARED)
+""" + answer(SHARED, "") + r"""
 
-code("""
+```python
 shared = sara.bench("Blur X shared", runs=10)
 plain = sara.bench("Blur X", runs=10)
 print(f"first pass, plain:   {plain.gpu_ms:8.3f} ms")
 print(f"first pass, shared:  {shared.gpu_ms:8.3f} ms")
-""")
+```
 
-md(r"""
-> **❓ Otázka**
-> Zkuste měření s `sigma` 1, 3 a 8 v obou kernelech. Kdy se sdílená paměť vyplatí a kdy ne?
-
-<details><summary>🔑 Odpověď</summary>
-
-Vyplatí se, když vlákna čtou hodně stejných pixelů a čtení je drahé: velký poloměr a převod ze sRGB u každého čtení. Kernel se sdílenou pamětí čte a převádí každý pixel nanejvýš dvakrát, ať je poloměr jakýkoli, a jeho čas skoro neroste. Při malém poloměru je rozdíl malý, protože GPU drží nedávno čtené pixely ve vyrovnávací paměti samo, a načtení do sdílené paměti a čekání na `barrier()` něco stojí. Velikost sdíleného pole musí být známá při překladu, a poloměr je proto omezený konstantou `R_MAX`.
+Zkuste měření s `sigma` 1, 3 a 8 v obou kernelech. Sdílená paměť se vyplatí, když vlákna čtou hodně stejných pixelů a čtení je drahé: velký poloměr a převod ze sRGB u každého čtení. Kernel se sdílenou pamětí čte a převádí každý pixel nanejvýš dvakrát, ať je poloměr jakýkoli, a jeho čas skoro neroste. Při malém poloměru je rozdíl malý, protože GPU drží nedávno čtené pixely ve vyrovnávací paměti samo, a načtení do sdílené paměti a čekání na `barrier()` něco stojí. Velikost sdíleného pole musí být známá při překladu, a poloměr je proto omezený konstantou `R_MAX`.
 </details>
-""")
 
-# --- 9. Second derivative (optional) ----------------------------------------------
-md(r"""
-## 9. Druhá derivace (nepovinné)
+<details><summary>📖 Druhá derivace a Laplaceův operátor</summary>
 
 Sobel měří první derivaci, strmost. Hrana je tam, kde je strmost největší, a v tom místě má **druhá derivace** nulu a mění znaménko: na tmavé straně hrany je kladná, na světlé záporná.
 
@@ -1019,16 +1131,11 @@ Odečtení druhé derivace hranu zostří: na tmavé straně je $f''$ kladná a 
 
 Druhá derivace ale zesílí nejvíc ty nejjemnější detaily. Vlna $\cos \omega x$ vyjde z jádra $(1\;\,{-2}\;\,1)$ jako $-4\sin^2(\omega / 2)\,\cos\omega x$, tedy vynásobená číslem, které roste s frekvencí. Nejvíc tedy zesílí šum, a proto se Laplace počítá z rozmazaného obrázku (*Laplacian of Gaussian*, LoG).
 
-Zaostření z úkolu 7 (*unsharp mask*) je také identita minus Laplace, jen ve větším měřítku. Taylorův rozvoj rozmazání do druhého řádu, zprůměrovaný s Gaussovými vahami, dá
+Zaostření z úkolu 5 (*unsharp mask*) je také identita minus Laplace, jen ve větším měřítku. Taylorův rozvoj rozmazání do druhého řádu, zprůměrovaný s Gaussovými vahami, dá
 
 $$\text{blur}(f) \approx f + \frac{\sigma^2}{2}\,\nabla^2 f, \qquad f + a\,(f - \text{blur}(f)) \approx f - a\,\frac{\sigma^2}{2}\,\nabla^2 f$$
 
-> **❓ Otázka**
-> Zadejte do mřížky v úkolu 1 Laplaceovo jádro, 0 1 0 / 1 −4 1 / 0 1 0. Proč je vrstva skoro celá černá, a kde svítí?
-
-<details><summary>🔑 Odpověď</summary>
-
-Součet vah je 0, takže každá plocha zčerná. Svítí jen tmavá strana hran, kde je druhá derivace kladná, a jemná textura. Na světlé straně hran je výsledek záporný a obrazovka ho ukáže jako černou. Nakonec vraťte do mřížky zaostření.
+Zadejte do mřížky v úkolu 1 Laplaceovo jádro, 0 1 0 / 1 −4 1 / 0 1 0. Vrstva je skoro celá černá, protože součet vah je 0 a každá plocha zčerná. Svítí jen tmavá strana hran, kde je druhá derivace kladná, a jemná textura. Na světlé straně hran je výsledek záporný a obrazovka ho ukáže jako černou. Nakonec vraťte do mřížky zaostření.
 </details>
 """)
 
@@ -1041,30 +1148,35 @@ md(r"""
 - Konvoluce je asociativní, a jádro, které je konvolucí sloupce s řádkem, jde proto spočítat ve dvou průchodech: $2(2r + 1)$ sousedů místo $(2r + 1)^2$. Takové je Gaussovo jádro, průměr i Sobel.
 - Rozmazání míchá světlo, a proto počítá v lineárním RGB. Zaostření a hrany měří rozdíly, jak je vidí oko, a proto v OKLabu.
 - Bilaterální filtr váží souseda i podle rozdílu barev a hrany nerozmaže. Jádro se mění od pixelu k pixelu, a dva průchody proto nejdou.
-- Za okrajem je nutné zvolit pravidlo: Zero, Clamp, Mirror nebo Wrap. Fotce se hodí Mirror nebo Clamp, textuře Wrap.
 - Sobelův operátor odhadne gradient světlosti. Jeho délka je síla hrany, směr míří kolmo na hranu.
-- NumPy počítá konvoluci jako vážený součet posunutých výřezů celého pole.
+- NumPy počítá konvoluci jako vážený součet posunutých výřezů celého pole, s okrajem podle zvoleného pravidla.
 
-### Co jsme vynechali
+<details><summary>📖 Co jsme vynechali</summary>
 
 - **Rozmazání s proměnným poloměrem.** Hloubka ostrosti nebo rozmazání podle masky mění $\sigma$ pixel od pixelu a jádro pak není oddělitelné.
 - **Rychlé aproximace.** Několik průměrů za sebou se blíží Gaussovi. Kawaseho rozmazání a pyramida zmenšených obrázků jsou rychlé způsoby, jak hry dělají rozmazání pro bloom.
+- **Medián.** Prostřední hodnota okolí místo průměru hrany drží, ale na GPU se musí třídit.
 - **Cannyho detektor hran.** Gaussovo rozmazání, Sobel, ztenčení hran na jeden pixel a dvě prahové hodnoty dají dohromady čisté čáry místo šedých pruhů.
 - **Konvoluce přes Fourierovu transformaci.** Pro velká jádra je rychlejší násobit spektra, jak ukáže lekce o frekvencích.
 
-### Bonusové úkoly
+</details>
+
+<details><summary>🎯 Bonusové úkoly</summary>
 
 1. **Průměr v konstantním čase.** Napište průměr okolí v NumPy jako rozdíl kumulativních součtů, `np.cumsum`, takže čas nezávisí na poloměru. Třikrát za sebou dá skoro Gausse.
 2. **Bilaterální filtr v NumPy.** Přidejte do filtru pro Kritu režim `Bilateral`. Jako u `blur` je to vážený součet výřezů, jen váha každého výřezu je pole, ne číslo.
 3. **Ostření jen na hranách.** Použijte sílu hrany ze Sobela jako masku zaostření, aby se nezesílil šum na plochách.
-""")
+4. **Pravidla okraje sami.** Smažte v kernelu `Shifted` větve `CLAMP`, `MIRROR` a `WRAP` a napište je znovu, každá z pozice `p` spočítá pozici uvnitř plátna. Nápověda je v 📖 pod kernelem.
 
-md(r"""
-### Nápady na semestrální práci
+</details>
+
+<details><summary>📖 Nápady na semestrální práci</summary>
 
 - Rozostření podle masky: plugin rozmaže vrstvu podle světlosti druhé vrstvy nebo výběru, jako tilt-shift fotografie.
 - Detektor hran s volbou operátoru (Sobel, Scharr, Prewitt) a výstupem jako čárová kresba nebo maska výběru.
 - Vyhlazení pleti nebo šumu bilaterálním filtrem s maskou, kde se vyhlazuje.
+
+</details>
 """)
 
 
