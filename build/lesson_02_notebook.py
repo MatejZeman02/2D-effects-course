@@ -421,7 +421,12 @@ md(r"""
 
 Na konci lekce budete mít generátor krajiny: ostrovy s plážemi, lesy, skalami a sněhem, osvětlené sluncem, které jde posouvat. Nevzniká z žádného obrázku, každý pixel se spočítá jen ze své polohy. Cestou napíšete hodnotový šum, fraktální šum a Voroného šum, ze kterých se skládá většina procedurálních textur.
 
-Spusťte buňku. Otevře nový dokument a přidá bílou vrstvu `Base` přes celé plátno. Kernely z ní nic nečtou, Sára podle ní jen pozná, přes jakou plochu je spustit.
+Spusťte buňku. Otevře nový dokument a přidá bílou vrstvu `Base` přes celé plátno.
+
+<details><summary>📖 K čemu je bílá vrstva</summary>
+
+Kernely z ní nic nečtou, Sára podle ní jen pozná, přes jakou plochu je spustit.
+</details>
 """)
 
 code("""
@@ -435,7 +440,7 @@ base = doc.new_layer("Base", np.ones_like(pixels))   # white, the size of the ca
 """)
 
 md(r"""
-### Nové funkce v této lekci
+<details><summary>📖 Nové funkce v této lekci</summary>
 
 **Kernel v buňce `%%gmacs`**
 
@@ -452,6 +457,8 @@ md(r"""
 | `np.gradient(a)` | rozdíly sousedních prvků ve směru y a x | 5 |
 | `np.linalg.norm(n, axis=-1, keepdims=True)` | délka každého vektoru v poli | 5 |
 | `np.maximum(a, b)`, `np.radians(x)` | větší ze dvou po prvcích, stupně na radiány | 5 |
+
+</details>
 """)
 
 md(r"""
@@ -555,7 +562,10 @@ Svah natočený ke slunci je světlejší. Normálu dá sklon výškové mapy a 
 md(r"""
 ## 1. Hodnotový šum
 
-Náhodná čísla dává hash jako v úvodní lekci. `cell_hash` v kernelu níže promíchá bity celých souřadnic buňky mřížky, `random1` z nich udělá číslo od 0 do 1 a `random2` dvě. Počítá jen s celými čísly, takže NumPy v sekci 5 dostane bit po bitu stejná čísla.
+<details><summary>📖 Náhodná čísla dává hash jako v úvodní lekci</summary>
+
+`cell_hash` v kernelu níže promíchá bity celých souřadnic buňky mřížky, `random1` z nich udělá číslo od 0 do 1 a `random2` dvě. Počítá jen s celými čísly, takže NumPy v sekci 5 dostane bit po bitu stejná čísla.
+</details>
 
 Volba `Cells` rozdělí plátno na čtverce o straně `scale` pixelů a každému dá číslo z hashe, se `scale = 1` je to bílý šum. **Hodnotový šum** (*value noise*) dá náhodná čísla jen do rohů buněk a mezi nimi plynule přechází:
 
@@ -632,7 +642,12 @@ Dělení součtem vah drží výsledek mezi 0 a 1.
 
 ### 🎯 Úkol 2: fBm
 
-Napište `fbm(p)` s `octaves` oktávami. Mezi oktávami polohu kromě zjemnění posuňte o půl buňky, `p = p * lacunarity + 0.5`. Jinak by se mřížky všech oktáv sešly v levém horním rohu ve stejné buňce se stejným číslem.
+Napište `fbm(p)` s `octaves` oktávami. Mezi oktávami polohu kromě zjemnění posuňte o půl buňky, `p = p * lacunarity + 0.5`.
+
+<details><summary>📖 Proč posun o půl buňky</summary>
+
+Jinak by se mřížky všech oktáv sešly v levém horním rohu ve stejné buňce se stejným číslem.
+</details>
 
 <details><summary>💡 Nápověda</summary>
 
@@ -688,7 +703,10 @@ kde $c^*$ je buňka nejbližšího bodu.
 
 @img(voronoi.png, 900, Voroného šum po krocích: mřížka s body ve středech, body posunuté náhodně, jeden pixel měří vzdálenosti k bodům 3 × 3 buněk, nejbližší F1 a druhý nejbližší F2, a obrazy F1 a F2 - F1 pro všechny pixely)
 
+<details><summary>📖 Co ukazují F1 a F2 - F1</summary>
+
 $F_1$ je u bodu nula a od něj roste, takže body jsou tmavé skvrny. $F_2 - F_1$ je nula tam, kde má pixel k oběma bodům stejně daleko, tedy na hranicích oblastí, a nakreslí síť jako dlažba nebo kůže.
+</details>
 
 ### 🎯 Úkol 3: F2 a barva buňky
 
@@ -714,12 +732,16 @@ code(VORONOI.format(hash=HASH_GMACS, loop=VORONOI_LOOP_GIVEN), solve=[(VORONOI_L
 md(r"""
 `F2 - F1` kreslí tmavé čáry na hranicích buněk a `Cell` obarví každou buňku jednou barvou. S `jitter = 0` jsou buňky zase čtverce.
 
-> **❓ Otázka**
-> Přepněte na `Cell` a táhněte posuvníkem `scale`. Buňky rostou od levého horního rohu, ale každá si nechává svou barvu. Proč?
+<details><summary>❓ Otázka: proč si buňky při změně scale nechávají barvu?</summary>
+
+Přepněte na `Cell` a táhněte posuvníkem `scale`. Buňky rostou od levého horního rohu, ale každá si nechává svou barvu. Proč?
 
 <details><summary>🔑 Odpověď</summary>
 
 Barva je `random1` buňky mřížky, ke které patří nejbližší bod, tedy funkce celých souřadnic té buňky. `scale` mění jen to, kolik pixelů buňka zabírá. Buňka (3, 2) zůstává buňkou (3, 2) se stejným hashem i se stejně posunutým bodem.
+
+</details>
+
 </details>
 """)
 
@@ -758,9 +780,14 @@ Reliéf dá krajině světlo podle Lambertova modelu, jak ho znáte z OpenGL. No
 
 $$n = \operatorname{normalize}\bigl(-r\,\partial_x h,\; -r\,\partial_y h,\; 1\bigr), \qquad \partial_x h \approx \frac{h(x+1, y) - h(x-1, y)}{2}$$
 
-a $\partial_y h$ stejně se sousedy dole a nahoře. $r$ je převýšení `relief`, bez něj by byla krajina skoro rovná. Slunce svítí 45° nad obzorem ze směru `sun`, ve stupních proti směru hodinových ručiček od osy x. Osa y v obrázku míří dolů, odtud minus u sinu:
+a $\partial_y h$ stejně se sousedy dole a nahoře. $r$ je převýšení `relief` a $s$ směr slunce `sun`:
 
 $$l = \operatorname{normalize}(\cos s,\; -\sin s,\; 1)$$
+
+<details><summary>📖 Proč převýšení a minus u sinu</summary>
+
+Výška fBm je od 0 do 1 a plátno má stovky pixelů, takže bez převýšení by byla krajina skoro rovná. Slunce svítí 45° nad obzorem ze směru `sun`, ve stupních proti směru hodinových ručiček od osy x. Osa y v obrázku míří dolů, odtud minus u sinu.
+</details>
 
 @img(normal.png, 900, Lambertův model v řezu krajinou: normály n, směr ke slunci l a jas 0.25 + 0.75 max(n · l, 0), svah otočený ke slunci je světlejší a hladina je rovná)
 
@@ -785,7 +812,12 @@ code(TERRAIN.format(into="Terrain", stops=STOPS_GMACS, hash=HASH_GMACS, value=VA
      solve=[(COLOUR_GIVEN, SOLUTION_COLOUR), (LIGHT_GIVEN, SOLUTION_LIGHT)])
 
 md(r"""
-Svahy otočené ke slunci jsou světlejší a moře je rovné. Jasem se násobí barva v lineárním RGB, před zakódováním do sRGB, protože světlo se sčítá a násobí lineárně.
+Svahy otočené ke slunci jsou světlejší a moře je rovné.
+
+<details><summary>📖 Proč se jasem násobí lineární RGB</summary>
+
+Barva se násobí jasem před zakódováním do sRGB, protože světlo se sčítá a násobí lineárně.
+</details>
 """)
 
 # --- 5. NumPy and Krita ---------------------------------------------------------
@@ -798,6 +830,8 @@ Krita pouští filtry v NumPy, takže generátor je níže přepsaný do NumPy. 
 code(HELPERS_NP)
 
 md(r"""
+<details><summary>📖 Co se v NumPy mění oproti kernelu</summary>
+
 Kernel počítá jeden pixel, NumPy celé pole najednou. Tím se liší hlavně tyhle řádky:
 
 | Kernel | NumPy |
@@ -808,6 +842,8 @@ Kernel počítá jeden pixel, NumPy celé pole najednou. Tím se liší hlavně 
 | cyklus přes zarážky v `terrain_colour` | `np.interp` po složkách OKLabu, jako v lekci 1 |
 | výšky čtyř sousedů, protože vlákno nevidí výsledky ostatních | `np.gradient` z celé výškové mapy |
 | `normalize(n)`, `dot(n, l)` | dělení `np.linalg.norm(n, axis=-1, keepdims=True)`, `n @ l` |
+
+</details>
 """)
 
 code(SOLUTION_VALUE_NP + "\n\n\n" + FBM_NP + "\n\n\n" + SOLUTION_APPLY_NP)
@@ -823,16 +859,22 @@ Vrstva `Terrain NumPy` vypadá stejně jako `Goal`.
 
 V `pga_filter/effect.py` nahraďte všechno pod řádkem `import numpy as np` obsahem obou buněk s kódem výše a nastavte `TITLE = "Terrain"`. V Kritě založte nový dokument (**File > New**) a spusťte na jeho vrstvě filtr.
 
-> **❓ Otázka**
-> Přepněte náhled filtru mezi „Whole region, scaled down“ a „Centre at full size“. Proč je ve zmenšeném náhledu víc menších ostrovů?
+<details><summary>❓ Otázka: proč je ve zmenšeném náhledu víc ostrovů?</summary>
+
+Přepněte náhled filtru mezi „Whole region, scaled down“ a „Centre at full size“. Proč je ve zmenšeném náhledu víc menších ostrovů?
 
 <details><summary>🔑 Odpověď</summary>
 
 Zmenšený náhled dostane zmenšené pole, generátor ale měří polohy v pixelech: `scale = 400` je 400 pixelů v jakkoli velkém poli, takže se do menšího vejde víc útvarů. Skutečnou velikost ukáže „Centre at full size“.
+
 </details>
 
-> **ℹ️ Poznámka**
-> Barvy zarážek jsou v sRGB. V dokumentu Krity s lineárním profilem (obvykle 32bitová desetinná čísla) vyjde krajina světlejší.
+</details>
+
+<details><summary>ℹ️ Krajina v Kritě vyšla světlejší?</summary>
+
+Barvy zarážek jsou v sRGB. Dokument Krity s lineárním profilem (obvykle 32bitová desetinná čísla) je bere jako lineární.
+</details>
 """)
 
 # --- Summary ------------------------------------------------------------------
@@ -844,24 +886,28 @@ md(r"""
 - Voroného šum měří vzdálenost k rozházeným bodům, $F_2 - F_1$ kreslí hranice oblastí.
 - Výšková mapa s gradientní mapou je krajina, normála z jejího sklonu a Lambertův zákon jí dají reliéf.
 
-### Co jsme vynechali
+<details><summary>📖 Co jsme vynechali</summary>
 
 - **Gradientní šum.** Perlinův a simplexový šum dávají do rohů buněk místo čísel směry, takže je v nich mřížka vidět méně.
 - **Eroze a vržené stíny.** Obojí potřebuje projít mnoho pixelů nebo kroků simulace, ne jen sousedy.
 - **Knihovna `noise`.** Sára má hotové `sa_value_noise`, `sa_value_fbm` a `sa_voronoi` (`import noise`).
 
-### Bonusové úkoly
+</details>
+
+<details><summary>🎯 Bonusové úkoly</summary>
 
 1. **Hřebeny** (*ridged noise*). Sčítejte ve fBm místo šumu $1 - |2\,\mathrm{noise} - 1|$. Ostré hřebeny vypadají jako pohoří.
 2. **Deformace prostoru** (*domain warping*). Posuňte polohu o jiný šum, třeba `fbm(p + 4.0 * vec2(fbm(p), fbm(p + 5.2)))`. Vzniknou tvary jako mramor nebo kouř. Inigo Quilez je popisuje v článku [Domain Warping](https://iquilezles.org/articles/warp/) (anglicky).
 3. **Dlažba** z Voroného šumu: buňka v barvě z hashe a spáry tam, kde je $F_2 - F_1$ pod prahem.
-""")
 
-md(r"""
-### Nápady na semestrální práci
+</details>
+
+<details><summary>📖 Nápady na semestrální práci</summary>
 
 - Generátor textur s rozbalovacím seznamem v `PARAMS` jako `["Clouds", "Marble", "Cells", "Stone"]` a výběrem barev.
 - Krajina s paletou podnebí jako rozbalovacím seznamem a sněhem nebo skalou podle sklonu svahu, ne jen podle výšky.
+
+</details>
 """)
 
 
