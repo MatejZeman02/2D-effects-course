@@ -421,7 +421,7 @@ md(r"""
 
 Na konci lekce budete mít generátor krajiny: ostrovy s plážemi, lesy, skalami a sněhem, osvětlené sluncem, které jde posouvat. Nevzniká z žádného obrázku, každý pixel se spočítá jen ze své polohy. Cestou napíšete hodnotový šum, fraktální šum a Voroného šum, ze kterých se skládá většina procedurálních textur.
 
-Spusťte buňku. Otevře nový dokument a přidá bílou vrstvu `Base` přes celé plátno.
+Spusťte buňku. Otevře nový dokument, jehož jediná vrstva je bílá `Base` přes celé plátno.
 
 <details><summary>📖 K čemu je bílá vrstva</summary>
 
@@ -435,8 +435,11 @@ sys.path.insert(0, "lib")            # sara.py and its helpers live in lib/
 import numpy as np
 import sara
 
-doc, layer, pixels = sara.init()
+doc, _, pixels = sara.init()
 base = doc.new_layer("Base", np.ones_like(pixels))   # white, the size of the canvas
+for other in doc.layers():                           # the new document's own layers go
+    if other["name"] != "Base":
+        doc.layer(other["name"]).delete()
 """)
 
 md(r"""
