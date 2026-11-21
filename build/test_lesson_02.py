@@ -3,7 +3,7 @@
     python -m pytest build/test_lesson_02.py
 
 The kernels need Sara and are not run here. What runs is the NumPy half: the
-helpers cell, the given cells unfinished and the solutions, on a white canvas,
+helpers cell and the generator, on a white canvas,
 with PARAMS read by the Krita template's own parser. The kernels' constants and
 sliders are compared with the NumPy ones as text.
 """
@@ -62,15 +62,6 @@ def test_the_sliders_agree():
             assert sliders[name] == (int(float(default)), int(float(low)), int(float(high))), name
         else:
             assert sliders[name] == (float(default), float(low), float(high)), name
-
-
-def test_the_speed_cell_uses_the_defaults(defaults):
-    speed = [c for c in nb.cells if c["cell_type"] == "code" and "time.perf_counter" in "".join(c["source"])][0]
-    space = {}
-    exec("".join(speed["source"]).split("img = ")[0], space)
-    assert space["defaults"].keys() == defaults.keys()
-    for name, value in defaults.items():
-        assert np.allclose(space["defaults"][name], value), name
 
 
 def test_the_stops_agree():
@@ -135,15 +126,6 @@ def test_fbm_stays_in_range(solved):
         h = solved["fbm"](x, y, octaves)
         assert h.min() >= 0 and h.max() <= 1
     assert np.allclose(solved["fbm"](x, y, 1), solved["value_noise"](x, y))
-
-
-def test_unfinished_cells_are_harmless(canvas, defaults):
-    space = namespace(nb.HELPERS_NP, nb.VALUE_NP_GIVEN, nb.FBM_NP, nb.APPLY_NP_GIVEN)
-    assert np.array_equal(space["apply"](canvas, **defaults), canvas)
-    x = np.linspace(0.05, 3.95, 40)
-    squares = space["value_noise"](x, np.full_like(x, 0.5))
-    assert len(np.unique(squares)) == 4                  # one value a cell
-    assert space["fbm"](x, x[:, None], 3).shape == (40, 40)
 
 
 def test_the_solution_runs(canvas, defaults, solved, tmp_path_factory):

@@ -120,52 +120,98 @@ for k in range(4):
 save(fig, "fbm.png")
 
 
-# 3. Voronoi: points in cells, F1 and F2 of one pixel, and the two pictures ----------
-GW, GH = 5, 3
-jx, jy = random2(*np.meshgrid(np.arange(-1, GW + 1), np.arange(-1, GH + 1)))
-cells_x, cells_y = np.meshgrid(np.arange(-1, GW + 1), np.arange(-1, GH + 1))
-points = np.stack([cells_x + jx, cells_y + jy], axis=-1).reshape(-1, 2)
-R = 80                                                     # raster pixels a cell
+# 3. Voronoi step by step: the grid, the jittered points, one pixel's 3 x 3 cells,
+# its F1 and F2, then F1 and F2 - F1 of every pixel. The cells are the kernel's own,
+# at jitter 1, from cell ORIGIN on, picked so that the pixel's nearest point lies
+# in the next cell, which is why the kernel looks at the neighbours.
+GW, GH = 5, 4
+ORIGIN = np.array([59, 9])
+HOME = np.array([2, 1])                                    # the pixel's cell in the picture
+PIXEL = HOME + np.array([0.85, 0.35])
+cells_x, cells_y = np.meshgrid(np.arange(-2, GW + 2), np.arange(-2, GH + 2))
+jx, jy = random2((cells_x + ORIGIN[0]).ravel(), (cells_y + ORIGIN[1]).ravel())
+cells = np.stack([cells_x.ravel(), cells_y.ravel()], axis=-1)
+points = cells + np.stack([jx, jy], axis=-1)               # c + 0.5 + (random2(c) - 0.5) * 1
+centres = cells + 0.5
+shown = (cells[:, 0] >= 0) & (cells[:, 0] < GW) & (cells[:, 1] >= 0) & (cells[:, 1] < GH)
+near = np.all(np.abs(cells - HOME) <= 1, axis=-1)
+R = 100                                                    # raster pixels a cell
 ry, rx = np.mgrid[0:GH * R, 0:GW * R]
 at = np.stack([(rx + 0.5) / R, (ry + 0.5) / R], axis=-1)
 dist = np.linalg.norm(at[:, :, None, :] - points[None, None], axis=-1)
 order = np.sort(dist, axis=-1)
 f1, f2 = order[..., 0], order[..., 1]
-owner = np.argmin(dist, axis=-1)
-tint = np.stack(random2(np.arange(len(points)), np.full(len(points), 7)), axis=-1)
-region = 0.82 + 0.18 * np.dstack([tint[owner][..., 0], tint[owner][..., 1], 1 - tint[owner][..., 0]])
+owner = cells[np.argmin(dist, axis=-1)] + ORIGIN           # the cell of the nearest point
+ox, oy = owner[..., 0], owner[..., 1]
+r2x, r2y = random2(ox.ravel(), oy.ravel())
+r1 = random1((ox - 31).ravel(), (oy + 17).ravel())
+cell_colour = np.stack([r2x, r2y, r1], axis=-1).reshape(GH * R, GW * R, 3)   # the kernel's Cell
+pale = 0.35 * cell_colour + 0.65
 
-fig = plt.figure(figsize=(10.5, 3.9))
-grid = fig.add_gridspec(2, 2, width_ratios=[2, 1], wspace=0.06, hspace=0.22)
-ax = fig.add_subplot(grid[:, 0])
-ax.imshow(region, extent=(0, GW, GH, 0))
-for k in range(GW + 1):
-    ax.axvline(k, color="#BBB", linewidth=0.8, linestyle=":")
-for k in range(GH + 1):
-    ax.axhline(k, color="#BBB", linewidth=0.8, linestyle=":")
-inside = (points[:, 0] > 0) & (points[:, 0] < GW) & (points[:, 1] > 0) & (points[:, 1] < GH)
-ax.plot(points[inside, 0], points[inside, 1], "o", color="#222", markersize=5)
-pixel = np.array([2.35, 1.55])
-d = np.linalg.norm(points - pixel, axis=-1)
+
+def panel(ax, title, background=None, grey=None):
+    if background is not None:
+        ax.imshow(background, extent=(0, GW, GH, 0))
+    if grey is not None:
+        ax.imshow(np.clip(grey, 0, 1), cmap="gray", vmin=0, vmax=1, extent=(0, GW, GH, 0))
+    for k in range(GW + 1):
+        ax.axvline(k, color="#AAA", linewidth=0.8, linestyle=":")
+    for k in range(GH + 1):
+        ax.axhline(k, color="#AAA", linewidth=0.8, linestyle=":")
+    ax.set_xlim(0, GW)
+    ax.set_ylim(GH, 0)
+    ax.set_aspect("equal")
+    bare(ax)
+    for s in ax.spines.values():
+        s.set_visible(True)
+        s.set_color("#CCC")
+    ax.set_title(title, fontsize=12)
+
+
+def dots(ax, which, colour="#222", size=5):
+    ax.plot(points[which, 0], points[which, 1], "o", color=colour, markersize=size)
+
+
+fig, axes = plt.subplots(2, 3, figsize=(12, 7.1), gridspec_kw={"wspace": 0.06, "hspace": 0.16})
+axes = axes.ravel()
+
+panel(axes[0], "1. bod ve středu každé buňky")
+axes[0].plot(centres[shown, 0], centres[shown, 1], "o", color="#222", markersize=5)
+
+panel(axes[1], "2. posun o (random2 − 0.5) · jitter")
+axes[1].plot(centres[shown, 0], centres[shown, 1], "o", markerfacecolor="none", markeredgecolor="#999", markersize=5)
+for c, q in zip(centres[shown], points[shown]):
+    axes[1].annotate("", q, c, arrowprops={"arrowstyle": "-|>", "color": GREY, "linewidth": 1, "shrinkA": 3, "shrinkB": 3})
+dots(axes[1], shown)
+
+ax = axes[2]
+panel(ax, "3. pixel měří k bodům 3 × 3 buněk")
+ax.add_patch(plt.Rectangle(HOME - 1, 3, 3, color=ORANGE, alpha=0.12, linewidth=0))
+ax.add_patch(plt.Rectangle(HOME, 1, 1, fill=False, edgecolor=ORANGE, linewidth=1.6))
+for q in points[near]:
+    ax.plot([PIXEL[0], q[0]], [PIXEL[1], q[1]], color=GREY, linewidth=0.8)
+dots(ax, shown & ~near, colour="#BBB")
+dots(ax, near)
+ax.plot(*PIXEL, "s", color=ORANGE, markersize=8)
+
+ax = axes[3]
+panel(ax, "4. F1, F2 a barva buňky (Cell)", background=pale)
+d = np.linalg.norm(points - PIXEL, axis=-1)
 first, second = points[np.argsort(d)[:2]]
 for target, colour, label in ((first, ORANGE, "F1"), (second, GREY, "F2")):
-    ax.annotate("", target, pixel, arrowprops={"arrowstyle": "-|>", "color": colour, "linewidth": 2, "shrinkA": 6, "shrinkB": 4})
-    along = (target - pixel) / np.linalg.norm(target - pixel)
+    ax.annotate("", target, PIXEL, arrowprops={"arrowstyle": "-|>", "color": colour, "linewidth": 2, "shrinkA": 6, "shrinkB": 4})
+    along = (target - PIXEL) / np.linalg.norm(target - PIXEL)
     side = np.array([along[1], -along[0]])                # perpendicular to the arrow
     if (side[1] > 0) != (label == "F1"):                  # F1 below its arrow, F2 above
         side = -side
-    spot = (pixel + target) / 2 + 0.2 * side
+    spot = (PIXEL + target) / 2 + 0.22 * side
     ax.text(spot[0], spot[1], label, color=colour, fontsize=13, ha="center", va="center", weight="bold")
-ax.plot(*pixel, "s", color=ORANGE, markersize=8)
-ax.set_xlim(0, GW)
-ax.set_ylim(GH, 0)
-bare(ax)
-ax.set_title("body v buňkách mřížky a vzdálenosti jednoho pixelu", fontsize=11)
-for k, (img, title) in enumerate(((f1, "F1"), (f2 - f1, "F2 - F1"))):
-    side_ax = fig.add_subplot(grid[k, 1])
-    side_ax.imshow(np.clip(img, 0, 1), cmap="gray", vmin=0, vmax=1, extent=(0, GW, GH, 0))
-    bare(side_ax)
-    side_ax.set_title(title, fontsize=11)
+dots(ax, shown)
+ax.plot(*PIXEL, "s", color=ORANGE, markersize=8)
+
+panel(axes[4], "5. F1 v každém pixelu", grey=f1)
+dots(axes[4], shown, colour=ORANGE, size=3)
+panel(axes[5], "6. F2 - F1 v každém pixelu", grey=f2 - f1)
 save(fig, "voronoi.png")
 
 
@@ -200,10 +246,10 @@ save(fig, "terrain_stops.png")
 
 
 # 5. A section through the terrain: normals, the sun, and the brightness from above ---
-xs = np.linspace(0, 3.0, 1500)
-height = fbm(xs * 1.6 + 0.3, np.full_like(xs, 2.3), 4)
+xs = np.linspace(0, 4.0, 2000)
+height = fbm(xs * 1.2 + 0.3, np.full_like(xs, 2.3), 4)
 sea = 0.5
-RELIEF = 3.0                                               # how much taller the drawing is than the noise
+RELIEF = 1.6                                               # how much taller the drawing is than the noise
 top = (np.maximum(height, sea) - sea) * RELIEF             # the drawn ground, 0 at the sea
 depth = (height - sea) * RELIEF                            # the bottom under the water
 slope = np.gradient(top, xs)
@@ -216,15 +262,15 @@ floor = min(depth.min(), 0.0) - 0.08
 peak = top.max()
 LAND, WATER = np.array([0.44, 0.62, 0.25]), np.array([0.17, 0.42, 0.64])
 
-fig = plt.figure(figsize=(9, 4.4))
-ax = fig.add_axes([0.0, 0.2, 1.0, 0.8])
+fig = plt.figure(figsize=(10, 3.2))
+ax = fig.add_axes([0.0, 0.24, 1.0, 0.76])
 ax.fill_between(xs, floor, top, where=~under, color=LAND, linewidth=0, interpolate=True)
 ax.fill_between(xs, floor, top, where=under, color=WATER, linewidth=0, interpolate=True)
 ax.plot(xs, np.where(under, depth, np.nan), color="white", linewidth=1, linestyle=":")
 ax.plot(xs, top, color="#222", linewidth=1.4)
 
 
-def arrow(start, direction, colour, length=0.16):
+def arrow(start, direction, colour, length=0.13):
     ax.annotate("", start + length * direction, start, arrowprops={"arrowstyle": "-|>", "color": colour, "linewidth": 1.6, "shrinkA": 0, "shrinkB": 0})
 
 
@@ -237,14 +283,14 @@ hill = np.full(len(xs), np.inf)
 hill[left:summit] = np.abs(normal[left:summit] @ sun - 0.85)
 facing = int(np.argmin(hill))
 foot = np.array([xs[facing], top[facing]])
-for k in range(40, len(xs), 85):
+for k in range(50, len(xs), 110):
     if abs(xs[k] - foot[0]) > 0.1:
         arrow(np.array([xs[k], top[k]]), normal[k], ORANGE)
-arrow(foot, normal[facing], ORANGE, 0.22)
-arrow(foot, sun, "#C9A227", 0.22)
-ax.text(*(foot + 0.27 * normal[facing]), "n", color=ORANGE, fontsize=13, weight="bold", ha="center", va="center")
-ax.text(*(foot + 0.27 * sun), "l", color="#C9A227", fontsize=13, weight="bold", ha="center", va="center")
-sun_at = np.array([0.14, peak + 0.32])
+arrow(foot, normal[facing], ORANGE, 0.2)
+arrow(foot, sun, "#C9A227", 0.2)
+ax.text(*(foot + 0.25 * normal[facing]), "n", color=ORANGE, fontsize=13, weight="bold", ha="center", va="center")
+ax.text(*(foot + 0.25 * sun), "l", color="#C9A227", fontsize=13, weight="bold", ha="center", va="center")
+sun_at = np.array([0.12, peak + 0.22])
 ax.plot(*sun_at, "o", color="#F2C14E", markersize=20)
 ax.text(sun_at[0] + 0.12, sun_at[1], "slunce", fontsize=11, va="center")
 # the widest stretch of water carries the note about the flat surface
@@ -258,13 +304,13 @@ for k, wet in enumerate(np.append(under, False)):
 _, a, b = max(runs)
 middle = min(max((xs[a] + xs[b - 1]) / 2, 0.4), xs[-1] - 0.4)
 ax.text(middle, -0.04, "hladina je rovná", ha="center", va="top", fontsize=10, color="white")
-ax.set_title("oranžově normály n,  jas = 0.25 + 0.75 · max(n · l, 0)", fontsize=11, color="#333")
+ax.set_title("Lambert: jas = 0.25 + 0.75 · max(n · l, 0),  n normála,  l ke slunci", fontsize=11, color="#333")
 ax.set_xlim(0, xs[-1])
-ax.set_ylim(floor, peak + 0.5)
+ax.set_ylim(floor, peak + 0.34)
 ax.set_aspect("equal", anchor="S")
 bare(ax)
 # what a kernel computes for these pixels, seen from above
-strip_ax = fig.add_axes([0.0, 0.02, 1.0, 0.1])
+strip_ax = fig.add_axes([0.0, 0.02, 1.0, 0.09])
 colour = linear_to_srgb(srgb_to_linear(np.where(under[:, None], WATER, LAND)) * bright[:, None])
 strip_ax.imshow(colour[None], aspect="auto", extent=(0, xs[-1], 0, 1))
 strip_ax.set_xlim(0, xs[-1])
@@ -272,7 +318,7 @@ bare(strip_ax)
 strip_ax.set_title("pohled shora: barva krát jas", fontsize=10, color=GREY)
 fig.canvas.draw()
 left, right = ax.get_position().x0, ax.get_position().x1     # the strip as wide as the section
-strip_ax.set_position([left, 0.02, right - left, 0.1])
+strip_ax.set_position([left, 0.02, right - left, 0.09])
 save(fig, "normal.png")
 
 print("written to", OUT)
