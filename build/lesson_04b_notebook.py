@@ -423,9 +423,14 @@ explore(flow, name=("obrázek", ["kroužky", "fotka", "cihly"]), field=("pole", 
 md(r"""
 # Lekce 4b (nepovinná): Komplexní obraz
 
-V lekci 4 dostala každá frekvence komplexní číslo $F(u, v)$, šipku v rovině. Její délka byla amplituda vlny, úhel fáze. Tady dostane komplexní číslo každý **pixel**. Na barvě je pak vidět okem, co komplexní aritmetika dělá: násobení otáčí, sčítání posouvá a komplexně sdružené číslo zrcadlí.
+Na konci budete umět otáčet barvy fotky jako šipky v rovině, vyvážit bílou jedním odečtením a poznat, proč má spektrum barevného obrazu jiný tvar než spektrum šedotónového. V lekci 4 dostala komplexní číslo $F(u, v)$ každá frekvence. Tady ho dostane každý **pixel** a barva ukáže okem, co komplexní aritmetika dělá: násobení otáčí, sčítání posouvá a komplexně sdružené číslo zrcadlí.
 
-Notebook je nepovinný a navazuje na sekce 1 a 2 lekce 4. Má dva krátké úkoly, kernel v Sáře a funkci v NumPy. Spusťte první tři buňky, kód interaktivních obrázků je schovaný, stačí hýbat nabídkami a posuvníky.
+Spusťte buňku. Otevře plátno velké jako fotka a naimportuje astronauta z lekce 4.
+
+<details><summary>📖 Poznámka k notebooku</summary>
+
+Je nepovinný a navazuje na sekce 1 a 2 lekce 4. Má dva krátké úkoly, kernel v Sáře a funkci v NumPy. Kód interaktivních obrázků je schovaný, stačí hýbat nabídkami a posuvníky.
+</details>
 """)
 
 code("""
@@ -439,7 +444,7 @@ photo = doc.import_image("imgs/4/astronaut.png")        # a layer called "astron
 """)
 
 md(r"""
-Převody jsou tytéž jako v lekci o barevných prostorech, jen `to_oklab` vrátí místo tří čísel dvě věci: světlost $L$ a komplexní obraz $z = a + ib$. `from_oklab` jde zpátky a barvu, která se do sRGB nevejde, ořízne.
+Převody jsou tytéž jako v lekci 0, jen `to_oklab` vrátí místo tří čísel dvě věci: světlost $L$ a komplexní obraz $z = a + ib$. `from_oklab` jde zpátky a barvu, která se do sRGB nevejde, ořízne.
 """)
 
 code(HELPERS_NP)
@@ -447,13 +452,71 @@ code(HELPERS_NP)
 code(TOOLS, hidden=True)
 
 md(r"""
-### Nové funkce v tomto notebooku
+<details><summary>📖 Nové funkce v této lekci</summary>
 
-| Volání | Co dělá |
-|---|---|
-| `z.real`, `z.imag` | reálná a imaginární část komplexního pole, $a$ a $b$ |
-| `np.abs(z)`, `np.angle(z)` | délka a úhel šipky, po prvcích, úhel od $-\pi$ do $\pi$ |
-| `np.exp(1j * t)` | jednotková šipka s úhlem `t` v radiánech |
+**Kernel v buňce `%%gmacs`**
+
+| Zápis | Co dělá | Sekce |
+|---|---|---|
+| `radians(x)` | stupně na radiány | 2 |
+| `v.yz = vec2(...)` | zápis do dvou složek vektoru najednou | 2 |
+
+**NumPy**
+
+| Volání | Co dělá | Sekce |
+|---|---|---|
+| `z.real`, `z.imag` | reálná a imaginární část komplexního pole, $a$ a $b$ | 1 |
+| `np.abs(z)`, `np.angle(z)` | délka a úhel šipky, po prvcích, úhel od $-\pi$ do $\pi$ | 1 |
+| `np.exp(1j * t)` | jednotková šipka s úhlem `t` v radiánech | 2 |
+| `z.mean()` | průměr komplexního pole, zase komplexní číslo | 2 |
+
+</details>
+""")
+
+# --- Brainstorming --------------------------------------------------------------
+md(r"""
+## Jak byste to udělali?
+
+Posuvníkem `theta` v kernelu `Hue` níže se barvy fotky otáčejí dokola: oranžový skafandr zezelená, pak zmodrá a vrátí se. Jak byste takové otočení odstínů spočítali?
+
+<details><summary>💭 Nápady</summary>
+
+Dobré otočení splní tři věci: o stejný úhel otočí každou barvu, nechá světlost a šedé zůstanou šedé.
+
+<details><summary>Prohodit kanály RGB</summary>
+
+Cyklické prohození $(R, G, B) \to (G, B, R)$ barvy opravdu posune po kruhu, jenže jen o jeden pevný krok a světlost se přitom změní, zelená je jasnější než modrá. Pro plynulý úhel se nehodí.
+</details>
+
+<details><summary>Odstín v HSV</summary>
+
+Funguje: odstín je úhel, přičte se `theta`. Jenže HSV není vnímání barev, otočená modrá je tmavší než otočená žlutá a světlost kolísá. Stejný nápad v OKLabu už světlost drží, sekce 2.
+</details>
+
+<details><summary>Matice 3 × 3 na RGB</summary>
+
+Otočení kolem šedé osy se dá napsat jako matice a světlost drží zhruba. Je to nepřehledné a matice se pro každý úhel počítá znovu. V OKLabu jsou barvy dvě čísla, rovina, a otočení roviny je násobení jedním komplexním číslem. Sekce 1 a 2.
+</details>
+
+</details>
+
+A jak vyvážit bílou, když je fotka pod žárovkou celá do oranžova?
+
+<details><summary>💭 Nápady</summary>
+
+Dobré vyvážení odstraní barvu světla a nechá barvy věcí. To se zná jen odhadem, protože světlo ani barvu věcí nikdo neměří.
+
+<details><summary>Najít bílou věc a podle ní zesílit kanály</summary>
+
+Funguje a dělají to fotoaparáty, ale někdo musí bílou věc ve scéně najít, a když tam není, nejde to.
+</details>
+
+<details><summary>Odečíst průměrnou barvu</summary>
+
+Předpoklad, že průměr scény je šedá, nic hledat nepotřebuje. V rovině $a, b$ je to odečtení jedné šipky. Sekce 2.
+</details>
+
+</details>
 """)
 
 # --- 1. A colour as an arrow ----------------------------------------------------
@@ -485,11 +548,11 @@ Odstín $\arg z$ je u šedých ploch jen šum: šipka je tam skoro nulová a jej
 md(r"""
 ## 2. Počítání s barvou
 
-Komplexní číslo $w$ s délkou 1 a úhlem $\theta$ je
+Problém: otočit všechny odstíny o stejný úhel, a nechat při tom světlost. Je to otočení roviny $a, b$ kolem počátku. Komplexní číslo $w$ s délkou 1 a úhlem $\theta$ je
 
 $$w = \cos\theta + i \sin\theta = e^{i\theta}$$
 
-Násobení $z \cdot w$ šipku otočí o $\theta$ a délku nechá. Všechny barvy obrázku se tedy posunou po barevném kruhu o stejný úhel a sytost i světlost zůstanou. Je to tatáž operace, jakou v lekci 4 dělá posun obrázku s fází každého koeficientu. Obecné komplexní číslo $s \cdot e^{i\theta}$ šipku otočí a její délku vynásobí $s$. Přičtení šipky $c$ posune všechny barvy stejně:
+Násobení $z \cdot w$ šipku otočí o $\theta$ a délku nechá. Všechny barvy obrázku se tedy posunou po barevném kruhu o stejný úhel a sytost i světlost zůstanou. Obecné komplexní číslo $s \cdot e^{i\theta}$ šipku otočí a její délku vynásobí $s$. Přičtení šipky $c$ posune všechny barvy stejně:
 
 | Operace | Co udělá s barvou |
 |---|---|
@@ -497,6 +560,11 @@ Násobení $z \cdot w$ šipku otočí o $\theta$ a délku nechá. Všechny barvy
 | $z \cdot s$, $s$ reálné | změní sytost: $s = 0$ dá šedou fotku, $s > 1$ přesytí |
 | $z + c$ | tónuje, celý mrak bodů se posune a šedá přestane být šedá |
 | $\overline{z} = a - ib$ | zrcadlí odstíny přes osu $a$, modrá a žlutá se prohodí |
+
+<details><summary>📖 Souvislost s lekcí 4</summary>
+
+Otočení šipky je tatáž operace, jakou v lekci 4 dělá posun obrázku s fází každého koeficientu.
+</details>
 
 Obrázek níže počítá $s \cdot e^{i\theta} \cdot z + c$. Při $\theta = 180°$ je $w = -1$ a každá barva přejde na doplňkovou, oranžová na modrou. Světlost zůstane, takže to není negativ. Některé otočené nebo přesycené barvy se do sRGB nevejdou a oříznou se, kolik jich je, říká popisek.
 """)
@@ -506,9 +574,9 @@ code(TURN, hidden=True)
 md(r"""
 ### 🎯 Úkol 1: otočení odstínu v kernelu
 
-Kernel `Hue` převede pixel do OKLabu a zpátky. V `lab.yz` je komplexní číslo pixelu jako `vec2`, reálná část v `x`, imaginární v `y`, stejně jako v kernelech lekce 4. Doplňte řádek s `TODO`: vynásobte `z` číslem $s \cdot e^{i\theta}$ a výsledek zapište zpátky do `lab.yz`. Dvě komplexní čísla se násobí podle
+Kernel `Hue` převede pixel do OKLabu a zpátky. V `lab.yz` je komplexní číslo pixelu jako `vec2`, reálná část v `x`, imaginární v `y`, stejně jako v kernelech lekce 4. Doplňte řádek s `TODO`: vynásobte `z` číslem $w = s \cdot e^{i\theta}$ a výsledek zapište zpátky do `lab.yz`. Kernel to počítá po složkách podle
 
-$$(a + bi)(c + di) = (ac - bd) + (ad + bc)\,i$$
+$$z' = w\,z = (w_x z_x - w_y z_y) + (w_x z_y + w_y z_x)\,i, \qquad w = s\cos\theta + i\,s\sin\theta$$
 
 Nedokončený kernel vrátí fotku beze změny.
 
@@ -537,11 +605,13 @@ doc.new_layer("Hue NumPy", rgba(from_oklab(L, s * np.exp(1j * np.radians(theta))
 """)
 
 md(r"""
+Druhý problém: fotka pod žárovkou má všechny barvy posunuté k oranžové, ke každé šipce se přičetla stejná šipka $c$. Vyvážení bílé (*white balance*) ji odečte, jenže $c$ nikdo nezná. Odhad dá předpoklad *šedého světa* (*gray world*): průměrná barva scény je šedá, takže průměrná šipka obrázku má být nula. Co z nuly vybočuje, je barva světla:
+
+$$c \approx \frac{1}{N}\sum_{\text{pixely}} z, \qquad z' = z - c$$
+
 ### 🎯 Úkol 2: vyvážení bílé
 
-Fotka pod žárovkou má všechny barvy posunuté k oranžové, ke každé šipce se přičetla stejná šipka $c$. Vyvážení bílé ji odečte. Jak velká je, se dá odhadnout předpokladem *šedého světa* (*gray world*): průměrná barva scény je šedá, takže průměrná šipka obrázku má být nula. Co z nuly vybočuje, je barva světla.
-
-Doplňte `white_balance`, aby od každého pixelu odečetla průměrnou šipku obrázku. Buňka pod ní fotku oteplí a vyváží zpátky.
+Doplňte `white_balance` podle vzorce výše: odečtěte od každého pixelu průměrnou šipku obrázku. Buňka pod ní fotku oteplí a vyváží zpátky, vyvážená fotka má mít střed mraku bodů v nule.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -559,14 +629,17 @@ code(BALANCE_GIVEN, solve=[(BALANCE_GIVEN, SOLUTION_BALANCE)])
 code(BALANCE_SHOW)
 
 md(r"""
-Vyvážená fotka je o něco studenější než původní. Fotka astronauta šedý svět nesplňuje: oranžový skafandr a vlajka posunou průměr k teplým barvám, a vyvážení ten posun vezme i fotce samotné. Proto fotoaparáty průměrují jen pixely, které už skoro šedé jsou, nebo hledají nejsvětlejší plochu a berou ji jako bílou.
+<details><summary>ℹ️ Vyvážená fotka je studenější než původní?</summary>
+
+Fotka astronauta šedý svět nesplňuje: oranžový skafandr a vlajka posunou průměr k teplým barvám, a vyvážení ten posun vezme i fotce samotné. Proto fotoaparáty průměrují jen pixely, které už skoro šedé jsou, nebo hledají nejsvětlejší plochu a berou ji jako bílou.
+</details>
 """)
 
 # --- 3. The spectrum of a complex picture ----------------------------------------------
 md(r"""
 ## 3. Spektrum komplexního obrazu
 
-V lekci 4 má reálný obraz spektrum souměrné: $F(-u, -v) = \overline{F(u, v)}$, a kosinusovka proto dá dva body. Důvod je Eulerův vzorec,
+Problém: spektrum fotky z lekce 4 je souměrné, $F(-u, -v) = \overline{F(u, v)}$, a kosinusovka dá dva body. Platí to i pro komplexní obraz? Důvod souměrnosti je Eulerův vzorec,
 
 $$\cos\varphi = \frac{e^{i\varphi} + e^{-i\varphi}}{2}$$
 
@@ -582,13 +655,14 @@ Obě duhy vypadají skoro stejně, liší se jen pořadím barev: zleva doprava 
 code(SPIN, hidden=True)
 
 md(r"""
-### Dvě transformace za cenu jedné
+<details><summary>📖 Dvě transformace za cenu jedné</summary>
 
 Souměrnost má i praktický důsledek. Spektrum reálného obrazu má polovinu čísel navíc, druhá polovina je jen zrcadlo. Komplexní obraz zaplní celé. Proto se dva reálné obrazy dají transformovat jednou transformací: složí se do $z = a + ib$, transformuje se $z$ a spektra $a$ a $b$ se oddělí podle souměrnosti,
 
 $$A(u, v) = \frac{Z(u, v) + \overline{Z(-u, -v)}}{2}, \qquad B(u, v) = \frac{Z(u, v) - \overline{Z(-u, -v)}}{2i}$$
 
 Buňka níže to udělá pro složky $a$ a $b$ fotky a porovná je s dvěma samostatnými transformacemi. Rozdíl je na úrovni zaokrouhlení. Stejně šetří knihovny FFT práci u reálných vstupů.
+</details>
 """)
 
 code(SPLIT)
@@ -603,13 +677,16 @@ $$g = \partial_x L + i\,\partial_y L$$
 
 Šipka $g$ míří kolmo na hranu, od tmavé strany ke světlé. Její délka je síla hrany a její úhel směr. Násobení $i$ ji otočí o 90°, takže $i \cdot g$ míří **podél** hrany. Tím směrem by tahy štětce sledovaly tvar.
 
-Gradient je ale neklidný, a směr hran se proto průměruje přes okolí. Tady narazí obyčejný průměr: hrana z tmavé do světlé a hrana ze světlé do tmavé mají stejný směr, ale opačné šipky $g$ a $-g$, a v průměru se vyruší. Pomůže druhá mocnina. Umocnění šipku zdvojí v úhlu, a $g^2$ a $(-g)^2$ jsou totéž číslo. Průměrují se tedy $g^2$ a odmocnina úhel zase vydělí dvěma. V obrázku níže je to nejlépe vidět na tenkých kroužcích, kde se gradient obrací každou půlperiodu.
+Gradient je ale neklidný, a směr hran se proto průměruje přes okolí. Naivní průměr šipek $g$ ale selže: hrana z tmavé do světlé a hrana ze světlé do tmavé mají stejný směr, ale opačné šipky $g$ a $-g$, a v průměru se vyruší. Pomůže druhá mocnina. Umocnění šipku zdvojí v úhlu, a $g^2$ a $(-g)^2$ jsou totéž číslo. Průměrují se tedy $g^2$ a odmocnina úhel zase vydělí dvěma. V obrázku níže je to nejlépe vidět na tenkých kroužcích, kde se gradient obrací každou půlperiodu.
 """)
 
 code(FLOW, hidden=True)
 
 md(r"""
+<details><summary>📖 Strukturní tenzor</summary>
+
 Průměr $g^2$ je zkrácená podoba **strukturního tenzoru** (*structure tensor*): jeho dvě čísla, $g_x^2 - g_y^2$ a $2 g_x g_y$, jsou reálná a imaginární část $g^2$. Z takového pole směrů vychází malba podél hran, anizotropní Kuwahara a čáry podél hran (*edge tangent flow*), o kterých mluví lekce 5. Rozmazání v obrázku jde přes spektrum jako v sekci 5 lekce 4, a funguje i pro komplexní pole.
+</details>
 """)
 
 # --- Summary --------------------------------------------------------------------
@@ -622,11 +699,27 @@ md(r"""
 - Spektrum reálného obrazu je souměrné, protože kosinus jsou dvě opačně točené šipky. Spektrum komplexního obrazu souměrné být nemusí a nese o polovinu víc informace. Dva reálné obrazy proto stačí transformovat jednou.
 - Gradient je komplexní obraz šipek kolmých na hrany. Směry hran se průměrují přes $g^2$, ve kterém se šipky $g$ a $-g$ nevyruší.
 
-### Bonusové úkoly
+<details><summary>📖 Co jsme vynechali</summary>
+
+- **Jiné prostory než OKLab.** Rovina $a, b$ funguje i v CIELAB, jen se otáčením mění světlost víc.
+- **Chytřejší odhad světla.** Šedý svět je nejjednodušší, další odhady hledají nejsvětlejší plochu nebo lesk.
+
+</details>
+
+<details><summary>🎯 Bonusové úkoly</summary>
 
 1. **Komplexně sdružené barvy.** Napište kernel, který místo otočení prohodí znaménko $b$, $\overline{z}$. Které barvy se změní nejvíc a které vůbec?
 2. **Šedý svět jen ze šedých pixelů.** Upravte `white_balance`, aby průměrovala jen pixely s $\lvert z \rvert$ pod nějakou mezí, a porovnejte s fotkou astronauta výše.
 3. **Dvě DFT v jednom kernelu.** První průchod kernelu `DFT rows` v lekci 4 transformuje jen světlost. Složte do něj $a$ a $b$ fotky jako jedno komplexní číslo a oddělte jejich spektra podle souměrnosti ze sekce 3.
+
+</details>
+
+<details><summary>📖 Nápady na semestrální práci</summary>
+
+- Filtr barevného ladění: posuvníky pro otočení odstínu, sytost a tónování a tlačítko vyvážení bílé.
+- Malba podél hran: štětce natočené podle průměrného $g^2$.
+
+</details>
 """)
 
 
