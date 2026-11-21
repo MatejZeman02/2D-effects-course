@@ -470,9 +470,9 @@ Zaškrtněte v cíli `noise_only`. Krajina je obarvený černobílý šum, výš
 
 Dobrý nápad splní tři věci: sousední pixely mají podobnou výšku, kopce jsou velké i malé a každý pixel si výšku spočítá sám, pokaždé stejně.
 
-<details><summary>Náhodná výška pro každý pixel</summary>
+<details><summary>Bílý šum: náhodná výška pro každý pixel</summary>
 
-Vyjde bílý šum z lekce 1. Sousední pixely spolu nesouvisí, takže nevznikne kopec, jen zrnění.
+Nehodí se. Sousední pixely spolu nesouvisí, takže kopec by musel vzniknout náhodou ze stovek pixelů najednou, a to se nestane. Vyjde jen zrnění bez tvarů. Osvětlení by ho ještě zesílilo, protože sklon mezi sousedy skáče sem a tam. V lekci 1 bílý šum stačil, protože oko jeho zrnění zprůměruje a vidí jen průměrný odstín. Krajina ale potřebuje právě ty tvary. Uvidíte ho v sekci 1 s volbou `Cells` a `scale = 1`.
 
 </details>
 
