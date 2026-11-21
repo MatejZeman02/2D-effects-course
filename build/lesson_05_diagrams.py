@@ -2,8 +2,9 @@
 
 chelsea.png is scikit-image's cat photo (CC0) enlarged twice with Lanczos.
 The arithmetic is the notebook's own: the colour conversions, blur, xdog and
-toon come from the NumPy cells of lesson_05_notebook.py, so a picture shows
-what the cells compute.
+toon, hatch and halftone come from the NumPy cells of lesson_05_notebook.py, so a
+picture shows what the cells compute. Only the flow field's picture has its own
+structure tensor here, since the lesson's flow is a kernel.
 """
 import sys
 from pathlib import Path
@@ -25,10 +26,11 @@ BLUE = "#4C78A8"
 GREY = "#6B6B6B"
 
 space = {"np": np}
-for source in (nb.HELPERS_NP, nb.TOON_NP, nb.SOLUTION_XDOG_NP):
+for source in (nb.CONSTANTS_NP, nb.HELPERS_NP, nb.STYLES_NP):
     exec(source, space)
 srgb_to_linear, linear_to_srgb, lightness = space["srgb_to_linear"], space["linear_to_srgb"], space["lightness"]
-xdog, toon = space["xdog"], space["toon"]
+xdog, toon, blur, hatch = space["xdog"], space["toon"], space["blur"], space["hatch"]
+stripes, pixel_grid, ink_of, coverage_of = space["stripes"], space["pixel_grid"], space["ink"], space["coverage_of"]
 DEFAULT = (nb.SIGMA, nb.P, nb.EPSILON, nb.PHI)
 
 
@@ -199,6 +201,109 @@ def kuwahara(img):
     save(fig, "kuwahara.png")
 
 
+def idea(name, panels, crop=None):
+    """One row of (title, picture) panels, a grey picture in 0..1 or a colour one."""
+    fig, axes = plt.subplots(1, len(panels), figsize=(4.6 * len(panels), 3.3), gridspec_kw={"wspace": 0.04})
+    for ax, (title, picture) in zip(np.atleast_1d(axes), panels):
+        picture = np.clip(picture if crop is None else picture[crop], 0, 1)
+        ax.imshow(picture, cmap="gray" if picture.ndim == 2 else None, vmin=0, vmax=1)
+        ax.set_title(title, fontsize=11)
+        bare(ax)
+    save(fig, name)
+
+
+def sobel(a):
+    """Sobel's gradient of an (h, w) array as (gx, gy), edges clamped."""
+    p = np.pad(a, 1, mode="edge")
+    gx = (p[:-2, 2:] + 2 * p[1:-1, 2:] + p[2:, 2:] - p[:-2, :-2] - 2 * p[1:-1, :-2] - p[2:, :-2]) / 8
+    gy = (p[2:, :-2] + 2 * p[2:, 1:-1] + p[2:, 2:] - p[:-2, :-2] - 2 * p[:-2, 1:-1] - p[:-2, 2:]) / 8
+    return gx, gy
+
+
+def ideas(img, L):
+    """The small pictures of the brainstorms: what the first idea of each step would give."""
+    crop = (slice(60, 540), slice(60, 840))
+    idea("idea_threshold.png", [("práh světlosti 0.35", L > 0.35), ("práh světlosti 0.6", L > 0.6)], crop)
+    edges = lambda a, t: np.hypot(*sobel(a)) < t
+    idea("idea_sobel.png", [("Sobel, práh 0.04", edges(L, 0.04)),
+                            ("Sobel po rozmazání, práh 0.02", edges(blur(L[..., None], 2.0)[..., 0], 0.02))], crop)
+    idea("idea_posterise.png", [("posterizace fotky", posterised(img, nb.LEVELS)),
+                                ("posterizace po rozmazání", posterised(np.dstack([blur(img[..., :3], 2.5), img[..., 3:]]), nb.LEVELS))],
+         crop)
+    bayer = np.array([[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]) / 16 + 1 / 32
+    threshold = np.tile(bayer, (img.shape[0] // 4 + 1, img.shape[1] // 4 + 1))[:img.shape[0], :img.shape[1]]
+    idea("idea_dither.png", [("Bayerův rozptyl, tečky o jednom pixelu", L > threshold)], (slice(150, 330), slice(330, 600)))
+
+
+def hatch_layers(L):
+    """The naive single layer, then each layer of the hatching added on top of the last."""
+    crop = (slice(130, 380), slice(280, 600))
+    spacing, angle = nb.SPACING, nb.ANGLE
+    tone = blur(L[..., None], 2.0)[..., 0]
+    x, y = pixel_grid(L)
+    naive = 1 - stripes(x, y, spacing, angle, nb.THICK * spacing) * (tone < 0.5)
+    panels = [("jedna vrstva, tmavší než 0.5", naive)]
+    paper = np.ones_like(L)
+    for i, turn in enumerate(space["TURN"]):
+        s = np.clip((nb.LIGHTEST - nb.BAND * i - tone) / nb.BAND, 0, 1)
+        paper = paper * (1 - stripes(x, y, spacing, angle + turn, nb.THICK * spacing * s))
+        panels.append((f"{i + 1}. vrstva přidána, {angle + turn:g}°" if i else f"1. vrstva, {angle:g}°", paper))
+    fig, axes = plt.subplots(1, 5, figsize=(17, 3.6), gridspec_kw={"wspace": 0.03})
+    for ax, (title, picture) in zip(axes, panels):
+        ax.imshow(np.clip(picture[crop], 0, 1), cmap="gray", vmin=0, vmax=1, interpolation="nearest")
+        ax.set_title(title, fontsize=11)
+        bare(ax)
+    save(fig, "hatch_layers.png")
+
+
+def halftone_inks(img):
+    """The four inks of a CMYK print on a crop, then all four screens at 0 degrees and then turned."""
+    crop = (slice(180, 330), slice(300, 520))
+    cell = nb.CELL
+    soft = blur(srgb_to_linear(img[..., :3]), 0.25 * cell)
+    inks = [ink_of(soft, deg, ch, cell) for ch, deg in enumerate(space["SCREEN"])]
+    tints = ([0, 1, 1], [1, 0, 1], [1, 1, 0], [0.12, 0.12, 0.12])
+    names = ("azurová, 15°", "purpurová, 75°", "žlutá, 0°", "černá, 45°")
+
+    def printed(dots):
+        paper = (1 - np.dstack(dots[:3])) * (1 - dots[3])[..., None]
+        return linear_to_srgb(paper)
+
+    straight = printed([ink_of(soft, 0, ch, cell) for ch in range(4)])
+    turned = printed(inks)
+    panels = [(n, 1 - i[..., None] * (1 - np.array(t))) for n, i, t in zip(names, inks, tints)]
+    panels += [("všechny čtyři rastry v 0°", straight), ("natočené: 15°, 75°, 0°, 45°", turned)]
+    fig, axes = plt.subplots(2, 3, figsize=(13.5, 6.2), gridspec_kw={"wspace": 0.03, "hspace": 0.12})
+    for ax, (title, picture) in zip(axes.ravel(), panels):
+        ax.imshow(np.clip(picture[crop], 0, 1), interpolation="nearest")
+        ax.set_title(title, fontsize=11)
+        bare(ax)
+    save(fig, "halftone_inks.png")
+
+
+def flow_field(L):
+    """Ticks along the edge tangent flow over a crop: the structure tensor of the Sobel gradient, averaged by a Gaussian."""
+    gx, gy = sobel(L)
+    sigma = nb.FLOW_SIGMA
+    jxx, jyy, jxy = (blur(a[..., None], sigma)[..., 0] for a in (gx * gx, gy * gy, gx * gy))
+    angle = 0.5 * np.arctan2(2 * jxy, jxx - jyy)
+    tx, ty = -np.sin(angle), np.cos(angle)
+    clear = np.hypot(jxx - jyy, 2 * jxy) / np.maximum(jxx + jyy, 1e-9)
+    crop = (slice(150, 330), slice(250, 520))
+    fig, ax = plt.subplots(figsize=(11, 7.4))
+    ax.imshow(L[crop], cmap="gray", vmin=0, vmax=1, alpha=0.55)
+    for y in range(8, 180, 11):
+        for x in range(8, 270, 11):
+            c = clear[crop][y, x]
+            dx, dy = tx[crop][y, x] * 4.6, ty[crop][y, x] * 4.6
+            ax.plot([x - dx, x + dx], [y - dy, y + dy], color=ORANGE if c > 0.5 else BLUE,
+                    lw=1.0 + 1.8 * c, solid_capstyle="round")
+    ax.set_xlim(0, 270)
+    ax.set_ylim(180, 0)
+    bare(ax)
+    save(fig, "flow_field.png")
+
+
 def pipeline():
     """The lesson's layers as a chain, an arrow from each layer to the kernel that reads it."""
     boxes = {
@@ -245,6 +350,10 @@ def main():
     xdog_params(L)
     toon_steps(img, L)
     kuwahara(img)
+    ideas(img, L)
+    hatch_layers(L)
+    halftone_inks(img)
+    flow_field(L)
     pipeline()
     print("wrote", sorted(p.name for p in OUT.glob("*.png")))
 

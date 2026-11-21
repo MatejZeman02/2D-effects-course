@@ -25,6 +25,11 @@ SIGMA, K = 1.5, 1.6           # the two blurs, sigma and k sigma
 P, EPSILON, PHI = 20.0, 0.5, 10.0
 LEVELS = 5
 RADIUS = 4                    # Kuwahara's opening radius
+SPACING, ANGLE, THICK, LIGHTEST = 6.0, 45.0, 0.35, 0.75     # the hatching's opening values
+BAND = 0.17                   # the lightness a hatching layer needs to go from nothing to full width
+CELL = 9.0                    # the halftone's opening cell, in pixels
+FLOW_SIGMA, REACH = 3.0, 4.0  # the flow's neighbourhood and the flow DoG's stroke length
+SKETCH_SIGMA, SKETCH_GAIN = 4.0, 3.0
 cells = []
 
 
@@ -118,14 +123,7 @@ def pixel(ivec2 at) -> vec4:
     vec4 b = src[at]
 {XDOG_STUB}"""
 
-TOON_STUB = """\
-    # TODO: the lightness rounded to levels steps, then all of lab darkened by the ink"""
-
-SOLUTION_TOON = """\
-    float n = levels - 1
-    lab.x = floor(clamp(lab.x, 0.0, 1.0) * n + 0.5) / n
-    lab *= ink"""
-
+# Given finished, the toon kernel reads the photo and the XDoG layer.
 TOON = f"""\
 %%gmacs "chelsea" -> "Toon" lines=XDoG levels={LEVELS}
 kernel toon
@@ -144,7 +142,9 @@ params:
 def toon():
     vec3 lab = linear_srgb_to_oklab(srgb_to_linear_srgb(src[pixel].rgb))
     float ink = lines[pixel].r
-{TOON_STUB}
+    float n = levels - 1
+    lab.x = floor(clamp(lab.x, 0.0, 1.0) * n + 0.5) / n
+    lab *= ink
     vec3 rgb = clamp(oklab_to_linear_srgb(lab), vec3(0.0), vec3(1.0))
     dst[pixel] = vec4(linear_srgb_to_srgb(rgb), 1.0)"""
 
@@ -192,7 +192,308 @@ def pixel(ivec2 at) -> vec4:
     best = calmer(best, quadrant(at, ivec2(1, 1)))
     return vec4(linear_srgb_to_srgb(best.rgb), 1.0)"""
 
-# --- NumPy ------------------------------------------------------------------------
+# Hatching, given finished. Four layers of stripes, each darker than the last.
+HATCH = f"""\
+%%gmacs "chelsea" -> "Hatching"
+import linear_srgb_color_space
+import oklab_color_space
+
+uniform float spacing: hint_range(3, 16) = {SPACING}
+uniform float angle: hint_range(0, 180) = {ANGLE}
+uniform float thick: hint_range(0.1, 0.8) = {THICK}
+uniform float lightest: hint_range(0.5, 1.2) = {LIGHTEST}
+uniform int under: hint_enum("White paper", "Photo") = 0
+
+const int WHITE_PAPER = 0
+const int PHOTO = 1
+const ivec2 SIZE = ivec2({WIDTH}, {HEIGHT})
+const float TURN[4] = float[4](0.0, 90.0, -45.0, 45.0)
+const float BAND = {BAND}
+
+
+def light(ivec2 p) -> float:
+    ivec2 q = clamp(p, ivec2(0), SIZE - 1)
+    return linear_srgb_to_oklab(srgb_to_linear_srgb(src[q].rgb)).x
+
+
+# The lightness around a pixel, a Gaussian of 2 pixels, so a stroke's width does not flicker with the grain.
+def tone(ivec2 at) -> float:
+    float total = 0.0
+    float weight = 0.0
+    for dy in range_inclusive(-6, 6):
+        for dx in range_inclusive(-6, 6):
+            float w = exp(-float(dx * dx + dy * dy) / 8.0)
+            total += w * light(at + ivec2(dx, dy))
+            weight += w
+    return total / weight
+
+
+# How much of the pixel at p one family of stripes covers. The stripes run along the
+# direction degrees, spacing apart, each width pixels wide with a soft edge of one pixel.
+def stripes(vec2 p, float degrees, float width) -> float:
+    float a = radians(degrees)
+    float across = dot(p, vec2(-sin(a), cos(a))) / spacing
+    float distance = abs(fract(across) - 0.5) * spacing
+    return clamp(0.5 * width + 0.5 - distance, 0.0, 1.0) * min(width, 1.0)
+
+
+def pixel(ivec2 at) -> vec4:
+    vec2 p = vec2(at) + 0.5
+    float t = tone(at)
+    float open = 1.0
+    for i in range(4):
+        float s = clamp((lightest - BAND * float(i) - t) / BAND, 0.0, 1.0)
+        open *= 1.0 - stripes(p, angle + TURN[i], thick * spacing * s)
+    match under:
+        case WHITE_PAPER:
+            return vec4(vec3(open), 1.0)
+        case PHOTO:
+            return vec4(mix(vec3(1.0), src[at].rgb, 0.5) * open, 1.0)"""
+
+SCREEN_DOT_STUB = """\
+    # TODO: a disc whose area is coverage of the cell, soft at the edge by one pixel
+    return 0.0"""
+
+SOLUTION_SCREEN_DOT = """\
+    float r = sqrt(coverage / 3.14159265) * cell
+    return clamp(r - length(offset) * cell + 0.5, 0.0, 1.0) * min(2.0 * r, 1.0)"""
+
+HALFTONE = f"""\
+%%gmacs "chelsea" -> "Halftone"
+import linear_srgb_color_space
+
+uniform float cell: hint_range(4, 24) = {CELL}
+uniform int inks: hint_enum("CMYK", "Black only") = 0
+
+const int CMYK = 0
+const int BLACK_ONLY = 1
+const int LUMA = 4
+const ivec2 SIZE = ivec2({WIDTH}, {HEIGHT})
+const float SCREEN[4] = float[4](15.0, 75.0, 0.0, 45.0)
+
+
+# p turned by degrees about the origin.
+def rotate(vec2 p, float degrees) -> vec2:
+    float a = radians(degrees)
+    return vec2(cos(a) * p.x + sin(a) * p.y, -sin(a) * p.x + cos(a) * p.y)
+
+
+# The linear colour around a point, a Gaussian of a quarter cell, so the whole dot gets one tone.
+def around(vec2 centre) -> vec3:
+    float sigma = 0.25 * cell
+    int r = int(ceil(3.0 * sigma))
+    ivec2 middle = ivec2(floor(centre))
+    vec3 total = vec3(0.0)
+    float weight = 0.0
+    for dy in range_inclusive(-r, r):
+        for dx in range_inclusive(-r, r):
+            float w = exp(-float(dx * dx + dy * dy) / (2.0 * sigma * sigma))
+            total += w * srgb_to_linear_srgb(src[clamp(middle + ivec2(dx, dy), ivec2(0), SIZE - 1)].rgb)
+            weight += w
+    return total / weight
+
+
+# How much of the paper an ink has to cover. Channels 0 to 2 are cyan, magenta and yellow with
+# the black taken out, 3 is the black, LUMA is the one ink of a black and white print.
+def coverage_of(vec3 lin, int channel) -> float:
+    float m = max(lin.r, max(lin.g, lin.b))
+    if channel == LUMA:
+        return 1.0 - dot(lin, vec3(0.2126, 0.7152, 0.0722))
+    if channel == 3:
+        return 1.0 - m
+    if m <= 0.0:
+        return 0.0
+    return 1.0 - lin[channel] / m
+
+
+# One dot of a screen: offset is the pixel's place in its cell from the cell's centre,
+# in cells, each coordinate from -0.5 to 0.5. Returns 1 inside the dot and 0 outside.
+def screen_dot(vec2 offset, float coverage) -> float:
+{SCREEN_DOT_STUB}
+
+
+# The ink of one screen at pixel position p: the screen turned by degrees, a dot in each cell.
+def ink(vec2 p, float degrees, int channel) -> float:
+    vec2 q = rotate(p, degrees) / cell
+    vec2 centre = rotate((floor(q) + 0.5) * cell, -degrees)
+    return screen_dot(fract(q) - 0.5, clamp(coverage_of(around(centre), channel), 0.0, 1.0))
+
+
+def pixel(ivec2 at) -> vec4:
+    vec2 p = vec2(at) + 0.5
+    match inks:
+        case CMYK:
+            vec3 dots = vec3(ink(p, SCREEN[0], 0), ink(p, SCREEN[1], 1), ink(p, SCREEN[2], 2))
+            vec3 paper = (1.0 - dots) * (1.0 - ink(p, SCREEN[3], 3))
+            return vec4(linear_srgb_to_srgb(paper), 1.0)
+        case BLACK_ONLY:
+            return vec4(vec3(linear_srgb_to_srgb(vec3(1.0 - ink(p, 45.0, LUMA)))), 1.0)"""
+
+# The flow: which way the strokes of the picture run, from its structure tensor.
+FLOW = f"""\
+%%gmacs "chelsea" -> "Flow"
+import linear_srgb_color_space
+import oklab_color_space
+
+uniform float sigma: hint_range(1, 6) = {FLOW_SIGMA}
+
+const ivec2 SIZE = ivec2({WIDTH}, {HEIGHT})
+
+
+def light(ivec2 p) -> float:
+    ivec2 q = clamp(p, ivec2(0), SIZE - 1)
+    return linear_srgb_to_oklab(srgb_to_linear_srgb(src[q].rgb)).x
+
+
+# Sobel's gradient of the lightness at p.
+def gradient(ivec2 p) -> vec2:
+    float gx = light(p + ivec2(1, -1)) + 2.0 * light(p + ivec2(1, 0)) + light(p + ivec2(1, 1))
+    gx -= light(p + ivec2(-1, -1)) + 2.0 * light(p + ivec2(-1, 0)) + light(p + ivec2(-1, 1))
+    float gy = light(p + ivec2(-1, 1)) + 2.0 * light(p + ivec2(0, 1)) + light(p + ivec2(1, 1))
+    gy -= light(p + ivec2(-1, -1)) + 2.0 * light(p + ivec2(0, -1)) + light(p + ivec2(1, -1))
+    return vec2(gx, gy) / 8.0
+
+
+# Into red and green the direction of the strokes, a vector of length 1 moved from -1..1 to 0..1.
+# Into blue how clear the direction is, 0 where the picture is the same all ways, 1 on a straight edge.
+def pixel(ivec2 at) -> vec4:
+    int r = int(ceil(3.0 * sigma))
+    vec3 j = vec3(0.0)
+    float weight = 0.0
+    for dy in range_inclusive(-r, r):
+        for dx in range_inclusive(-r, r):
+            float w = exp(-float(dx * dx + dy * dy) / (2.0 * sigma * sigma))
+            vec2 g = gradient(at + ivec2(dx, dy))
+            j += w * vec3(g.x * g.x, g.y * g.y, g.x * g.y)
+            weight += w
+    j /= weight
+    float strength = j.x + j.y
+    if strength < 0.000001:
+        return vec4(1.0, 0.5, 0.0, 1.0)
+    float angle = 0.5 * atan(2.0 * j.z, j.x - j.y)
+    vec2 tangent = vec2(-sin(angle), cos(angle))
+    float clear = sqrt((j.x - j.y) * (j.x - j.y) + 4.0 * j.z * j.z) / strength
+    return vec4(0.5 + 0.5 * tangent, clear, 1.0)"""
+
+ACROSS = f"""\
+%%gmacs "chelsea" -> "Across" flow=Flow sigma={SIGMA} k={K}
+kernel across
+
+import linear_srgb_color_space
+import oklab_color_space
+
+image src: readonly
+image flow: readonly
+image dst
+
+params:
+    float sigma: hint_range(0.3, 4)
+    float k: hint_range(1.1, 3)
+
+const ivec2 SIZE = ivec2({WIDTH}, {HEIGHT})
+
+
+def light(vec2 q) -> float:
+    ivec2 p = clamp(ivec2(floor(q)), ivec2(0), SIZE - 1)
+    return linear_srgb_to_oklab(srgb_to_linear_srgb(src[p].rgb)).x
+
+
+# Both blurs of the lightness, taken only across the stroke, along the line through the pixel
+# that stands at right angles to the flow. Red holds the narrow one, green the wide one.
+def across():
+    vec2 t = flow[pixel].xy * 2.0 - 1.0
+    vec2 n = vec2(-t.y, t.x)
+    float wide = k * sigma
+    int r1 = int(ceil(3.0 * sigma))
+    int r2 = int(ceil(3.0 * wide))
+    vec2 total = vec2(0.0)
+    vec2 weight = vec2(0.0)
+    for i in range_inclusive(-r2, r2):
+        vec2 w = exp(-float(i * i) / (2.0 * vec2(sigma * sigma, wide * wide)))
+        if abs(i) > r1:
+            w.x = 0.0
+        total += w * light(vec2(pixel) + 0.5 + float(i) * n)
+        weight += w
+    vec2 g = total / weight
+    dst[pixel] = vec4(g.x, g.y, 0.0, 1.0)"""
+
+FDOG = f"""\
+%%gmacs "Across" -> "FDoG" flow=Flow reach={REACH} p={P} epsilon={EPSILON} phi={PHI}
+kernel fdog
+
+image src: readonly
+image flow: readonly
+image dst
+
+params:
+    float reach: hint_range(0, 12)
+    float p: hint_range(0, 100)
+    float epsilon: hint_range(0, 1)
+    float phi: hint_range(0, 100)
+
+const ivec2 SIZE = ivec2({WIDTH}, {HEIGHT})
+
+
+def tangent(vec2 q) -> vec2:
+    ivec2 at = clamp(ivec2(floor(q)), ivec2(0), SIZE - 1)
+    return flow[at].xy * 2.0 - 1.0
+
+
+# The two blurs of Across, averaged along the stroke: from the pixel one step at a time along the
+# flow, both ways, each step weighted by a Gaussian of reach steps. Then the XDoG of lesson 2.
+def fdog():
+    vec2 total = src[pixel].rg
+    float weight = 1.0
+    int steps = int(ceil(2.0 * reach))
+    for way in range(2):
+        vec2 q = vec2(pixel) + 0.5
+        vec2 before = tangent(q) * (1.0 - 2.0 * float(way))
+        for i in range_inclusive(1, steps):
+            vec2 t = tangent(q)
+            if dot(t, before) < 0.0:
+                t = -t
+            q += t
+            before = t
+            float w = exp(-float(i * i) / (2.0 * reach * reach + 0.0001))
+            total += w * src[clamp(ivec2(floor(q)), ivec2(0), SIZE - 1)].rg
+            weight += w
+    vec2 g = total / weight
+    float s = (1.0 + p) * g.x - p * g.y
+    float v = 1.0
+    if s < epsilon:
+        v = 1.0 + tanh(phi * (s - epsilon))
+    dst[pixel] = vec4(vec3(v), 1.0)"""
+
+SKETCH = f"""\
+%%gmacs "chelsea" -> "Sketch" halo=32
+import linear_srgb_color_space
+import oklab_color_space
+
+uniform float sigma: hint_range(1, 8) = {SKETCH_SIGMA}
+uniform float gain: hint_range(1, 8) = {SKETCH_GAIN}
+
+const ivec2 SIZE = ivec2({WIDTH}, {HEIGHT})
+
+
+def light(ivec2 p) -> float:
+    ivec2 q = clamp(p, ivec2(0), SIZE - 1)
+    return linear_srgb_to_oklab(srgb_to_linear_srgb(src[q].rgb)).x
+
+
+# The lightness divided by its own blur: 1 on flat ground, below 1 on the dark side of an edge.
+def pixel(ivec2 at) -> vec4:
+    int r = int(ceil(3.0 * sigma))
+    float total = 0.0
+    float weight = 0.0
+    for dy in range_inclusive(-r, r):
+        for dx in range_inclusive(-r, r):
+            float w = exp(-float(dx * dx + dy * dy) / (2.0 * sigma * sigma))
+            total += w * light(at + ivec2(dx, dy))
+            weight += w
+    float ratio = light(at) / max(total / weight, 0.0001)
+    return vec4(vec3(clamp(1.0 - gain * (1.0 - ratio), 0.0, 1.0)), 1.0)"""
+
+
 HELPERS_NP = '''\
 def srgb_to_linear(c):
     a = np.abs(c)
@@ -257,81 +558,158 @@ def blur(a, sigma):
     p = np.pad(a, ((r, r), (0, 0), (0, 0)), mode="edge")
     return sum(k[i] * p[i:i + h] for i in range(len(k)))'''
 
-TOON_NP = '''\
+
+
+# --- NumPy ------------------------------------------------------------------------
+STYLES_NP = '''\
+def xdog(L, sigma, p, epsilon, phi, k=K):
+    """XDoG ink drawing of the lightness L, (h, w), from 0 (ink) to 1 (paper)."""
+    g1 = blur(L[..., None], sigma)[..., 0]
+    g2 = blur(L[..., None], k * sigma)[..., 0]
+    s = (1 + p) * g1 - p * g2
+    return np.where(s >= epsilon, 1.0, 1.0 + np.tanh(phi * (s - epsilon)))
+
+
 def toon(img, ink, levels):
     """img's colours with the lightness rounded to levels steps and darkened by ink, (h, w, 3) in sRGB."""
     lab = oklab(srgb_to_linear(img[..., :3]))
     n = levels - 1
     lab[..., 0] = np.floor(np.clip(lab[..., 0], 0, 1) * n + 0.5) / n
     lab *= ink[..., None]
-    return linear_to_srgb(np.clip(oklab_to_linear(lab), 0, 1))'''
+    return linear_to_srgb(np.clip(oklab_to_linear(lab), 0, 1))
 
-XDOG_NP_GIVEN = f'''\
-def xdog(L, sigma, p, epsilon, phi, k={K}):
-    """XDoG line art of the lightness L, (h, w), from 0 (ink) to 1 (paper)."""
-    # TODO: the two blurs, S sharpened by p, then the soft threshold
-    return np.ones_like(L)'''
 
-SOLUTION_XDOG_NP = f'''\
-def xdog(L, sigma, p, epsilon, phi, k={K}):
-    """XDoG line art of the lightness L, (h, w), from 0 (ink) to 1 (paper)."""
-    g1 = blur(L[..., None], sigma)[..., 0]
-    g2 = blur(L[..., None], k * sigma)[..., 0]
-    s = (1 + p) * g1 - p * g2
-    return np.where(s >= epsilon, 1.0, 1.0 + np.tanh(phi * (s - epsilon)))'''
+def pixel_grid(a):
+    """The centres of a's pixels as two (h, w) arrays, x and y."""
+    h, w = a.shape[:2]
+    return np.meshgrid(np.arange(w) + 0.5, np.arange(h) + 0.5)
+
+
+def stripes(x, y, spacing, degrees, width):
+    """How much of each pixel one family of stripes covers, width pixels wide, spacing apart."""
+    a = np.radians(degrees)
+    across = (-np.sin(a) * x + np.cos(a) * y) / spacing
+    distance = np.abs(across % 1.0 - 0.5) * spacing
+    return np.clip(0.5 * width + 0.5 - distance, 0, 1) * np.minimum(width, 1.0)
+
+
+def hatch(L, spacing, angle, thick=THICK, lightest=LIGHTEST):
+    """Hatching of the lightness L, (h, w), from 0 (ink) to 1 (paper): four layers of stripes."""
+    tone = blur(L[..., None], 2.0)[..., 0]
+    x, y = pixel_grid(L)
+    paper = np.ones_like(L)
+    for i, turn in enumerate(TURN):
+        s = np.clip((lightest - BAND * i - tone) / BAND, 0, 1)
+        paper *= 1 - stripes(x, y, spacing, angle + turn, thick * spacing * s)
+    return paper
+
+
+def coverage_of(lin, channel):
+    """How much of the paper an ink has to cover, (h, w), from the linear colours lin, (h, w, 3)."""
+    m = lin.max(axis=-1)
+    if channel == LUMA:
+        return 1 - lin @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    if channel == 3:
+        return 1 - m
+    return np.where(m > 0, 1 - lin[..., channel] / np.maximum(m, 1e-6), 0)
+
+
+def screen_dot(ox, oy, coverage, cell):
+    """One dot of a screen: 1 inside the disc whose area is coverage of the cell, soft by a pixel."""
+    r = np.sqrt(coverage / np.pi) * cell
+    return np.clip(r - np.hypot(ox, oy) * cell + 0.5, 0, 1) * np.minimum(2 * r, 1)
+
+
+def ink(soft, degrees, channel, cell):
+    """The ink of one screen turned by degrees, (h, w): a dot in each cell, its size from the colour at the cell's centre."""
+    h, w = soft.shape[:2]
+    x, y = pixel_grid(soft)
+    c, s = np.cos(np.radians(degrees)), np.sin(np.radians(degrees))
+    qx, qy = (c * x + s * y) / cell, (-s * x + c * y) / cell
+    fx, fy = np.floor(qx), np.floor(qy)
+    cx, cy = (fx + 0.5) * cell, (fy + 0.5) * cell
+    ix = np.clip(np.floor(c * cx - s * cy), 0, w - 1).astype(int)
+    iy = np.clip(np.floor(s * cx + c * cy), 0, h - 1).astype(int)
+    return screen_dot(qx - fx - 0.5, qy - fy - 0.5, np.clip(coverage_of(soft[iy, ix], channel), 0, 1), cell)
+
+
+def halftone(img, cell, inks):
+    """img printed with dot screens, (h, w, 3) in sRGB: cyan, magenta, yellow and black, or one black ink."""
+    soft = blur(srgb_to_linear(img[..., :3]), 0.25 * cell)
+    if inks == "Black only":
+        return linear_to_srgb(np.repeat((1 - ink(soft, 45, LUMA, cell))[..., None], 3, axis=-1))
+    dots = np.dstack([ink(soft, SCREEN[channel], channel, cell) for channel in range(3)])
+    return linear_to_srgb((1 - dots) * (1 - ink(soft, SCREEN[3], 3, cell))[..., None])'''
+
+CONSTANTS_NP = f'''\
+K = {K}                              # the second blur is K times wider
+THICK, LIGHTEST = {THICK}, {LIGHTEST}    # the hatching's line width and where its first layer starts
+BAND = {BAND}                          # the lightness a hatching layer needs to go from nothing to full width
+TURN = (0.0, 90.0, -45.0, 45.0)      # each hatching layer's angle from the first
+SCREEN = (15.0, 75.0, 0.0, 45.0)     # the angles of the cyan, magenta, yellow and black screens
+LUMA = 4                             # the one ink of a black and white print'''
 
 PARAMS_NP = f'''\
 PARAMS = {{
-    "style": ["Toon", "Lines"],
+    "style": ["Toon", "Ink", "Hatching", "Halftone"],
     "sigma": ({SIGMA}, 0.3, 4.0),
     "p": ({P}, 0.0, 100.0),
     "epsilon": ({EPSILON}, 0.0, 1.0),
     "phi": ({PHI}, 0.0, 100.0),
     "levels": ({LEVELS}, 2, 12),
+    "spacing": ({SPACING}, 3.0, 16.0),
+    "angle": ({ANGLE}, 0.0, 180.0),
+    "on_photo": False,
+    "cell": ({CELL}, 4.0, 24.0),
+    "inks": ["CMYK", "Black only"],
 }}'''
 
-APPLY_GIVEN = '''\
-def apply(img, style, sigma, p, epsilon, phi, levels):
+APPLY_NP = '''\
+def apply(img, style, sigma, p, epsilon, phi, levels, spacing, angle, on_photo, cell, inks):
     out = img.copy()
-    # TODO: the lines alone, or the toon look with the lines over it
-    return out'''
-
-SOLUTION_APPLY = '''\
-def apply(img, style, sigma, p, epsilon, phi, levels):
-    out = img.copy()
-    ink = xdog(lightness(img), sigma, p, epsilon, phi)
-    if style == "Lines":
-        out[..., :3] = ink[..., None]
+    if style == "Toon":
+        out[..., :3] = toon(img, xdog(lightness(img), sigma, p, epsilon, phi), levels)
+    elif style == "Ink":
+        out[..., :3] = xdog(lightness(img), sigma, p, epsilon, phi)[..., None]
+    elif style == "Hatching":
+        paper = 0.5 + 0.5 * img[..., :3] if on_photo else 1.0
+        out[..., :3] = paper * hatch(lightness(img), spacing, angle)[..., None]
     else:
-        out[..., :3] = toon(img, ink, levels)
+        out[..., :3] = halftone(img, cell, inks)
     return out'''
 
-GOAL = ("# The filter of section 5, hidden because you write it yourself.\n"
+GOAL = ("# The filter of section 9, hidden because the lesson hands it over.\n"
         "def _goal():\n"
         + textwrap.indent(lesson_writer.used_only("\n\n".join(piece.replace("\n\n\n", "\n\n") for piece in
-                                        [HELPERS_NP, TOON_NP, SOLUTION_XDOG_NP, SOLUTION_APPLY]), keep=("apply",)), "    ")
+                                        [CONSTANTS_NP, HELPERS_NP, STYLES_NP, APPLY_NP]), keep=("apply",)), "    ")
         + "\n\n    return apply\n\n\n"
         + PARAMS_NP
         + '\n\nsara.live(_goal(), PARAMS, source="chelsea", target="Goal")')
+
 
 def answer(snippet, lang="python"):
     """A solution block's code fence."""
     return f"```{lang}\n{snippet}\n```"
 
 
+
 # --- Title --------------------------------------------------------------------
 md(r"""
-# Lekce 5: Stylizace, čárová kresba a kreslený vzhled
+# Lekce 5: Stylizace, kresba tuší a kreslený vzhled
 
-Na konci lekce budete mít v Kritě filtr, který z fotky udělá kresbu tuší, nebo kreslený obrázek s plochými barvami a obrysy. Postavíte ho z několika průchodů za sebou: dvě rozmazání z lekce 3, jejich rozdíl, měkký práh a posterizace z lekce 1. Navíc napíšete Kuwaharův filtr, který z fotky udělá malbu.
+Na konci lekce budete mít v Kritě filtr se čtyřmi styly: kresbu tuší, kreslený obrázek s plochými barvami a obrysy, šrafování jako v rytině a barevný tiskový rastr jako v novinách. Postavíte ho z věcí, které už umíte: dvou rozmazání z lekce 3, jejich rozdílu, posterizace z lekce 1 a tečkování z lekce 1, jen s tečkami, které mají velikost. Navíc napíšete Kuwaharův filtr, který z fotky udělá malbu, a v nepovinných sekcích si vyzkoušíte čáry vedené podél hran.
 
 Spusťte buňku. Otevře v Sáře nový dokument v sRGB s plátnem 902 × 600 a v něm testovací fotku jako vrstvu `chelsea`.
+
+<details><summary>📖 Proč „kresba tuší“ a ne „čárová kresba“</summary>
+
+Anglické *line art* se doslova překládá jako čárová kresba, což česky nezní. Kernel z druhé sekce dává černé čáry na bílém papíře, tedy to, čemu se česky říká **kresba tuší** (podle materiálu) nebo **perokresba** (podle nástroje). Používáme první, protože XDoG umí i široké tahy štětce.
+</details>
 """)
 
 code(f"""
 import sys
 sys.path.insert(0, "lib")            # sara.py and its helpers live in lib/
-import time
 import numpy as np
 import sara
 
@@ -340,7 +718,7 @@ photo = doc.import_image("imgs/5/chelsea.png")         # a layer called "chelsea
 """)
 
 md(r"""
-### Nové funkce v této lekci
+<details><summary>📖 Nové funkce v této lekci</summary>
 
 **Kernel v buňce `%%gmacs`**
 
@@ -349,27 +727,126 @@ md(r"""
 | `tanh(x)` | hyperbolický tangens, plynulý schod od −1 do 1 | 2 |
 | `image lines: readonly` a `lines=XDoG` na prvním řádku | druhý vstup celého kernelu, vrstva `XDoG` pod jménem `lines` | 3 |
 | `int levels` pod `params:` a `levels=5` na prvním řádku | celočíselný parametr celého kernelu a jeho hodnota | 3 |
+| `lin[channel]` | složka vektoru podle čísla, které se spočítá za běhu | 6 |
+| `atan(y, x)` | úhel vektoru $(x, y)$ v radiánech, od −π do π | 7 |
 
 **NumPy**
 
 | Volání | Co dělá | Sekce |
 |---|---|---|
-| `np.tanh(a)` | hyperbolický tangens po prvcích | 5 |
+| `np.tanh(a)` | hyperbolický tangens po prvcích | 9 |
+| `np.meshgrid(x, y)` | dvě pole `(h, w)` se souřadnicemi $x$ a $y$ každého pixelu | 9 |
+| `a % 1.0` | zlomková část po prvcích, jako `fract` v kernelu | 9 |
+| `np.hypot(x, y)` | délka vektoru po prvcích | 9 |
+| `soft[iy, ix]` | z pole vybere hodnotu na každé dvojici souřadnic najednou | 9 |
+
+</details>
 """)
 
 md(r"""
 ## Cíl lekce
-
-Buňka níže spustí hotový filtr, jehož kód je schovaný. Režim `Toon` dá kreslený vzhled, `Lines` jen čáry. Zkuste posuvníky `epsilon` a `p`: první říká, kolik obrázku zůstane bílé, druhé, jak silné jsou obrysy.
 """)
 
 code(GOAL, hidden=True)
+
+# --- Brainstorming --------------------------------------------------------------
+md(r"""
+## Jak byste to udělali?
+
+V cíli vyberte styl `Ink`. Fotka se změní na černé čáry na bílém papíře. Jak byste takové čáry z fotky dostali, když kernel zná jen pixel a jeho okolí?
+
+<details><summary>💭 Nápady</summary>
+
+Dobrá kresba tuší splní tři věci: čára je tam, kde se světlost rychle mění, a ne všude, kde je tmavo, čáry jsou souvislé a tenké a zrnitá textura srsti z nich nedělá šum. Každý pixel to musí poznat jen ze svého okolí.
+
+<details><summary>Práh světlosti: tmavé pixely černé, světlé bílé</summary>
+
+Nehodí se. Práh najde tmavé plochy, ne hrany. Oko a nos vyjdou jako černé skvrny, a jakmile práh posunete, srst se rozpadne na zrnitou mapu stínů. Kresba tuší ale kreslí obrysy, ne plochy.
+
+@img(idea_threshold.png, 900, Práh světlosti 0.35 nechá jen oči a nos, práh 0.6 dá zrnitou mapu stínů, v obou případech plochy místo obrysů)
+
+</details>
+
+<details><summary>Sobelův operátor a práh</summary>
+
+Skoro. Sobel z lekce 3 měří, jak rychle se světlost mění, a práh vybere největší změny. Na surové fotce ale vychází i každý chlup, a tak je kresba zrnitá. Po rozmazání jsou čáry klidnější, ale tlusté a bez ladění: velikost detailu, který se ještě počítá jako hrana, určuje jediné číslo, $\sigma$, a tvar čáry nejde měnit. Sekce 1 a 2 to řeší rozdílem dvou rozmazání.
+
+@img(idea_sobel.png, 900, Sobel s prahem dává zrnitou kresbu, po rozmazání čistší ale tlusté dvojité čáry)
+
+</details>
+
+<details><summary>Rozmazat fotku a odečíst ji od originálu</summary>
+
+Ano, a přesně to je sekce 1, jen s dvěma rozmazáními různé šířky místo jednoho. S jedním by zůstaly všechny detaily menší než $\sigma$, i šum.
+</details>
+
+<details><summary>Cannyho detektor hran</summary>
+
+Dává nejlepší tenké čáry, ale pracuje po krocích přes celý obrázek: ztenčí hrany a spojí je prahem s hysterezí, který sleduje řetězy pixelů. Pixel by musel znát výsledek sousedů, a to kernel neumí. Pro nepovinnou sekci 7 platí podobná myšlenka, čáry se tam ale vedou podél hran bez sledování řetězů.
+</details>
+
+<details><summary>Fotku „vydělit“ její vlastním rozmazáním</summary>
+
+To je trik z Photoshopu zvaný *color dodge*, který z fotky udělá skicu tužkou. Je to nepovinná sekce 8.
+</details>
+
+</details>
+
+### A jak by fotka vypadala jako kreslený film?
+
+Přepněte v cíli na `Toon`. Barvy jsou ploché a kolem nich jsou obrysy. Obrysy už máme, a co ty ploché plochy?
+
+<details><summary>💭 Nápady</summary>
+
+<details><summary>Posterizace z lekce 1</summary>
+
+Funguje a je to základ sekce 3. Na fotce s texturou ale každý pixel padne na jednu nebo druhou úroveň, takže srst je zrnitá. Rozmazání před posterizací zrno odstraní, jenže rozmaže i hrany, které mají zůstat ostré.
+
+@img(idea_posterise.png, 900, Posterizace fotky je zrnitá, po rozmazání hladká ale s rozmazanými okraji)
+
+</details>
+
+<details><summary>Vyhladit plochy a nechat hrany</summary>
+
+Přesně to dělá Kuwaharův filtr v sekci 4.
+</details>
+
+</details>
+
+### A jak by šla fotka nakreslit šrafami nebo tečkami?
+
+Přepněte v cíli na `Hatching` a `Halftone`. Šrafy jsou čáry, tmavší místa mají hustší, a rastr je mřížka teček, tmavší místa mají větší.
+
+<details><summary>💭 Nápady</summary>
+
+Dobrý nápad musí mít **velikost nebo hustotu značky**, kterou jde zvolit, a ne jen jeden pixel.
+
+<details><summary>Rozptyl z lekce 1 (Bayer)</summary>
+
+Dělá tečky podle světlosti, ale každá je velká jeden pixel a jejich velikost nejde ovlivnit. Vypadá jako zrnění, ne jako tisk.
+
+@img(idea_dither.png, 520, Bayerův rozptyl dává jemné zrnění, tečky jsou jen jeden pixel velké)
+
+</details>
+
+<details><summary>Čáry, kterých je víc, čím je tma</summary>
+
+Ano, to je šrafování. Jedna sada čar ale dá jen dvě úrovně, a tak se vrství víc sad v různých směrech. Sekce 5.
+</details>
+
+<details><summary>Mřížka teček s poloměrem podle světlosti</summary>
+
+Ano, rastr. Pro barvu se tiskne čtyřmi barvami zvlášť, každá s vlastní mřížkou. Sekce 6.
+</details>
+
+</details>
+""")
 
 # --- 1. DoG -----------------------------------------------------------------------
 md(r"""
 ## 1. Rozdíl dvou rozmazání
 
-Rozmazání z lekce 3 je dolní propust: nechá velké tvary a odstraní detaily menší než $\sigma$. Dvě rozmazání s různou $\sigma$ odstraní různě velké detaily, a jejich **rozdíl** (*difference of Gaussians*, DoG) nechá jen detaily mezi oběma velikostmi. Je to **pásmová propust** (*band pass*): ve spektru z lekce 4 ztlumí nízké i vysoké frekvence a nechá pásmo mezi nimi:
+Potřebujeme místa, kde se světlost rychle mění, a pokud možno jen ty, které odpovídají zvolené velikosti detailu. Sobel a práh to neumí naladit. Rozmazání z lekce 3 je dolní propust: nechá velké tvary a odstraní detaily menší než $\sigma$. Dvě rozmazání s různou $\sigma$ odstraní různě velké detaily, a jejich **rozdíl** (*difference of Gaussians*, DoG) nechá jen detaily mezi oběma velikostmi. Je to **pásmová propust** (*band pass*): ve spektru z lekce 4 ztlumí nízké i vysoké frekvence a nechá pásmo mezi nimi:
 
 $$D = G_\sigma * L - G_{k\sigma} * L, \qquad k \approx 1.6$$
 
@@ -377,13 +854,16 @@ Na hraně je $D$ kladné na světlé straně a záporné na tmavé, uprostřed p
 
 @img(dog_profile.png, 900, Dvě Gaussovy křivky různé šířky, jejich rozdíl ve tvaru mexického klobouku a odezva rozdílu na schodovou hranu se zákmity na obou stranách)
 
-Proč rozdíl dvou rozmazání najde hrany? Je to skoro **Laplaceův operátor** rozmazaného obrázku, druhá derivace z lekce o konvoluci. Rozmazání s rostoucím $\sigma$ se řídí rovnicí vedení tepla: změna Gaussova jádra s $\sigma$ je jeho Laplace, $\partial G_\sigma / \partial \sigma = \sigma\, \nabla^2 G_\sigma$. Rozdíl pro blízká $\sigma$ a $k\sigma$ je derivace krát krok:
+<details><summary>📖 Proč rozdíl dvou rozmazání najde hrany</summary>
+
+Je to skoro **Laplaceův operátor** rozmazaného obrázku, druhá derivace z lekce o konvoluci. Rozmazání s rostoucím $\sigma$ se řídí rovnicí vedení tepla: změna Gaussova jádra s $\sigma$ je jeho Laplace, $\partial G_\sigma / \partial \sigma = \sigma\, \nabla^2 G_\sigma$. Rozdíl pro blízká $\sigma$ a $k\sigma$ je derivace krát krok:
 
 $$G_{k\sigma} - G_\sigma \approx (k\sigma - \sigma)\, \frac{\partial G_\sigma}{\partial \sigma} = (k - 1)\, \sigma^2\, \nabla^2 G_\sigma$$
 
 $$D \approx -(k - 1)\, \sigma^2\, \nabla^2 (G_\sigma * L)$$
 
 DoG je tedy záporný Laplace rozmazané světlosti (*Laplacian of Gaussian*, LoG), až na násobek. Rozmazání napřed potlačí šum, který by druhá derivace jinak zesílila nejvíc. Marr a Hildreth hledali hrany jako místa, kde LoG prochází nulou, a s $k \approx 1.6$ je DoG tvarem LoG nejblíž.
+</details>
 
 Kernel níže spočítá obě rozmazání světlosti OKLab L najednou a uloží je do jedné vrstvy: $G_\sigma$ do červené, $G_{k\sigma}$ do zelené a samotnou světlost do modré. Další kernely ji čtou jako tři čísla, ne jako barvu. Na plochách jsou všechna tři čísla skoro stejná, a tak vrstva vypadá šedě, s barevnými lemy u hran.
 """)
@@ -393,7 +873,9 @@ code(BLURS)
 md(r"""
 ### 🎯 Úkol 1: DoG
 
-Spočítejte rozdíl červené a zelené složky vrstvy `Blurs`, vynásobte ho `gain` a přičtěte k šedé 0.5, aby byly vidět kladné i záporné hodnoty.
+Vzorec je výše. Spočítejte rozdíl červené a zelené složky vrstvy `Blurs`, vynásobte ho `gain` a přičtěte k šedé 0.5, aby byly vidět kladné i záporné hodnoty:
+
+$$\text{výsledek} = 0.5 + \text{gain} \cdot (G_\sigma - G_{k\sigma})$$
 
 <details><summary>💡 Nápověda</summary>
 
@@ -409,12 +891,16 @@ Spočítejte rozdíl červené a zelené složky vrstvy `Blurs`, vynásobte ho `
 code(DOG, solve=[(DOG_STUB, SOLUTION_DOG)])
 
 md(r"""
-> **❓ Otázka**
-> Zvětšete `sigma` v buňce `Blurs` na 3 a pak ji zmenšete na 0.5. Jak se změní, které hrany DoG najde? Kernel `DoG` po změně spusťte znovu. Nakonec spusťte buňku `Blurs` znovu, aby měla zase výchozí `sigma` 1.5.
+<details><summary>❓ Otázka: co dělá <code>sigma</code>?</summary>
+
+Zvětšete `sigma` v buňce `Blurs` na 3 a pak ji zmenšete na 0.5. Jak se změní, které hrany DoG najde? Kernel `DoG` po změně spusťte znovu. Nakonec spusťte buňku `Blurs` znovu, aby měla zase výchozí `sigma` 1.5.
 
 <details><summary>🔑 Odpověď</summary>
 
 S velkou $\sigma$ zůstanou jen obrysy velkých tvarů, hlava a uši, a srst zmizí. S malou $\sigma$ najde DoG i jednotlivé chlupy a šum. $\sigma$ volí velikost detailu, který se počítá jako hrana, a DoG je proto pásmová propust.
+
+</details>
+
 </details>
 """)
 
@@ -422,7 +908,9 @@ S velkou $\sigma$ zůstanou jen obrysy velkých tvarů, hlava a uši, a srst zmi
 md(r"""
 ## 2. XDoG: čáry jako tuší
 
-DoG je šedý obrázek kolem nuly, kresba tuší ale potřebuje černou na bílé. Winnemöller, Kyprianidis a Olsen v roce 2012 rozšířili DoG o dvě úpravy (*eXtended DoG*, XDoG). Nejdřív přičtou zesílený rozdíl k rozmazanému obrázku, což je zaostření z lekce 3:
+DoG je šedý obrázek kolem nuly, kresba tuší ale potřebuje černou na bílé. Zkusit prostý práh na $D$ nestačí: dá jen tenké čáry konstantní šířky, bez plynulých stínů. Winnemöller, Kyprianidis a Olsen v roce 2012 proto rozšířili DoG o dvě úpravy (*eXtended DoG*, XDoG). Myšlenky tohoto a následujících sekcí (XDoG, čáry podél hran, šrafování) jsou z videa o Difference of Gaussians, které natočil Acerola (Garrett Gunnell), a z jeho repozitáře [Post-Processing](https://github.com/GarrettGunnell/Post-Processing). Kód je tu napsaný znovu po svém.
+
+Nejdřív se zesílený rozdíl přičte k rozmazanému obrázku, což je zaostření z lekce 3:
 
 $$S = (1 + p)\, G_\sigma * L - p\, G_{k\sigma} * L = G_\sigma * L + p\, D$$
 
@@ -436,7 +924,7 @@ S velkým $\varphi$ je práh ostrý a obrázek černobílý jako dřevoryt. S ma
 
 ### 🎯 Úkol 2: XDoG
 
-Napište kernel podle vzorců.
+Napište kernel podle vzorců výše.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -455,14 +943,16 @@ code(XDOG, solve=[(XDOG_STUB, SOLUTION_XDOG)])
 md(r"""
 Vrstva `XDoG` má vypadat jako levý horní obrázek s výchozími hodnotami, ostatní ukazují, co dělají posuvníky.
 
-@img(xdog_params.png, 900, Šest variant čárové kresby kočky s různými hodnotami sigma, p, epsilon a phi)
+@img(xdog_params.png, 900, Šest variant kresby tuší s kočkou s různými hodnotami sigma, p, epsilon a phi)
 
-> **❓ Otázka**
-> Co se stane s $p = 0$? A proč obrázek s $p = 60$ a $\varepsilon = 0.9$ vypadá jako negativ?
+<details><summary>❓ Otázka: co se stane s <code>p = 0</code> a proč vypadá <code>p = 60</code> s <code>epsilon = 0.9</code> jako negativ?</summary>
 
 <details><summary>🔑 Odpověď</summary>
 
 S $p = 0$ je $S = G_\sigma * L$, rozmazaná světlost, a XDoG je jen práh světlosti: tmavé plochy černé, světlé bílé, žádné obrysy. Velké $p$ zesílí rozdíl, takže na světlé straně hran je $S$ mnohem větší než 1 a na tmavé záporné. S $\varepsilon = 0.9$ je skoro každá plocha pod prahem a zčerná. Bílé zůstanou jen světlé strany hran, které $p$ vytáhlo nad $\varepsilon$: bílé čáry na černém, jako negativ kresby.
+
+</details>
+
 </details>
 """)
 
@@ -474,31 +964,24 @@ Kreslený vzhled (*toon shading*) napodobuje kreslený film: málo odstínů a �
 
 @img(toon_steps.png, 900, Fotka kočky, její posterizovaná světlost, čáry XDoG a obojí dohromady jako kreslený obrázek)
 
-### 🎯 Úkol 3: toon
+Kernel je hotový. Světlost `lab.x` se zaokrouhlí na `levels` úrovní jako v lekci 1 a celé `lab` se vynásobí hodnotou čáry `ink`, takže barva se u čáry ztmaví i odbarví:
 
-Zaokrouhlete světlost `lab.x` na `levels` úrovní a pak vynásobte celé `lab` hodnotou čáry `ink`. Barva se tak u čáry ztmaví i odbarví.
+$$L' = \frac{\lfloor L\,(n - 1) + 0.5 \rfloor}{n - 1}, \qquad \text{barva} = (L',\, a,\, b) \cdot \text{ink}$$
 
-<details><summary>💡 Nápověda</summary>
-
-1. Posterizace z lekce 1 s prahem 0.5: $\lfloor L\,(n - 1) + 0.5 \rfloor / (n - 1)$.
-2. `levels` je `int`, převeďte ho na `float`.
-</details>
-
-<details><summary>🔑 Řešení</summary>
-
-""" + answer(SOLUTION_TOON) + r"""
-</details>
+Spusťte ho a zkuste `levels` v prvním řádku buňky (`levels=5`).
 """)
 
-code(TOON, solve=[(TOON_STUB, SOLUTION_TOON)])
+code(TOON)
 
 md(r"""
-> **❓ Otázka**
-> Srst kočky je po posterizaci zrnitá, plná skvrn jedné a druhé úrovně. Proč, a co by pomohlo?
+<details><summary>❓ Otázka: srst kočky je po posterizaci zrnitá. Proč a co by pomohlo?</summary>
 
 <details><summary>🔑 Odpověď</summary>
 
 Světlost srsti se mění pixel od pixelu kolem hranice dvou úrovní, a každý pixel se zaokrouhlí jinam. Pomůže fotku před posterizací vyhladit tak, aby plochy byly hladké a hrany zůstaly ostré. Gaussovo rozmazání by rozmazalo i hrany, a tak přichází Kuwaharův filtr.
+
+</details>
+
 </details>
 """)
 
@@ -514,7 +997,7 @@ Rozptyl je průměr čtverců minus čtverec průměru:
 
 $$\operatorname{var} = \frac{1}{n}\sum l^2 - \Big(\frac{1}{n}\sum l\Big)^2$$
 
-### 🎯 Úkol 4: Kuwahara
+### 🎯 Úkol 3: Kuwahara
 
 Doplňte funkci `quadrant`. Čtverec má stranu `radius + 1` a vede od `at` ve směru `towards`: pixel `at + towards * ivec2(dx, dy)` pro `dx` a `dy` od 0 do `radius`. Vrací průměrnou barvu v lineárním RGB a ve složce `.a` rozptyl jasu $l = 0.2126\,R + 0.7152\,G + 0.0722\,B$. Funkce `calmer` a `pixel` jsou hotové.
 
@@ -534,7 +1017,9 @@ Doplňte funkci `quadrant`. Čtverec má stranu `radius + 1` a vede od `at` ve s
 code(KUWAHARA, solve=[(QUADRANT_STUB, SOLUTION_QUADRANT)])
 
 md(r"""
-Teď kreslený vzhled podruhé, z malby místo z fotky. V buňce kernelu `Toon` změňte první řádek na
+<details><summary>📖 Kreslený vzhled z malby a řetěz průchodů</summary>
+
+V buňce kernelu `Toon` změňte první řádek na
 
 ```
 %%gmacs "Kuwahara" -> "Toon" lines=XDoG levels=5
@@ -544,85 +1029,231 @@ a spusťte ji znovu. Zkuste také `Blurs` z vrstvy `Kuwahara`, aby i čáry byly
 
 @img(pipeline.png, 900, Řetěz vrstev lekce: fotka, Kuwahara, rozmazání, XDoG a toon, se šipkami od vrstvy ke kernelu, který ji čte)
 
-> **❓ Otázka**
-> Zvětšete `radius` na 8. Proč se objeví hranaté skvrny, a proč tak Kuwaharův filtr v praxi skoro nikdo nepoužívá?
+</details>
+
+<details><summary>❓ Otázka: proč se s <code>radius = 8</code> objeví hranaté skvrny a proč se Kuwahara v praxi mění?</summary>
 
 <details><summary>🔑 Odpověď</summary>
 
-Čtverce mají rovné strany a pevné směry, takže výsledek se skládá z kousků čtverců, hlavně tam, kde se nejklidnější čtverec mění skokem. Varianty, které se používají, mění tvar oblasti: kruhové výseče místo čtverců s plynulými vahami (*generalised Kuwahara*) a výseče protažené podél hrany (*anisotropic Kuwahara*), jak to ukazuje Acerola ve videu o Kuwaharově filtru.
+Čtverce mají rovné strany a pevné směry, takže výsledek se skládá z kousků čtverců, hlavně tam, kde se nejklidnější čtverec mění skokem. Varianty, které se používají, mění tvar oblasti: kruhové výseče s plynulými vahami (*generalised Kuwahara*) a výseče protažené podél hrany (*anisotropic Kuwahara*), jak to ukazuje Acerola v repozitáři Post-Processing. Směr hrany spočítáme v nepovinné sekci 7.
+
+</details>
+
 </details>
 """)
 
-# --- 5. NumPy and Krita -----------------------------------------------------------
+# --- 5. Hatching ------------------------------------------------------------------
 md(r"""
-## 5. Do Krity
+## 5. Šrafování
 
-Filtr do Krity spojí XDoG a toon v NumPy. Pomocné funkce obsahují převody z lekce o barevných prostorech, rozmazání `blur` z lekce 3 a `toon`, totéž co kernel `Toon`.
+Šrafování (*hatching*) kreslí tmavá místa hustšími čarami, jako rytina nebo pero. Potřebujeme čáry, jejichž hustota sleduje světlost fotky. **Naivní pokus:** jedna sada rovnoběžných čar, nakreslená všude, kde je světlost pod 0.5. Vyjdou dvě úrovně, čáry nebo papír, a okraj mezi nimi je ostrý. Lepší je vrstvit sady čar v různých směrech, každou od tmavšího tónu než předchozí, a čáry tam, kde se tón blíží prahu vrstvy, nechat zeslabit.
+
+@img(hatch_layers.png, 1000, Jedna sada čar pod prahem světlosti dává ostré skvrny, čtyři vrstvy čar v různých směrech dají plynulé stínování)
+
+Pro vrstvu $i = 0, 1, 2, 3$ kernel udělá tři věci. Tón $L$ je světlost OKLab rozmazaná Gaussem o 2 pixelech, aby šířka čáry neblikala se zrnem fotky. Vrstva začíná na světlosti $T_i = \text{lightest} - B\,i$, kde $B$ je pásmo tónů jedné vrstvy, a hustota roste od 0 do 1:
+
+$$s_i = \operatorname{clamp}\!\Big(\frac{T_i - L}{B},\, 0,\, 1\Big), \qquad w_i = \text{thick} \cdot \text{spacing} \cdot s_i$$
+
+Čáry vrstvy $i$ jedou ve směru $\text{angle} + (0, 90, -45, 45)_i$ stupňů, vždy po `spacing` pixelech, široké $w_i$. Pokrytí pixelu čarami je vzdálenost k nejbližší ose čáry, převedená na měkký okraj o jednom pixelu:
+
+$$\text{stripe} = \operatorname{clamp}\!\big(\tfrac{w}{2} + 0.5 - d,\, 0,\, 1\big) \cdot \min(w, 1)$$
+
+Poslední činitel zajistí, že čára šířky nula nic nekreslí. Papír propustí světlo vrstvou po vrstvě:
+
+$$\text{papír} = \prod_{i=0}^{3} (1 - \text{stripe}_i)$$
+
+Kernel je hotový. Zkuste posuvníky a přepínač `under`: `Photo` vezme pod čáry polovinu barvy fotky.
+
+<details><summary>📖 Odkud je to</summary>
+
+Vrstvy s postupně tmavším prahem jsou zjednodušení myšlenky *tonal art maps* (Praun a kol., 2001). Šrafování má i Acerola v repozitáři Post-Processing. Tahle verze je napsaná po svém a čáry se počítají vzorcem, takže jdou měnit posuvníkem.
+</details>
 """)
 
-code(HELPERS_NP + "\n\n\n" + TOON_NP)
+code(HATCH)
 
 md(r"""
+<details><summary>❓ Otázka: proč jsou čtyři směry zrovna 0, 90, −45 a 45 stupňů od prvního?</summary>
 
-### 🎯 Úkol 5: XDoG v NumPy
+<details><summary>🔑 Odpověď</summary>
 
-Napište `xdog(L, sigma, p, epsilon, phi)`. `L` je pole `(h, w)`, `blur` chce `(h, w, c)`, takže světlost rozšiřte o osu a výsledek o ni zase zmenšete.
+První dvě vrstvy jsou na sebe kolmé a dají čtvercovou síť, další dvě jsou o 45 stupňů otočené a přidají do ní úhlopříčky, takže nejtmavší místa se zaplní. Úhly jsou věc vkusu, zkuste v kernelu jiné hodnoty `TURN`.
 
-Buňka pod funkcí zapíše výsledek jako vrstvu `XDoG NumPy`, porovnejte ji s vrstvou `XDoG`. Pokud jste v sekci 4 přepnuli `Blurs` na `Kuwahara`, vraťte první řádek `Blurs` na `%%gmacs "chelsea" -> "Blurs" halo=32` a spusťte znovu `Blurs` a `XDoG`.
+</details>
+
+</details>
+""")
+
+# --- 6. Halftone ------------------------------------------------------------------
+md(r"""
+## 6. Rastr: půltóny jako v novinách
+
+Tiskárna nemá šedé barvy, jen černou na bílém papíře. Tmavší místa tedy dostanou větší tečky na pravidelné mřížce a oko je z dálky smíchá do šedi. Tomu se říká **rastr** (*halftone*, česky také půltónový tisk). Barevný tisk má čtyři barvy, azurovou, purpurovou, žlutou a černou (*CMYK*), každou s vlastním rastrem. **Naivní pokus:** všechny čtyři mřížky stejně, bez natočení. Tečky se pak kreslí přes sebe a drobné posuny mezi nimi dají vzory, které se mění po celém obrázku (*moiré*). Tisk to řeší natočením každé mřížky o jiný úhel, tradičně 15, 75, 0 a 45 stupňů.
+
+@img(halftone_inks.png, 1000, Čtyři barvy rastru zvlášť, pak všechny čtyři mřížky v nule stupňů a nakonec natočené mřížky, které tvoří rozetu bez moiré)
+
+**Kolik barvy.** Z lineárního RGB se barvy spočítají tiskovým způsobem. Černá bere největší složku, ostatní barvy zbytek:
+
+$$m = \max(R, G, B), \qquad K = 1 - m, \qquad C = 1 - \frac{R}{m},\quad M = 1 - \frac{G}{m},\quad Y = 1 - \frac{B}{m}$$
+
+Světlo, které papír po tisku odrazí, je součin toho, co každá barva propustí:
+
+$$\text{barva} = (1 - C,\, 1 - M,\, 1 - Y)\,(1 - K)$$
+
+Výpočet jde v lineárním světle, protože tečky skutečně sčítají světlo, které papír odrazí. Černobílý tisk má jedinou barvu s pokrytím $1 - L_\text{lin}$, kde $L_\text{lin}$ je jas v lineárním světle.
+
+**Kolik papíru pokryje tečka.** Pokrytí $c$ je podíl buňky, který má tečka zakrýt. Plocha kruhu je $\pi r^2$ a plocha buňky $\text{cell}^2$, takže poloměr kruhu je
+
+$$r = \text{cell}\,\sqrt{c / \pi}$$
+
+Vzdálenost $d$ od středu je v pixelech `length(offset) * cell`, a hrana tečky je měkká o jeden pixel:
+
+$$\text{dot} = \operatorname{clamp}(r - d + 0.5,\, 0,\, 1) \cdot \min(2r,\, 1)$$
+
+Poslední činitel řeší tečku s nulovým pokrytím: bez něj by se v jejím středu kreslil poloviční pixel a prázdné barvy by zašpinily obrázek.
+
+Zbytek kernelu je hotový. Pokrytí čte `coverage_of` ze světla kolem středu buňky (`around` rozmaže na čtvrt buňky, aby celá tečka dostala jednu barvu), `ink` otočí souřadnice mřížky a najde buňku a `pixel` složí čtyři barvy. Chybí jedno: tečka.
+
+### 🎯 Úkol 4: tečka rastru
+
+Doplňte `screen_dot(offset, coverage)`. `offset` je poloha pixelu v buňce od jejího středu, každá souřadnice v rozmezí od −0.5 do 0.5, v jednotkách buňky. Vraťte 1 uvnitř tečky a 0 mimo, s měkkým okrajem podle vzorců výše.
 
 <details><summary>💡 Nápověda</summary>
 
-1. `blur(L[..., None], sigma)[..., 0]` je rozmazaná světlost `(h, w)`.
-2. `np.where(s >= epsilon, 1.0, ...)` vybere bílou nebo měkký práh po prvcích. Spočítá obě větve všude, ale to nevadí.
+1. `float r = sqrt(coverage / 3.14159265) * cell` je poloměr v pixelech.
+2. Vzdálenost je `length(offset) * cell`.
+3. `clamp(r - d + 0.5, 0.0, 1.0)` je okraj. Pokrytí 0 ošetřete činitelem `min(2.0 * r, 1.0)`.
 </details>
 
 <details><summary>🔑 Řešení</summary>
 
-""" + answer(SOLUTION_XDOG_NP) + r"""
+""" + answer(SOLUTION_SCREEN_DOT) + r"""
 </details>
 """)
 
-code(XDOG_NP_GIVEN + f"""
-
-
-start = time.perf_counter()
-lines = xdog(lightness(photo.read()), {SIGMA}, {P}, {EPSILON}, {PHI})
-print(f"NumPy XDoG: {{(time.perf_counter() - start) * 1000:.1f}} ms")
-doc.new_layer("XDoG NumPy", rgba(lines))
-""", solve=[(XDOG_NP_GIVEN, SOLUTION_XDOG_NP)])
+code(HALFTONE, solve=[(SCREEN_DOT_STUB, SOLUTION_SCREEN_DOT)])
 
 md(r"""
-### 🎯 Úkol 6: filtr
+Zkuste `cell` 4 a 20 a přepněte `inks` na `Black only`. Je to jedna mřížka pod 45 stupni jako u novin.
 
-Napište `apply`. Styl `Lines` vrátí čáry jako šedý obrázek, `Toon` posterizaci s čarami přes funkci `toon`. Vrstvu `Filter NumPy` z buňky pod funkcí porovnejte s `Goal`.
+<details><summary>❓ Otázka: proč je střed buňky rozmazaný a ne jeden pixel?</summary>
 
-<details><summary>💡 Nápověda</summary>
+<details><summary>🔑 Odpověď</summary>
 
-1. `ink = xdog(lightness(img), sigma, p, epsilon, phi)`.
-2. Šedý obrázek do tří kanálů: `ink[..., None]` se rozšíří sám.
-3. Alfa zůstává z `img`.
+Jeden pixel uprostřed buňky by byl šum fotky, a každá tečka by dostala jinou velikost, než odpovídá jejímu okolí. Rozmazání na čtvrt buňky dá středu průměr z celého místa, které tečka zastupuje, a tečky pak sledují tvary, ne zrno.
+
 </details>
 
-<details><summary>🔑 Řešení</summary>
-
-""" + answer(SOLUTION_APPLY) + r"""
 </details>
 """)
 
-code(PARAMS_NP + "\n\n\n" + APPLY_GIVEN + """
+# --- 7. Flow ----------------------------------------------------------------------
+md(r"""
+## 7. Čáry podél hran (nepovinné)
 
+XDoG z druhé sekce rozmazává do všech směrů, a tak kolem hran zůstávají přerušované kousky. Kdyby se čáry vedly **podél** hran, spojily by se do plynulých tahů štětce. Tomu se říká DoG řízené tokem (*flow-based DoG*, Kang, Lee a Chui, 2007, v Acerolově repozitáři také). Potřebujeme pro každý pixel vědět, kam hrana směřuje: **tečnu hran** (*edge tangent flow*).
 
+Směr hrany je kolmý na gradient, který už umíme ze Sobela z lekce 3. Přímo ho ale průměrovat nejde: gradient míří na jednu stranu hrany a na druhé na opačnou, takže by se zrušily. Průměruje se proto jeho čtverec, **strukturní tenzor** (*structure tensor*), který na znaménku nezávisí.
+
+<details><summary>📖 Strukturní tenzor</summary>
+
+Ze Sobelova gradientu $g = (g_x, g_y)$ se v každém pixelu spočítá matice a Gaussem se zprůměruje v okolí o $\sigma$ pixelech:
+
+$$J = G_\sigma * \begin{pmatrix} g_x^2 & g_x g_y \\ g_x g_y & g_y^2 \end{pmatrix}$$
+
+Směr, ve kterém se světlost mění nejvíc, má úhel
+
+$$\theta = \tfrac{1}{2}\, \operatorname{atan2}\!\big(2 J_{xy},\ J_{xx} - J_{yy}\big)$$
+
+a tečna je k němu kolmá, $t = (-\sin\theta,\ \cos\theta)$. Jak jasný směr je, říká $\sqrt{(J_{xx} - J_{yy})^2 + 4 J_{xy}^2} \,/\, (J_{xx} + J_{yy})$: 1 na rovné hraně a 0 tam, kde se obraz mění stejně do všech stran.
+</details>
+
+@img(flow_field.png, 760, Úsečky tečny hran na výřezu oka kočky, oranžové tam, kde je směr jasný, modré tam, kde ne)
+
+Kernel `Flow` zapíše tečnu do červené a zelené složky (z $-1$ až $1$ převedenou na 0 až 1) a jasnost směru do modré.
+""")
+
+code(FLOW)
+
+md(r"""
+Teď dvě rozmazání, jen **napříč** tahu: kernel `Across` vezme čáru kolmou k toku a rozmaže jen po ní. Pak kernel `FDoG` ta dvě rozmazání **zprůměruje podél** toku, krok po kroku oběma směry, a z výsledku udělá XDoG ze sekce 2. Oba kernely jsou celé a kód mají sbalený.
+""")
+
+code(ACROSS, hidden=True)
+
+code(FDOG, hidden=True)
+
+md(r"""
+Vrstva `FDoG` má stejné čáry jako `XDoG`, ale tahy jsou souvislé a vedou podél srsti. Zkuste `reach` v prvním řádku buňky `FDoG` (délka tahu) a `sigma` v buňce `Across`.
+
+<details><summary>❓ Otázka: proč se rozmazání dělají napříč a pak podél a ne obě najednou?</summary>
+
+<details><summary>🔑 Odpověď</summary>
+
+Napříč tahu je třeba najít hranu, a tak se obraz rozmazává jen tam. Podél tahu hrana nic neříká, a tak se tam průměruje bez obav, čímž se spojí přerušované kousky. Obyčejné Gaussovo rozmazání do všech směrů by hranu rozmazalo i podél ní.
+
+</details>
+
+</details>
+""")
+
+# --- 8. Sketch --------------------------------------------------------------------
+md(r"""
+## 8. Skica tužkou (nepovinné)
+
+Poslední styl je trik z Photoshopu, **color dodge** s rozmazanou kopií. Světlost se vydělí vlastním rozmazáním: na ploché ploše je podíl 1 (bílá), na tmavé straně hrany pod 1:
+
+$$\text{výsledek} = 1 - g\,\Big(1 - \frac{L}{G_\sigma * L}\Big)$$
+
+Kernel je hotový. Zkuste `sigma`, velikost detailu, který se kreslí, a `gain`, tmavost tahů.
+""")
+
+code(SKETCH)
+
+# --- 9. NumPy and Krita -----------------------------------------------------------
+md(r"""
+## 9. Do Krity
+
+Krita pouští filtry v NumPy, takže čtyři styly jsou níže přepsané do NumPy. Spusťte obě buňky. První obsahuje konstanty, převody barev z úvodní lekce a rozmazání `blur` z lekce 3, druhá styly `xdog`, `toon`, `hatch`, `halftone` a `apply`.
+""")
+
+code(CONSTANTS_NP + "\n\n\n" + HELPERS_NP)
+
+code(STYLES_NP + "\n\n\n" + PARAMS_NP + "\n\n\n" + APPLY_NP)
+
+code("""
 sara.live(apply, PARAMS, source="chelsea", target="Filter NumPy")
-""", solve=[(APPLY_GIVEN, SOLUTION_APPLY)])
+""")
 
 md(r"""
-### 🎯 Úkol 7: filtr v Kritě
+Vrstva `Filter NumPy` vypadá stejně jako `Goal` a jako vrstvy kernelů. Rozdíly jsou jen v zaokrouhlení.
 
-Vložte filtr do `pga_filter/effect.py` s `TITLE = "XDoG line art"` a vyzkoušejte ho na portrétu, na krajině a na vlastní kresbě. Na velkých fotkách zvětšete `sigma`, protože detaily mají víc pixelů.
+<details><summary>📖 Co se v NumPy mění oproti kernelu</summary>
 
-<details><summary>💡 Nápověda</summary>
+Kernel počítá jeden pixel, NumPy celé pole najednou. Tím se liší hlavně tyhle řádky:
 
-Kromě `xdog`, `PARAMS` a `apply` patří do `effect.py` i pomocné funkce z buňky nahoře.
+| Kernel | NumPy |
+|---|---|
+| `at`, `vec2(at) + 0.5` | `pixel_grid`: dvě pole `x` a `y` se souřadnicemi středů všech pixelů |
+| `fract(x)` | `x % 1.0` |
+| cyklus `for i in range(4)` nad vrstvami šrafování | tentýž cyklus v Pythonu, každý průchod ale počítá celý obrázek |
+| `around(centre)`: Gaussův průměr kolem středu buňky pro každý pixel zvlášť | `blur` celého obrázku jednou, pak výběr hodnoty ve středu buňky přes `soft[iy, ix]` |
+| `lin[channel]` | `lin[..., channel]`, poslední osa jsou kanály |
+| `clamp(p, ivec2(0), SIZE - 1)` na okrajích | `np.clip(..., 0, w - 1)` pro souřadnice a `mode="edge"` v `blur` |
+| `match inks:` a `match under:` | `if inks == "Black only"` a `on_photo` jako zaškrtávací políčko |
+| `tanh(x)`, `length(v)` | `np.tanh(x)`, `np.hypot(x, y)` |
+
+Čáry podél hran a skica v NumPy nejsou: tok potřebuje pro každý pixel sledovat dráhu přes obraz, a to je v NumPy pomalé.
+
+</details>
+
+### 🎯 Úkol 5: filtr v Kritě
+
+V `pga_filter/effect.py` nahraďte všechno pod řádkem `import numpy as np` obsahem obou buněk s kódem výše a nastavte `TITLE = "Stylisation"`. Vyzkoušejte všechny čtyři styly na portrétu a na krajině.
+
+<details><summary>ℹ️ Šrafování nebo rastr v Kritě vypadá jinak než ve zmenšeném náhledu?</summary>
+
+Náhled filtru ve zmenšené velikosti zmenší i obrázek, ale `spacing` a `cell` jsou v pixelech, takže čáry a tečky se v něm zdají hrubší. Přepněte náhled na „Centre at full size“.
 </details>
 """)
 
@@ -630,33 +1261,38 @@ Kromě `xdog`, `PARAMS` a `apply` patří do `effect.py` i pomocné funkce z bu�
 md(r"""
 ## Shrnutí
 
-- Rozdíl dvou Gaussových rozmazání je pásmová propust: nechá detaily mezi dvěma velikostmi a na hranách dá kladné a záporné hodnoty.
-- DoG je skoro záporný Laplace rozmazaného obrázku (LoG).
-- XDoG k rozmazané světlosti přičte zesílený rozdíl a výsledek projde měkkým prahem. Parametry $\sigma$, $p$, $\varepsilon$ a $\varphi$ nastaví vzhled od tuše po uhel.
-- Kreslený vzhled je posterizovaná světlost krát čáry. Kernel čte druhou vrstvu přes `image`.
-- Kuwaharův filtr vyhladí plochy a nechá hrany: průměr nejklidnějšího ze čtyř čtverců.
-- Stylizace je řetěz průchodů, každý článek jde vyměnit.
+- Rozdíl dvou Gaussových rozmazání je pásmová propust: nechá detaily mezi dvěma velikostmi. XDoG ho zesílí a pošle přes měkký práh, výsledek jsou čáry tuší.
+- Kreslený vzhled je posterizovaná světlost krát čáry, Kuwahara vyhladí plochy a nechá hrany.
+- Šrafování vrství sady čar v různých směrech, každá se zapíná od tmavšího tónu.
+- Rastr kreslí tečku s plochou podle pokrytí, každá barva CMYK na mřížce jiného úhlu, aby nevzniklo moiré.
+- Tok hran ze strukturního tenzoru dovolí vést čáry podél hran.
 
-### Co jsme vynechali
+<details><summary>📖 Co jsme vynechali</summary>
 
-- **Čáry podél hran.** Rozmazání podél směru hrany (*flow-based DoG*, s polem směrů *edge tangent flow*) spojí přerušované čáry do plynulých tahů. Směr hrany dává Sobelův operátor z lekce o konvoluci.
-- **Šrafování a půltóny.** Světlost se dá převést na šrafy, tečky tiskového rastru nebo znaky ASCII. Znaky potřebují obrázek s písmeny jako druhý vstup, a to teď umíte.
+- **Cannyho detektor hran** a hystereze: pracují po krocích přes celý obrázek.
+- **Znaky ASCII** místo teček. Potřebují obrázek s písmeny jako druhý vstup, a to teď umíte.
 - **Paleta.** Místo posterizace světlosti se barvy dají zaokrouhlit na paletu několika barev, vybranou ručně nebo shlukováním (k-means).
+- **Anizotropní Kuwahara** s tokem hran místo čtverců.
+- **Tok a skica v NumPy**, tedy v Kritě.
 
-### Bonusové úkoly
+</details>
+
+<details><summary>🎯 Bonusové úkoly</summary>
 
 1. **Barevné čáry.** Místo černé kreslete čáry barvou: tmavší verzí barvy plochy pod nimi, nebo pevnou barvou z výběru barvy (`source_color`).
-2. **Tloušťka čáry.** Ztlušťte čáry XDoG tak, že vezmete minimum z okolí, a zjistěte, jak to vypadá s různým poloměrem.
-3. **Půltóny.** Napište kernel, který plochu nahradí mřížkou černých teček s poloměrem podle světlosti, jako novinová fotka.
+2. **Šrafy podél toku.** Do `Hatching` pošlete vrstvu `Flow` a otáčejte čáry podle tečny hran místo pevného úhlu.
+3. **Čárový rastr.** Nahraďte `screen_dot` pruhem, jehož šířka sleduje pokrytí, jako u rytiny.
 4. **Rychlá Kuwahara.** Součty ve čtvercích jdou spočítat z integrálního obrazu (*summed-area table*) v konstantním čase, nezávisle na poloměru. Napište to v NumPy přes `np.cumsum`.
-""")
 
-md(r"""
-### Nápady na semestrální práci
+</details>
+
+<details><summary>📖 Nápady na semestrální práci</summary>
 
 - Plugin „komiks“: kreslený vzhled s půltónovými stíny, barevnými obrysy a volbou palety.
-- Anizotropní Kuwaharův filtr s polem směrů ze Sobelova gradientu, jako malířský filtr.
+- Anizotropní Kuwaharův filtr s polem směrů ze strukturního tenzoru, jako malířský filtr.
 - Generátor omalovánek: čáry XDoG, uzavřené plochy a jejich čísla podle barvy.
+
+</details>
 """)
 
 
