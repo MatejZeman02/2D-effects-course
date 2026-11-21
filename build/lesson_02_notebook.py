@@ -596,6 +596,16 @@ Na hranicích buněk ale nechá zlomy. Hladký přechod nejdřív ohne obě slo�
 
 $$f \leftarrow 3f^2 - 2f^3$$
 
+V GLSL je tahle křivka vestavěná jako `smoothstep(0.0, 1.0, f)`, NumPy ji nemá.
+
+@img(smoothstep.png, 680, Lineární přechod, smoothstep a polynom 5. stupně na jedné buňce a jejich směrnice: hladké křivky mají na obou koncích směrnici nula)
+
+<details><summary>📖 Proč Perlin bere polynom 5. stupně</summary>
+
+Smoothstep má na koncích nulovou směrnici, ale ne nulovou druhou derivaci: $6 - 12f$ je na začátku buňky $6$ a na konci $-6$, takže na hranici buněk skočí. Osvětlení ve 4. sekci počítá se sklonem a skok v jeho změně je ve stínování vidět jako čára podél hranice buněk. Perlin proto ve vylepšeném šumu (2002) bere $6f^5 - 15f^4 + 10f^3$, které má na obou koncích nulovou směrnici i druhou derivaci. Šest podmínek na koncích potřebuje šest koeficientů, proto pátý stupeň.
+
+</details>
+
 ### 🎯 Úkol 1: hodnotový šum
 
 Napište `value_noise(p, smoothed)` podle vzorců výše, se `smoothed` hladký přechod, jinak lineární.

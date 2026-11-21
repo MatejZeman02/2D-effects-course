@@ -240,6 +240,30 @@ axes[1, 0].set_ylabel("plocha", fontsize=11)
 fig.text(0.13, 0.5, "oranžové body: random1 v rozích buněk", fontsize=10, color=GREY)
 save(fig, "value_noise.png")
 
+# the blending curves and their slopes, which the smooth ones bring to zero at both ends
+t = np.linspace(0, 1, 400)
+CURVES = [("lineární  $f$", t, np.ones_like(t), "#222", "-"),
+          ("smoothstep  $3f^2 - 2f^3$", smooth(t), 6 * t * (1 - t), ORANGE, "-"),
+          ("5. stupeň  $6f^5 - 15f^4 + 10f^3$", t ** 3 * (t * (6 * t - 15) + 10), 30 * t ** 2 * (1 - t) ** 2, "#4C78A8", "--")]
+fig, axes = plt.subplots(1, 2, figsize=(9, 2.8), gridspec_kw={"wspace": 0.25})
+for label, curve, slope, colour, style in CURVES:
+    axes[0].plot(t, curve, style, color=colour, linewidth=2, label=label)
+    axes[1].plot(t, slope, style, color=colour, linewidth=2)
+axes[1].plot([0, 1], [0, 0], "o", color=ORANGE, markersize=6, clip_on=False, zorder=3)
+for ax, title in zip(axes, ("přechod mezi rohy", "směrnice (derivace)")):
+    ax.set_title(title, fontsize=12)
+    ax.set_xlim(0, 1)
+    ax.set_xticks([0, 1])
+    ax.set_xlabel("$f$", fontsize=11, labelpad=-8)
+    ax.tick_params(labelsize=9)
+    for s in ("top", "right"):
+        ax.spines[s].set_visible(False)
+axes[0].set_yticks([0, 1])
+axes[1].set_yticks([0, 1, 1.5, 1.875])
+axes[1].set_yticklabels(["0", "1", "1.5", "1.875"])
+axes[0].legend(fontsize=9, frameon=False, loc="upper left")
+save(fig, "smoothstep.png")
+
 
 # 2. fBm: four octaves and their sum --------------------------------------------
 H, W, SCALE = 160, 256, 96.0
