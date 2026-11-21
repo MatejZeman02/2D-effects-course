@@ -484,17 +484,23 @@ Dobrý nápad splní tři věci: sousední pixely mají podobnou výšku, kopce 
 
 Nehodí se. Sousední pixely spolu nesouvisí, takže kopec by musel vzniknout náhodou ze stovek pixelů najednou, a to se nestane. Vyjde jen zrnění bez tvarů. Osvětlení by ho ještě zesílilo, protože sklon mezi sousedy skáče sem a tam. V lekci 1 bílý šum stačil, protože oko jeho zrnění zprůměruje a vidí jen průměrný odstín. Krajina ale potřebuje právě ty tvary. Uvidíte ho v sekci 1 s volbou `Cells` a `scale = 1`.
 
+@img(idea_white.png, 520, Bílý šum jako výšková mapa a krajina z něj: jen zrnění bez tvarů)
+
 </details>
 
 <details><summary>Rozmazat bílý šum</summary>
 
 Funguje to, ale kopec široký sto pixelů potřebuje rozmazání přes stovky pixelů a to je pomalé (lekce 3). Stejný výsledek dají náhodná čísla jen v řídké mřížce a plynulý přechod mezi nimi.
 
+@img(idea_blur.png, 520, Rozmazaný bílý šum jako výšková mapa a krajina z něj: kopce jedné velikosti)
+
 </details>
 
 <details><summary>Náhodná čísla jen v některých bodech a mezi nimi přechod</summary>
 
-Přesně tak. To je hodnotový šum, sekce 1.
+Přesně tak. To je hodnotový šum, sekce 1. Kopce mají zatím jednu velikost, menší přidá fraktální šum v sekci 2.
+
+@img(idea_lattice.png, 780, Mřížka s náhodnými čísly jen na křižovatkách, plynulý přechod mezi nimi a krajina z něj)
 
 </details>
 
@@ -502,11 +508,15 @@ Přesně tak. To je hodnotový šum, sekce 1.
 
 Pár vln vypadá pravidelně a opakuje se. S mnoha vlnami různých délek a směrů to funguje, a stejná myšlenka, vrstvy čím dál jemnější a slabší, je fraktální šum v sekci 2.
 
+@img(idea_waves.png, 900, Tři sinusovky dají pravidelné vlny, čtyřicet vln různých délek a směrů už krajinu)
+
 </details>
 
 <details><summary>Kopce na náhodných místech</summary>
 
 Dá ostrovy, ale každý pixel by musel projít všechny kopce. Když dostane každá buňka mřížky jeden bod, stačí projít sousední buňky. Tak pracuje Voroného šum, sekce 3.
+
+@img(idea_hills.png, 520, Kulaté kopce na náhodných místech jako výšková mapa a ostrovy z nich)
 
 </details>
 
@@ -514,11 +524,15 @@ Dá ostrovy, ale každý pixel by musel projít všechny kopce. Když dostane ka
 
 Ano, to je gradientní šum. Napíšeme jednodušší hodnotový šum, Perlinův je v části Co jsme vynechali.
 
+@img(idea_perlin.png, 520, Jedna oktáva Perlinova šumu jako výšková mapa a krajina z ní)
+
 </details>
 
 <details><summary>Diamond-square</summary>
 
-Dá kopce všech velikostí, jenže se počítá po krocích přes celou mřížku, takže pixel nezná svou výšku sám. Navíc bývají vidět švy podél mřížky.
+Dá kopce všech velikostí, jenže se počítá po krocích přes celou mřížku, takže pixel nezná svou výšku sám.
+
+@img(idea_diamond.png, 520, Výšková mapa z diamond-square a krajina z ní)
 
 </details>
 

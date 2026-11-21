@@ -53,6 +53,147 @@ def smooth(f):
     return f * f * (3 - 2 * f)
 
 
+# 0. The brainstorm's ideas, each a height map and the terrain the lesson makes of it.
+# The terrain is the notebook's own apply, handed the height map in place of its fBm.
+# Every height map is moved and stretched to the mean and spread of the goal's fBm,
+# so the sea covers as much, and the relief follows the size of the hills, as the
+# goal's 400 at a scale of 400 px.
+mix = space["mix"]
+apply_space = dict(space)
+exec(nb.SOLUTION_APPLY_NP, apply_space)
+_goal = fbm((np.arange(1024)[None, :] + 0.5) / 400, (np.arange(640)[:, None] + 0.5) / 400, 6)
+GOAL_MEAN, GOAL_SPREAD = float(_goal.mean()), float(_goal.std())
+IDEA_H, IDEA_W, IDEA_CELL = 160, 256, 48
+iy, ix = np.mgrid[0:IDEA_H, 0:IDEA_W]
+px, py = ix + 0.5, iy + 0.5
+
+
+def like_goal(h):
+    return GOAL_MEAN + (h - h.mean()) / h.std() * GOAL_SPREAD
+
+
+def terrain(height, relief=float(IDEA_CELL)):
+    apply_space["fbm"] = lambda x, y, octaves: height
+    img = np.ones(height.shape + (4,), np.float32)
+    return np.clip(apply_space["apply"](img, 400.0, 6, 0.5, relief, 135.0)[..., :3], 0, 1)
+
+
+def idea(name, panels):
+    """One row of (title, picture) panels, a 2D picture shown as a height map, stretched."""
+    fig, axes = plt.subplots(1, len(panels), figsize=(3.2 * len(panels), 2.35), gridspec_kw={"wspace": 0.05})
+    for ax, (title, img) in zip(axes, panels):
+        ax.imshow(img, cmap="gray" if img.ndim == 2 else None, interpolation="nearest")
+        ax.set_title(title, fontsize=11)
+        bare(ax)
+    save(fig, name)
+
+
+def blur(img, sigma):
+    fy, fx = np.fft.fftfreq(img.shape[0])[:, None], np.fft.fftfreq(img.shape[1])[None, :]
+    return np.real(np.fft.ifft2(np.fft.fft2(img) * np.exp(-2 * (np.pi * sigma) ** 2 * (fx * fx + fy * fy))))
+
+
+def waves(count, shortest, longest, seed):
+    """*count* sines of lengths from *shortest* to *longest* px in random directions, each as tall as long."""
+    rng = np.random.default_rng(seed)
+    total = np.zeros((IDEA_H, IDEA_W))
+    for _ in range(count):
+        length = np.exp(rng.uniform(np.log(shortest), np.log(longest)))
+        angle, phase = rng.uniform(0, 2 * np.pi, 2)
+        total += length * np.sin(2 * np.pi / length * (np.cos(angle) * px + np.sin(angle) * py) + phase)
+    return like_goal(total)
+
+
+def hills(count, seed):
+    """*count* round hills at random places, each as tall as wide."""
+    rng = np.random.default_rng(seed)
+    total = np.zeros((IDEA_H, IDEA_W))
+    for _ in range(count):
+        r, cx, cy = rng.uniform(8, 22), rng.uniform(0, IDEA_W), rng.uniform(0, IDEA_H)
+        total += r * np.exp(-((px - cx) ** 2 + (py - cy) ** 2) / (2 * r * r))
+    return like_goal(total)
+
+
+def perlin(x, y):
+    """Perlin's gradient noise: a random direction at each corner, its slope g · (p - corner) mixed."""
+    cx, cy = np.floor(x), np.floor(y)
+    fx, fy = x - cx, y - cy
+    cx, cy = cx.astype(np.int64), cy.astype(np.int64)
+
+    def corner(dx, dy):
+        a = 2 * np.pi * random1(cx + dx, cy + dy)
+        return np.cos(a) * (fx - dx) + np.sin(a) * (fy - dy)
+
+    ux, uy = (f ** 3 * (f * (6 * f - 15) + 10) for f in (fx, fy))
+    return mix(mix(corner(0, 0), corner(1, 0), ux), mix(corner(0, 1), corner(1, 1), ux), uy)
+
+
+def diamond_square(levels, roughness, seed):
+    rng = np.random.default_rng(seed)
+    size = 2 ** levels + 1
+    h = np.zeros((size, size))
+    h[::size - 1, ::size - 1] = rng.random((2, 2))
+    step, amplitude = size - 1, 1.0
+    while step > 1:
+        half = step // 2
+        for y in range(half, size, step):                  # diamond: the middle of each square
+            for x in range(half, size, step):
+                h[y, x] = h[y - half:y + half + 1:step, x - half:x + half + 1:step].mean() + rng.uniform(-amplitude, amplitude)
+        for y in range(0, size, half):                     # square: the middle of each edge
+            for x in range((y + half) % step, size, step):
+                around = [h[y + dy, x + dx] for dy, dx in ((-half, 0), (half, 0), (0, -half), (0, half))
+                          if 0 <= y + dy < size and 0 <= x + dx < size]
+                h[y, x] = np.mean(around) + rng.uniform(-amplitude, amplitude)
+        step, amplitude = half, amplitude * roughness
+    return h
+
+
+HEIGHT, LAND = "výšková mapa", "krajina"
+white = like_goal(random1(ix + 9000, iy + 9000).astype(np.float64))
+idea("idea_white.png", [(HEIGHT, white), (LAND, terrain(white, 400.0))])
+blurred = like_goal(blur(white, 10))
+idea("idea_blur.png", [(HEIGHT, blurred), (LAND, terrain(blurred))])
+few, many = waves(3, 90, 180, 4), waves(40, 6, 300, 5)
+idea("idea_waves.png", [("3 vlny", few), (LAND, terrain(few)), ("40 vln", many), (LAND, terrain(many))])
+bumps = hills(16, 11)
+idea("idea_hills.png", [(HEIGHT, bumps), (LAND, terrain(bumps))])
+gradient_noise = like_goal(perlin(px / IDEA_CELL + 3, py / IDEA_CELL + 5))
+idea("idea_perlin.png", [(HEIGHT, gradient_noise), (LAND, terrain(gradient_noise))])
+squares = like_goal(diamond_square(8, 0.5, 6)[:IDEA_H, :IDEA_W])
+idea("idea_diamond.png", [(HEIGHT, squares), (LAND, terrain(squares))])
+
+# random numbers only where the grid lines cross, a smooth blend between, and its terrain,
+# over whole cells, so the outer crossings lie on the picture's edges
+LX, LY, LW, LH = 11, 2, 5, 3                               # the first crossing's cell, cells across and down
+LAT_W, LAT_H = LW * IDEA_CELL, LH * IDEA_CELL
+values = value_noise(px[:LAT_H, :LAT_W] / IDEA_CELL + LX, py[:LAT_H, :LAT_W] / IDEA_CELL + LY)
+fig, axes = plt.subplots(1, 3, figsize=(9.6, 2.35), gridspec_kw={"wspace": 0.08})
+axes[0].imshow(np.ones((LAT_H, LAT_W)), cmap="gray", vmin=0, vmax=1)
+axes[1].imshow(values, cmap="gray", interpolation="nearest")
+axes[2].imshow(terrain(like_goal(values)), interpolation="nearest")
+for ax in axes[:2]:
+    line = dict(color="#999" if ax is axes[0] else "#5dade2", linewidth=0.8)
+    for k in range(LW + 1):
+        ax.plot([k * IDEA_CELL - 0.5] * 2, [-0.5, LAT_H - 0.5], **line)
+    for k in range(LH + 1):
+        ax.plot([-0.5, LAT_W - 0.5], [k * IDEA_CELL - 0.5] * 2, **line)
+lo, hi = values.min(), values.max()
+for kx in range(LW + 1):
+    for ky in range(LH + 1):
+        v = float(random1(np.array([LX + kx]), np.array([LY + ky]))[0])
+        at = (kx * IDEA_CELL - 0.5, ky * IDEA_CELL - 0.5)
+        for ax in axes[:2]:
+            ax.plot(*at, "o", ms=7, mfc=str(np.clip((v - lo) / (hi - lo), 0, 1)), mec=ORANGE, mew=1.6, clip_on=False, zorder=3)
+        axes[0].text(at[0], at[1] - 7, f"{v:.2f}", fontsize=8, ha="center", va="bottom", color="#222",
+                     bbox=dict(fc="white", ec="none", pad=0.6))
+for ax, title in zip(axes, ("náhodná čísla na křižovatkách", "plynulý přechod mezi nimi", LAND)):
+    ax.set_xlim(-0.5 - 16, LAT_W - 0.5 + 16)        # room for the outer crossings and their numbers
+    ax.set_ylim(LAT_H - 0.5 + 8, -0.5 - 24)
+    ax.set_title(title, fontsize=11)
+    bare(ax)
+save(fig, "idea_lattice.png")
+
+
 # 1. Value noise: cells, a straight blend and a smooth one -------------------------
 CELLS = 7
 x = np.linspace(0, CELLS, 1400, endpoint=False)
