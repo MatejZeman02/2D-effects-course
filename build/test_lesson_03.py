@@ -7,6 +7,8 @@ helpers cell, the given cells unfinished and the solutions, on the lesson's
 photo, with PARAMS read by the Krita template's own parser. The kernels'
 arithmetic is redone in NumPy where a test needs it: the 2D Gaussian with its
 edges clamped, the edge rules' index formulas and Sobel's weights.
+Sobel is a finished kernel, the lesson's tasks are the convolution, the first Gaussian
+pass and the Krita copy, and the bilateral filter is a bonus.
 """
 import re
 import sys
@@ -119,7 +121,8 @@ def test_sobels_weights_are_the_matrices():
     gy = np.array([[j * (2 - abs(i)) for i in (-1, 0, 1)] for j in (-1, 0, 1)])
     assert np.array_equal(gx, [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]])
     assert np.array_equal(gy, gx.T)
-    assert "vec2(i * (2 - abs(j)), j * (2 - abs(i)))" in nb.SOLUTION_SOBEL
+    assert "vec2(i * (2 - abs(j)), j * (2 - abs(i)))" in nb.SOBEL
+    assert "TODO" not in nb.SOBEL
 
 
 def test_the_kernels_reach_as_far_as_they_read():
@@ -166,7 +169,7 @@ def test_the_solution_runs(photo, defaults, solved):
 
 
 def test_the_goal_is_the_solution(photo, solved):
-    """The hidden Goal cell runs the same filter, PARAMS and source as section 7."""
+    """The hidden Goal cell runs the same filter, PARAMS and source as section 5."""
     called = {}
 
     class Sara:
@@ -201,14 +204,16 @@ def markdown_text():
 
 
 def test_the_krita_port_is_given_and_one_task_copies_it():
-    """The NumPy cells run as they are, with no TODO, and the only task of section 7 is the copy."""
+    """The NumPy cells run as they are, with no TODO, and the only task of section 5 is the copy."""
     cells = code_cells()
     assert not [c for c in cells if "TODO" in c and "def apply" in c]
     text = markdown_text()
-    assert text.count("### 🎯 Úkol") == 5
+    assert text.count("### 🎯 Úkol") == 3
+    assert text.count("### 🎯 Bonus: bilaterální filtr") == 1
+    assert "## 5. Doma: do Krity" in text and "Úkol 3: filtr v Kritě" in text
     assert "TITLE = \"Blur and sharpen\"" in text
     assert "def apply" in nb.SOLUTION_APPLY and "def blur" in nb.SOLUTION_BLUR_NP
-    assert "sara.live(apply, PARAMS" in cells[-1]
+    assert any("sara.live(apply, PARAMS" in c for c in cells)
 
 
 def test_every_task_is_preceded_by_its_formula():
@@ -220,15 +225,28 @@ def test_every_task_is_preceded_by_its_formula():
         text = "".join(cell["source"])
         if text.startswith("## "):
             seen = ""
-        if text.startswith("### 🎯 Úkol") and "Úkol 5" not in text:
+        if text.startswith("### 🎯") and "Úkol 3" not in text:
             assert "$$" in seen + text.split("<details>")[0], text.splitlines()[0]
         seen += text
+
+
+def test_the_tasks_come_in_order_and_sobel_is_not_one():
+    text = markdown_text()
+    heads = re.findall(r"^### 🎯 (.*?):", text, flags=re.M)
+    assert heads == ["Úkol 1", "Úkol 2", "Úkol 3", "Bonus"]
+    sections = re.findall(r"^## (.*)$", text, flags=re.M)
+    assert sections[:7] == ["Cíl lekce", "Jak byste to udělali?", "1. Rozmazání", "2. Konvoluce",
+                            "3. Gauss ve dvou průchodech", "4. Hrany", "5. Doma: do Krity"]
+    assert sections[7].startswith("6. ") and "(nepovinné)" in sections[7] and "7. " in sections[8]
+    assert "Úkol 4" not in text and "Úkol 5" not in text and not hasattr(nb, "SOLUTION_SOBEL")
+    assert "lekce 4" in text.split("## Shrnutí")[1]
 
 
 def test_the_lesson_opens_with_a_brainstorm_after_the_goal():
     text = markdown_text()
     assert text.index("## Cíl lekce") < text.index("## Jak byste to udělali?") < text.index("## 1. Rozmazání")
     assert "A jak ve fotce najít hrany?" in text and "A jak rozmazat, aby hrany zůstaly?" in text
+    assert text.index("❓ Další otázky: hrany a rozmazání") < text.index("A jak ve fotce najít hrany?")
     assert text.count("<details><summary>💭 Nápady</summary>") == 3
     assert "```" not in markdown_text().split("## 1. Rozmazání")[0]
 
