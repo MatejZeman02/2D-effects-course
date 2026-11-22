@@ -67,7 +67,7 @@ def test_the_template_reads_params(defaults):
 
 def test_the_photos_are_the_canvas_size():
     """The canvas the setup cell asks for, the photos and every N in the kernels are one size."""
-    for name in ("astronaut.png", "astronaut_blur.png", "brick.png"):
+    for name in ("astronaut.png", "astronaut_blur.png", "brick.png", "car.png", "car_blur.png", "car_motion.png"):
         assert Image.open(ROOT / nb.IMG / name).size == (N, N), name
     assert f"sara.init(width={N}, height={N})" in code_cells()[0]
     kernels = [c for c in code_cells() if c.startswith("%%gmacs")]
@@ -170,17 +170,35 @@ def test_wiener_undoes_a_motion_blur(solved):
     assert np.abs(solved["wiener"](blurred, H, 1e-3) - picture).mean() < 0.15
 
 
-def test_the_text_photo_is_synthetic_and_wiener_reads_it():
-    """text_motion.png is what the diagram script makes, and the lesson's filter at K = 1e-3 brings back the ink."""
-    shipped = np.asarray(Image.open(ROOT / nb.IMG / "text_motion.png").convert("RGB"))
-    ink = diagrams.text_ink()
-    assert np.array_equal(diagrams.text_photo(ink), shipped)
-    fixed = diagrams.deblur_text(shipped.astype(np.float64) / 255, 1e-3).mean(axis=2)
+def letter_edges(grey):
+    """How much the letters of "PGA 321" on the plate of car.png change from pixel to pixel: sharp letters
+    have many edges, blurred ones few."""
+    return np.abs(np.diff(grey[404:416, 238:288], axis=1)).mean()
+
+
+def test_the_shaken_car_is_the_diagram_script_s_and_wiener_reads_the_plate():
+    """car_motion.png is what the diagram script makes of car.png, and the lesson's filter at K = 1e-3
+    brings the plate back: the plate's dark letters on its light ground get several times more contrast."""
+    sharp = diagrams.load("car.png")
+    shipped = np.asarray(Image.open(ROOT / nb.IMG / "car_motion.png").convert("RGB"))
+    assert np.array_equal(diagrams.car_photo(sharp), shipped)
+    fixed = diagrams.deblur_car(shipped.astype(np.float64) / 255, 1e-3).mean(axis=2)
     blurred = shipped.astype(np.float64).mean(axis=2) / 255
-    dark = ink > 0.5
-    before = blurred[~dark].mean() - blurred[dark].mean()
-    after = fixed[~dark].mean() - fixed[dark].mean()
-    assert after > 2.0 * before, (before, after)
+    before, after, truth = (letter_edges(a) for a in (blurred, fixed, sharp[..., :3].mean(axis=2)))
+    assert after > 4 * before and after > 0.7 * truth, (before, after, truth)
+
+
+def test_the_gaussian_car_is_the_lessons_blur_and_wiener_reads_the_plate(solved):
+    """car_blur.png is what the diagram script makes of car.png, and Wiener at the lesson's K reads the plate."""
+    sharp = diagrams.load("car.png")
+    shipped = np.asarray(Image.open(ROOT / nb.IMG / "car_blur.png").convert("RGB"))
+    assert np.array_equal(diagrams.blurred_photo(sharp), shipped)
+    lin = solved["srgb_to_linear"](shipped.astype(np.float64) / 255)
+    H = solved["gaussian_filter"](N, N, nb.BLUR_SIGMA)
+    fixed = np.dstack([solved["wiener"](lin[..., c], H, 0.01 ** 2) for c in range(3)])
+    fixed = np.clip(solved["linear_to_srgb"](fixed), 0, 1).mean(axis=2)
+    before, after = letter_edges(shipped.astype(np.float64).mean(axis=2) / 255), letter_edges(fixed)
+    assert after > 4 * before, (before, after)
 
 
 def test_wiener_sharpens_the_lesson_photo(photo, blurry, solved):
@@ -240,7 +258,7 @@ def test_the_goal_is_the_solution(blurry, solved):
 
     namespace_ = {"np": np, "sara": Sara}
     exec(nb.GOAL, namespace_)
-    assert called["source"] == "astronaut_blur" and called["target"] == "Goal"
+    assert called["source"] == "car_blur" and called["target"] == "Goal"
     assert called["params"] == solved["PARAMS"]
     for mode in MODES:
         values = {"mode": mode, "sigma": 2.5, "length": 15, "angle": -20, "noise": 0.02}

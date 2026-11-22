@@ -2,7 +2,9 @@
 
 The notebook is generated: edit this file and run it again, never the .ipynb
 by hand, or the next build overwrites the edit. The pictures and the blurred
-test photo astronaut_blur.png come from lesson_04_diagrams.py. The sharp photo
+test photos astronaut_blur.png, car_blur.png and car_motion.png come from
+lesson_04_diagrams.py. The sharp photo car.png is the author's own picture of
+cars on a road, 512 x 512 so that it fits the canvas. The sharp photo
 astronaut.png and brick.png are scikit-image's sample pictures, in the public
 domain and under CC0, as imgs/4/SOURCES.md says.
 
@@ -22,8 +24,8 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "lesson_04_frequency_domain.ipynb"
 IMG = "imgs/4"
 SIDE = 512                    # the photos' side and the canvas's, the kernels' N
-BLUR_SIGMA = 2.0              # the blur astronaut_blur.png was made with
-MOTION_LENGTH = 21            # the line text_motion.png was blurred along, in pixels
+BLUR_SIGMA = 2.0              # the blur astronaut_blur.png and car_blur.png were made with
+MOTION_LENGTH = 15            # the line car_motion.png was blurred along, in pixels
 MOTION_ANGLE = 12             # and its angle in degrees, counterclockwise
 cells = []
 
@@ -109,7 +111,7 @@ const float TAU = 6.28318530718
 {{columns}}"""
 
 BLUR_GPU = f"""\
-%%gmacs "astronaut" -> "Blur GPU"
+%%gmacs "car" -> "Blur GPU"
 import linear_srgb_color_space
 
 uniform float sigma: hint_range(0.5, 8) = 3.0
@@ -276,7 +278,7 @@ GOAL = ("# The filter of section 5, hidden because you write it yourself.\n"
         "def _goal():\n"
         + textwrap.indent(_FLAT_GOAL, "    ")
         + "\n\n    return apply, PARAMS\n\n\n"
-        + '_apply, _params = _goal()\nsara.live(_apply, _params, source="astronaut_blur", target="Goal")')
+        + '_apply, _params = _goal()\nsara.live(_apply, _params, source="car_blur", target="Goal")')
 
 # --- The interactive pictures ---------------------------------------------------
 # Hidden cells: what they draw is the lesson, how they draw it is not. Each one
@@ -960,7 +962,7 @@ def answer(snippet, lang="python"):
 md(r"""
 # Lekce 4: Frekvenční oblast
 
-Na konci lekce budete mít filtr, který rozmazanou fotku zaostří, i text rozmazaný pohybem fotoaparátu. Rozmazání se nedá vrátit pixel po pixelu, ve spektru obrázku je to ale obyčejné násobení, a to se vrátit dá. Nejdřív si na interaktivních obrázcích ukážete, co spektrum je a jak ho číst. Pak fotku přes frekvence rozmažete a zaostříte.
+Na konci lekce budete mít filtr, který rozmazanou fotku zaostří, i auto rozmazané pohybem fotoaparátu. Rozmazání se nedá vrátit pixel po pixelu, ve spektru obrázku je to ale obyčejné násobení, a to se vrátit dá. Nejdřív si na interaktivních obrázcích ukážete, co spektrum je a jak ho číst. Pak fotku přes frekvence rozmažete a zaostříte.
 
 Lekce 4 navazuje na lekci 3 ve stejné vyučovací hodině: Gaussovo rozmazání z lekce 3 tu uděláte podruhé, ve frekvencích. Do Krity se filtr dostane doma. Nepovinné jsou sekce o vzorkování a o Fourierově transformaci v kernelu.
 
@@ -968,7 +970,7 @@ Spusťte obě buňky. První otevře v Sáře nový dokument s plátnem 512 × 5
 
 <details><summary>📖 K čemu jsou fotky a schovaný kód</summary>
 
-Fotka `astronaut_blur.png` je ostrá fotka `astronaut.png` rozmazaná Gaussem. Interaktivní obrázky mají kód schovaný: stačí buňku spustit a hýbat nabídkami a posuvníky nad obrázkem. Kdo chce vědět, jak se kreslí, buňku si rozbalí.
+Fotka `astronaut_blur.png` je ostrá fotka `astronaut.png` rozmazaná Gaussem a `car_blur.png` je rozmazaná fotka aut na silnici, ve které nejde přečíst značka předního auta. Cílem je přečíst ji zase. Interaktivní obrázky mají kód schovaný: stačí buňku spustit a hýbat nabídkami a posuvníky nad obrázkem. Kdo chce vědět, jak se kreslí, buňku si rozbalí.
 </details>
 """)
 
@@ -981,6 +983,8 @@ import sara
 doc, layer, pixels = sara.init(width=512, height=512)   # a canvas the size of the photos
 photo = doc.import_image("imgs/4/astronaut.png")        # a layer called "astronaut"
 blurry = doc.import_image("imgs/4/astronaut_blur.png")  # a layer called "astronaut_blur"
+car = doc.import_image("imgs/4/car.png")                # a layer called "car"
+car_blurry = doc.import_image("imgs/4/car_blur.png")    # a layer called "car_blur"
 """)
 
 code(TOOLS, hidden=True)
@@ -1025,7 +1029,7 @@ code(GOAL, hidden=True)
 md(r"""
 ## Jak byste to udělali?
 
-V cíli zvolte `Deblur`: rozmazaná fotka je zase ostrá. Jak byste rozmazanou fotku zaostřili, když víte, čím byla rozmazaná?
+V cíli zvolte `Deblur`: rozmazaná fotka je zase ostrá a značka auta "PGA 321" čitelná. Jak byste rozmazanou fotku zaostřili, když víte, čím byla rozmazaná?
 
 <details><summary>💭 Nápady</summary>
 
@@ -1435,7 +1439,7 @@ Buňka rozmaže fotku přes spektrum a zapíše ji do vrstvy `Blur FFT`, která 
 
 code("""
 sigma = 3.0                                    # the kernel's sigma
-lin = srgb_to_linear(photo.read()[..., :3])
+lin = srgb_to_linear(car.read()[..., :3])
 H = gaussian_filter(512, 512, sigma)
 blurred = rgba(linear_to_srgb(np.dstack([filter_fft(lin[..., c], H) for c in range(3)])))
 doc.new_layer("Blur FFT", blurred).show()
@@ -1444,13 +1448,13 @@ doc.new_layer("Blur FFT", blurred).show()
 md(r"""
 Kernel sčítá okolí do vzdálenosti $4\sigma$ a vzorkuje Gauss po pixelech, $H$ je spektrum Gaussovy křivky bez useknutí, proto se vrstvy nepatrně liší.
 
-<details><summary>❓ Otázka: proč ztmavl a zčervenal horní okraj rozmazané fotky?</summary>
+<details><summary>❓ Otázka: proč ztmavl horní okraj rozmazané fotky?</summary>
 
 Podívejte se na horní okraj vrstvy `Blur FFT` a na to, co je na fotce u dolního okraje.
 
 <details><summary>🔑 Odpověď</summary>
 
-Transformace bere obrázek jako dlaždici, která se opakuje dokola, a násobení spektra je proto konvoluce dokola: horní okraj se rozmaže s dolním, kde je oranžový skafandr a černá přilba. Kernel tu dělá totéž, aby výsledky šly porovnat. Jak se tomu vyhnout, ukazuje bonusový úkol 2.
+Transformace bere obrázek jako dlaždici, která se opakuje dokola, a násobení spektra je proto konvoluce dokola: horní okraj se rozmaže s dolním, kde je tmavý odraz auta. Dolní okraj fotky je přitom jen odraz spodních řádků, kterými je fotka doplněná na čtverec 512 × 512. Kernel tu dělá totéž, aby výsledky šly porovnat. Jak se tomu vyhnout, ukazuje bonusový úkol 2.
 </details>
 
 </details>
@@ -1465,11 +1469,11 @@ Kernel sčítá čtverec o straně $2 \cdot 4\sigma + 1$ pixelů, takže jeho č
 md(r"""
 ## 4. Wienerova dekonvoluce
 
-Rozmazání je ve spektru násobení číslem $H$, a tak by se mělo dát vrátit dělením. Fotka `astronaut_blur` je fotka `astronaut` rozmazaná Gaussem se $\sigma = 2$ v lineárním RGB, s okraji dokola, a uložená v osmi bitech na kanál. Zkusme to naivně: buňka spektrum rozmazané fotky vydělí $H$ z úkolu 2.
+Rozmazání je ve spektru násobení číslem $H$, a tak by se mělo dát vrátit dělením. Fotka `car_blur` je fotka `car` rozmazaná Gaussem se $\sigma = 2$ v lineárním RGB, s okraji dokola, a uložená v osmi bitech na kanál. Zkusme to naivně: buňka spektrum rozmazaného auta vydělí $H$ z úkolu 2.
 """)
 
 code(f"""
-lin_blurry = srgb_to_linear(blurry.read()[..., :3])
+lin_blurry = srgb_to_linear(car_blurry.read()[..., :3])
 H = gaussian_filter(512, 512, {BLUR_SIGMA})
 divided = np.dstack([np.fft.ifft2(np.fft.fft2(lin_blurry[..., c]) / H).real for c in range(3)])
 doc.new_layer("Inverse filter", rgba(linear_to_srgb(divided))).show()
@@ -1523,7 +1527,7 @@ Napište `wiener(channel, H, K)`, kanál bez rozmazání $H$:
 
 $$\hat f = \mathcal{F}^{-1}\left\{\mathcal{F}\{g\} \cdot \frac{\overline{H}}{|H|^2 + K}\right\}$$
 
-Buňka pod funkcí ji použije na `astronaut_blur` s $K = 0.01^2$.
+Buňka pod funkcí ji použije na `car_blur` s $K = 0.01^2$.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -1545,7 +1549,7 @@ doc.new_layer("Deblurred", rgba(linear_to_srgb(fixed))).show()
 """, solve=[(WIENER_GIVEN, SOLUTION_WIENER)])
 
 md(r"""
-Fotka je ostřejší než `astronaut_blur`: jsou vidět oči, pramínky vlasů a švy skafandru. Ostrá jako `astronaut` není, nejjemnější detaily rozmazání ztlumilo pod úroveň šumu a ty se vrátit nedají. Kolem kontrastních hran mohou být slabé vlnky.
+Fotka je ostřejší než `car_blur`: značka je čitelná, "PGA 321", a je vidět řidič i obrysy světel. Ostrá jako `car` není, nejjemnější detaily rozmazání ztlumilo pod úroveň šumu a ty se vrátit nedají. Kolem kontrastních hran mohou být slabé vlnky.
 
 <details><summary>❓ Otázka: co udělá jiné K?</summary>
 
@@ -1558,28 +1562,28 @@ S malým $K$ je filtr blízko dělení $1 / H$: vrací i vysoké frekvence, kde 
 
 </details>
 
-### Text rozmazaný pohybem
+### Auto rozmazané pohybem
 
-Skutečný problém: při focení tabule nebo dokumentu se fotoaparát zachvěje a písmena se rozmažou po úsečce. Takové rozmazání má jádro, úsečku délky `length` pod úhlem `angle`, a jeho $H$ je sinc podél směru pohybu: klesá, mění znaménko a má nuly. Funkce `motion_filter` ho spočítá, je hotová a vy ji jen použijete. Wienerův filtr z úkolu 3 funguje beze změny, dostane jiné $H$.
+Skutečný problém: při focení za šera se fotoaparát zachvěje a celý snímek se rozmaže po úsečce. Takové rozmazání má jádro, úsečku délky `length` pod úhlem `angle`, a jeho $H$ je sinc podél směru pohybu: klesá, mění znaménko a má nuly. Funkce `motion_filter` ho spočítá, je hotová a vy ji jen použijete. Wienerův filtr z úkolu 3 funguje beze změny, dostane jiné $H$.
 
-Fotka `text_motion.png` je rozmazaná po úsečce dlouhé 21 pixelů pod úhlem 12°, s šumem snímače a zaokrouhlením do osmi bitů. Přečíst z ní nejde nic. Buňka ji načte, nastaví filtr a posuvníky `length` a `angle` hledají rozmazání, `noise` je odmocnina z $K$.
+Fotka `car_motion.png` je fotka `car` rozmazaná po úsečce dlouhé 15 pixelů pod úhlem 12°, s malým šumem snímače a zaokrouhlením do osmi bitů. Značku přečíst nejde. Buňka ji načte, nastaví filtr a posuvníky `length` a `angle` hledají rozmazání, `noise` je odmocnina z $K$.
 """)
 
 code(MOTION_NP)
 
 code('''
-text = doc.import_image("imgs/4/text_motion.png")     # a layer called "text_motion"
+shaken = doc.import_image("imgs/4/car_motion.png")    # a layer called "car_motion"
 ''')
 
 code('''
-PARAMS_TEXT = {
-    "length": (21, 1, 40),
+PARAMS_CAR = {
+    "length": (15, 1, 40),
     "angle": (12, -90, 90),
     "noise": (0.03, 0.001, 0.1, 0.001),
 }
 
 
-def sharpen_text(img, length, angle, noise):
+def sharpen_car(img, length, angle, noise):
     out = img.copy()
     lin = srgb_to_linear(img[..., :3])
     H = motion_filter(*img.shape[:2], length, angle)
@@ -1589,28 +1593,28 @@ def sharpen_text(img, length, angle, noise):
     return out
 
 
-sara.live(sharpen_text, PARAMS_TEXT, source="text_motion", target="Text deblurred")
+sara.live(sharpen_car, PARAMS_CAR, source="car_motion", target="Car deblurred")
 ''')
 
 md(r"""
-Správná `length` a `angle` je ostrý text, jiná dá duchy a pruhy. Přečtete "Počítačová grafika" i drobné řádky pod ní. Posuvník `noise` zkuste od nuly nahoru: fotka má víc šumu než Astronaut, a proto potřebuje větší $K$.
+Správná `length` a `angle` je ostré auto, jiná dá duchy a pruhy. Přečtete značku "PGA 321". Posuvník `noise` zkuste od nuly nahoru: fotka má víc šumu než zaokrouhlení v osmi bitech, a proto potřebuje větší $K$ než rozmazané auto výše.
 
-<details><summary>❓ Otázka: proč má text větší K než astronaut?</summary>
+<details><summary>❓ Otázka: proč má zrnitá fotka větší K?</summary>
 
-Fotka textu je tmavá, s šumem snímače, a při malém $K$ je zrnitá. Podívejte se na obrázek níže a rozhodněte, které $K$ je nejlepší.
+Značka je tmavá a fotka má šum snímače, a při malém $K$ je zrnitá. Podívejte se na výřez se značkou níže a rozhodněte, které $K$ je nejlepší.
 
-@img(text_wiener.png, 900, Rozmazaný text a Wienerův filtr s K rovným 1e-5, 1e-3 a 1e-1, kde první je zrnitý, druhý čitelný a třetí stále rozmazaný)
+@img(car_wiener.png, 900, Rozmazaná značka auta a Wienerův filtr s K rovným 1e-5, 1e-3 a 1e-1, kde první je zrnitý, druhý čitelný a třetí stále rozmazaný)
 
 <details><summary>🔑 Odpověď</summary>
 
-Nejlepší je prostřední, $K = 10^{-3}$. S $10^{-5}$ filtr zesílí šum na frekvencích, kde rozmazání má nuly, a text zmizí v zrnu a pruzích. S $10^{-1}$ šum nevadí, ale filtr ztlumí i užitečné frekvence a písmena zůstanou rozmazaná. Šum fotky je silnější než zaokrouhlení astronauta, proto je i správné $K$ větší.
+Nejlepší je prostřední, $K = 10^{-3}$. S $10^{-5}$ filtr zesílí šum na frekvencích, kde rozmazání má nuly, a značka zmizí v zrnu a pruzích. S $10^{-1}$ šum nevadí, ale filtr ztlumí i užitečné frekvence a písmena zůstanou rozmazaná. Šum fotky je silnější než zaokrouhlení rozmazaného auta výše, proto je i správné $K$ větší.
 </details>
 
 </details>
 
 <details><summary>ℹ️ Je to skutečná fotka?</summary>
 
-Ne, `text_motion.png` je syntetická. Skript v `build/lesson_04_diagrams.py` napíše text, nasvítí ho s vinětací, rozmaže po úsečce se známým jádrem a přidá šum snímače a zaokrouhlení do osmi bitů. Díky tomu znáte správnou `length` a `angle` a víte, co čekat. Chcete-li vlastní, vyfoťte text s pohybem ruky, uložte do `imgs/4/` a změňte cestu v buňce. Rozmazání neznáte a musíte ho hledat posuvníky, a čím je fotka větší, tím víc výpočet trvá. Fotka z mobilu bývá komprimovaná JPEG a ten přidá artefakty, které Wiener nezvládne.
+Fotka `car.png` je skutečná, rozmazání je ale spočítané. Skript v `build/lesson_04_diagrams.py` rozmaže `car.png` po úsečce se známým jádrem a přidá šum snímače a zaokrouhlení do osmi bitů. Díky tomu znáte správnou `length` a `angle` a víte, co čekat. Chcete-li vlastní, vyfoťte něco s pohybem ruky, uložte do `imgs/4/` a změňte cestu v buňce. Rozmazání neznáte a musíte ho hledat posuvníky, a čím je fotka větší, tím víc výpočet trvá. Fotka z mobilu bývá komprimovaná JPEG a ten přidá artefakty, které Wiener nezvládne.
 </details>
 """)
 
@@ -1635,11 +1639,11 @@ code(KRITA_HELPERS)
 code(PARAMS_NP + "\n\n\n" + APPLY_NP + """
 
 
-sara.live(apply, PARAMS, source="astronaut_blur", target="Filter NumPy")
+sara.live(apply, PARAMS, source="car_blur", target="Filter NumPy")
 """)
 
 md(r"""
-S výchozími hodnotami vyjde totéž co `Goal` z úvodu. Kdo chce `Deblur motion` vyzkoušet, vybere ho a spustí na vrstvě `text_motion`.
+S výchozími hodnotami vyjde totéž co `Goal` z úvodu. Kdo chce `Deblur motion` vyzkoušet, vybere ho a spustí na vrstvě `car_motion`.
 
 <details><summary>📖 Co se v NumPy mění oproti kernelu</summary>
 
@@ -1833,7 +1837,7 @@ md(r"""
 
 1. **Vrubový filtr** (*notch filter*). Přičtěte k fotce vlnu z kernelu "Wave" jako pravidelné rušení. Najděte ve spektru její dva body, vynulujte je a fotku transformujte zpátky.
 2. **Okraje bez dlaždice.** Rozšiřte kanál před `filter_fft` o odraz okrajů, `np.pad(channel, r, mode="reflect")` s `r` kolem $4\sigma$, a výsledek ořízněte. Porovnejte okraje rozmazané fotky s těmi původními.
-3. **Odhad délky rozmazání.** Box rozmazání délky $L$ má ve spektru nuly na frekvencích $k / L$. Zobrazte spektrum fotky `text_motion`, najděte ve směru pohybu první tmavý pruh a z jeho polohy odhadněte `length`.
+3. **Odhad délky rozmazání.** Box rozmazání délky $L$ má ve spektru nuly na frekvencích $k / L$. Zobrazte spektrum fotky `car_motion`, najděte ve směru pohybu první tmavý pruh a z jeho polohy odhadněte `length`.
 4. **Zostřující maska.** Porovnejte Wienera na `astronaut_blur` s fotkou plus dvakrát rozdíl fotky a jejího rozmazání. Co zvládne jedno a co druhé?
 
 </details>

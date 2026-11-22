@@ -4,9 +4,10 @@ The transforms are the notebook's own: spectrum, gaussian_filter, filter_fft and
 the colour conversions come from the NumPy cells of lesson_04_notebook.py, so
 a picture shows what the cells compute. astronaut_blur.png is astronaut.png
 blurred by that filter_fft in linear light and rounded to eight bits, which the
-notebook's Wiener filter then undoes. text_motion.png is a synthetic photo of
-text taken by a moving camera: text rendered into a picture, blurred along a
-line by the notebook's motion_filter, with sensor noise and eight-bit rounding.
+notebook's Wiener filter then undoes, and car_blur.png is car.png blurred the
+same way. car_motion.png is car.png as a shaking camera would store it: blurred
+along a line by the notebook's motion_filter, with sensor noise and eight-bit
+rounding. car.png itself is a photo, not drawn here.
 """
 import sys
 from pathlib import Path
@@ -15,8 +16,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from PIL import Image, ImageDraw, ImageFont
-from matplotlib import font_manager
+from PIL import Image
 
 HERE = Path(__file__).resolve().parent
 OUT = HERE.parent / "imgs" / "4"
@@ -44,7 +44,7 @@ def load(name):
 
 
 def blurred_photo(img):
-    """*img*, (h, w, 3 or 4) in sRGB, blurred as astronaut_blur.png is: in linear light, to eight bits."""
+    """*img*, (h, w, 3 or 4) in sRGB, blurred as astronaut_blur.png and car_blur.png are: in linear light, to eight bits."""
     lin = srgb_to_linear(img[..., :3].astype(np.float64))
     H = gaussian_filter(*lin.shape[:2], nb.BLUR_SIGMA)
     out = np.dstack([filter_fft(lin[..., c], H) for c in range(3)])
@@ -339,71 +339,52 @@ def wiener_curves():
     save(fig, "wiener.png")
 
 
-def font(size, bold=False):
-    return ImageFont.truetype(font_manager.findfont("DejaVu Sans:bold" if bold else "DejaVu Sans"), size)
-
-
-def text_ink():
-    """The sharp text as the amount of ink at each pixel, 0 for paper and 1 for ink."""
-    page = Image.new("L", (N, N), 255)
-    pen = ImageDraw.Draw(page)
-    pen.text((N / 2, 110), "Počítačová", fill=0, font=font(64, True), anchor="mm")
-    pen.text((N / 2, 185), "grafika", fill=0, font=font(64, True), anchor="mm")
-    for i, line in enumerate(["Přednáška 4", "Frekvenční oblast", "Posluchárna T9:350", "Pondělí v 9:15"]):
-        pen.text((N / 2, 280 + 48 * i), line, fill=0, font=font(34), anchor="mm")
-    pen.text((N / 2, 490), "fit.cvut.cz", fill=0, font=font(24), anchor="mm")
-    return 1 - np.asarray(page, dtype=np.float64) / 255
-
-
-def text_photo(ink, seed=7):
-    """*ink* as a camera would store it after a shake: paper and ink in linear light with a vignette,
-    blurred along the notebook's line, shot and read noise added, rounded to eight bits of sRGB."""
-    paper, black = np.array([0.80, 0.76, 0.66]), np.array([0.02, 0.02, 0.03])
-    y, x = np.mgrid[0:N, 0:N] / N - 0.5
-    light = 1.0 - 0.7 * (x ** 2 + y ** 2)
-    lin = (paper * (1 - ink[..., None]) + black * ink[..., None]) * light[..., None]
-    H = motion_filter(N, N, nb.MOTION_LENGTH, nb.MOTION_ANGLE)
+def car_photo(sharp, seed=7):
+    """*sharp*, an (h, w, 3 or 4) sRGB photo, as a shaking camera would store it: blurred along the notebook's
+    line in linear light, shot and read noise added, rounded to eight bits of sRGB."""
+    lin = srgb_to_linear(sharp[..., :3].astype(np.float64))
+    H = motion_filter(*lin.shape[:2], nb.MOTION_LENGTH, nb.MOTION_ANGLE)
     lin = np.dstack([filter_fft(lin[..., c], H) for c in range(3)])
     noise = np.random.default_rng(seed).normal(size=lin.shape)
-    lin = lin + noise * np.sqrt(0.0002 * lin + 0.00003)        # the noise grows with the light, as photons do
+    lin = lin + noise * np.sqrt(0.0001 * lin + 0.00001)        # the noise grows with the light, as photons do
     return np.round(linear_to_srgb(np.clip(lin, 0, 1)) * 255).astype(np.uint8)
 
 
-def deblur_text(photo, K):
-    """The photo of text, an (h, w, 3 or 4) float array, through the notebook's Wiener filter at K."""
+def deblur_car(photo, K):
+    """The shaken photo, an (h, w, 3 or 4) float array, through the notebook's Wiener filter at K."""
     lin = srgb_to_linear(photo[..., :3].astype(np.float64))
     H = motion_filter(*lin.shape[:2], nb.MOTION_LENGTH, nb.MOTION_ANGLE)
     out = np.dstack([wiener(lin[..., c], H, K) for c in range(3)])
     return np.clip(linear_to_srgb(np.clip(out, 0, 1)), 0, 1)
 
 
-def text_wiener():
-    """The synthetic text photo and the Wiener filter at three K, to show what K trades."""
-    photo = load("text_motion.png")
-    panels = [("rozmazaný text", photo[..., :3])] + [
-        (f"$K = {text}$", deblur_text(photo, K)) for K, text in
+def car_wiener():
+    """The shaken car and the Wiener filter at three K, around the licence plate, to show what K trades."""
+    photo = load("car_motion.png")
+    panels = [("rozmazané auto", photo[..., :3])] + [
+        (f"$K = {text}$", deblur_car(photo, K)) for K, text in
         ((1e-5, "10^{-5}"), (1e-3, "10^{-3}"), (1e-1, "10^{-1}"))]
-    fig, axes = plt.subplots(1, 4, figsize=(14, 3.9), gridspec_kw={"wspace": 0.04})
+    fig, axes = plt.subplots(1, 4, figsize=(14, 2.6), gridspec_kw={"wspace": 0.04})
     for ax, (title, img) in zip(axes, panels):
-        ax.imshow(img[250:470, 90:420], interpolation="nearest")
+        ax.imshow(img[385:440, 200:330], interpolation="nearest")
         ax.set_title(title, fontsize=12)
         bare(ax)
-    save(fig, "text_wiener.png")
+    save(fig, "car_wiener.png")
 
 
 def idea(name, panels):
     """One row of (title, picture) panels cut from the middle of the photo."""
     fig, axes = plt.subplots(1, len(panels), figsize=(3.1 * len(panels), 2.55), gridspec_kw={"wspace": 0.05})
     for ax, (title, img) in zip(axes, panels):
-        ax.imshow(np.clip(img[100:300, 180:380], 0, 1), interpolation="nearest")
+        ax.imshow(np.clip(img[250:450, 160:360], 0, 1), interpolation="nearest")
         ax.set_title(title, fontsize=11)
         bare(ax)
     save(fig, name)
 
 
 def ideas():
-    """What the two ideas of the brainstorm would give on the blurred astronaut."""
-    sharp, blurry = load("astronaut.png"), load("astronaut_blur.png")
+    """What the two ideas of the brainstorm would give on the blurred car."""
+    sharp, blurry = load("car.png"), load("car_blur.png")
     lin = srgb_to_linear(blurry[..., :3].astype(np.float64))
     H = gaussian_filter(N, N, nb.BLUR_SIGMA)
     again = np.dstack([filter_fft(lin[..., c], H) for c in range(3)])
@@ -425,8 +406,9 @@ def main():
     shift_layout()
     convolution()
     wiener_curves()
-    Image.fromarray(text_photo(text_ink())).save(OUT / "text_motion.png", optimize=True)
-    text_wiener()
+    Image.fromarray(blurred_photo(load("car.png"))).save(OUT / "car_blur.png", optimize=True)
+    Image.fromarray(car_photo(load("car.png"))).save(OUT / "car_motion.png", optimize=True)
+    car_wiener()
     ideas()
     print("wrote", sorted(p.name for p in OUT.glob("*.png")))
 
