@@ -19,7 +19,5 @@ image database's 512 × 512 version.
 `car_blur.png` is `car.png` blurred by the same `filter_fft`, and
 `car_motion.png` is `car.png` blurred along a line with the lesson's
 `motion_filter`, with shot and read noise added and rounded to eight bits. The
-diagram script writes both again on every run. `text_motion.png` and
-`text_wiener.png` come from an earlier version of the lesson, a synthetic photo
-of text, and the lesson no longer uses them. Its other pictures are drawn by the
-same script.
+diagram script writes both again on every run. Its other pictures are drawn by
+the same script.
