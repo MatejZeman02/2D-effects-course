@@ -230,7 +230,7 @@ def test_the_solution_runs(blurry, defaults, solved):
 
 
 def test_the_goal_is_the_solution(blurry, solved):
-    """The hidden Goal cell runs the same filter, PARAMS and source as section 7."""
+    """The hidden Goal cell runs the same filter, PARAMS and source as section 5."""
     called = {}
 
     class Sara:
@@ -259,3 +259,15 @@ def test_the_pictures_exist():
         assert (ROOT / path).is_file(), path
     sources = (ROOT / nb.IMG / "SOURCES.md").read_text()
     assert all(f"`{name}`" in sources for name in ("astronaut.png", "brick.png", "lenna.png"))
+
+
+def test_sections_and_tasks_are_numbered_in_order():
+    """The class sections come first, the Krita homework and the optional sections after, tasks 1 to 4 in order."""
+    text = [("".join(c["source"])) for c in nb.cells if c["cell_type"] == "markdown"]
+    headings = [line for t in text for line in t.splitlines() if re.match(r"##+ ", line)]
+    sections = [h for h in headings if h.startswith("## ") and re.match(r"## \d", h)]
+    assert [int(re.match(r"## (\d+)\.", h)[1]) for h in sections] == list(range(1, len(sections) + 1))
+    assert "Doma: do Krity" in sections[4]
+    assert all("(nepovinné)" in h for h in sections[5:]) and len(sections) == 7
+    tasks = [h for h in headings if h.startswith("### 🎯 Úkol")]
+    assert [int(re.search(r"Úkol (\d+)", h)[1]) for h in tasks] == [1, 2, 3, 4]
