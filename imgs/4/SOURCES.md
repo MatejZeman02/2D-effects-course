@@ -10,7 +10,7 @@ image database's 512 × 512 version.
 |---|---|---|
 | `astronaut.png` | Eileen Collins, NASA astronaut, from the NASA Great Images database (`skimage.data.astronaut`) | public domain, no known copyright restrictions |
 | `brick.png` | Bricks25 from CC0Textures (`skimage.data.brick`) | CC0 |
-| `car.png` | A road photo from a figure in Marcin Iwanowski's publication on ResearchGate (publication 220872176, figure 3), https://www.researchgate.net/profile/Marcin-Iwanowski/publication/220872176/figure/fig3/AS:667827040161795@1536233782147/The-camera-mounted-over-the-road-and-looking-at-the-incoming-traffic-a-the-view-from.jpg. The course's author replaced the front car's plate with "PGA 321", masked the other plates, cropped it to 512 pixels wide and added 48 mirrored rows at the bottom to make it 512 × 512 | not stated by the source, used for teaching |
+| `car.png` | A road photo from a figure in Marcin Iwanowski's publication on ResearchGate (publication 220872176, figure 3), https://www.researchgate.net/profile/Marcin-Iwanowski/publication/220872176/figure/fig3/AS:667827040161795@1536233782147/The-camera-mounted-over-the-road-and-looking-at-the-incoming-traffic-a-the-view-from.jpg. The course's author replaced the front car's plate with "PGA 321", masked the other plates, scaled it to 512 pixels tall and cropped it to 512 × 512 | not stated by the source, used for teaching |
 | `lenna.png` | Lena Forsén, a scan of the Playboy centrefold of November 1972, the USC-SIPI test image | copyright Playboy Enterprises, not freely licensed, used here as the traditional test image |
 
 `astronaut_blur.png` is `astronaut.png` blurred by the lesson's own

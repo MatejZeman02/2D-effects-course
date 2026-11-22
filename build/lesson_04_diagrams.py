@@ -366,7 +366,7 @@ def car_wiener():
         ((1e-5, "10^{-5}"), (1e-3, "10^{-3}"), (1e-1, "10^{-1}"))]
     fig, axes = plt.subplots(1, 4, figsize=(14, 2.6), gridspec_kw={"wspace": 0.04})
     for ax, (title, img) in zip(axes, panels):
-        ax.imshow(img[385:440, 200:330], interpolation="nearest")
+        ax.imshow(img[425:486, 189:332], interpolation="nearest")
         ax.set_title(title, fontsize=12)
         bare(ax)
     save(fig, "car_wiener.png")
@@ -376,7 +376,7 @@ def idea(name, panels):
     """One row of (title, picture) panels cut from the middle of the photo."""
     fig, axes = plt.subplots(1, len(panels), figsize=(3.1 * len(panels), 2.55), gridspec_kw={"wspace": 0.05})
     for ax, (title, img) in zip(axes, panels):
-        ax.imshow(np.clip(img[250:450, 160:360], 0, 1), interpolation="nearest")
+        ax.imshow(np.clip(img[276:497, 145:365], 0, 1), interpolation="nearest")
         ax.set_title(title, fontsize=11)
         bare(ax)
     save(fig, name)

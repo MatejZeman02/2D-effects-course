@@ -173,7 +173,7 @@ def test_wiener_undoes_a_motion_blur(solved):
 def letter_edges(grey):
     """How much the letters of "PGA 321" on the plate of car.png change from pixel to pixel: sharp letters
     have many edges, blurred ones few."""
-    return np.abs(np.diff(grey[404:416, 238:288], axis=1)).mean()
+    return np.abs(np.diff(grey[446:459, 231:286], axis=1)).mean()
 
 
 def test_the_shaken_car_is_the_diagram_script_s_and_wiener_reads_the_plate():
