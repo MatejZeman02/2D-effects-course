@@ -419,7 +419,7 @@ def answer(snippet, lang="python"):
 md(r"""
 # Lekce 2: Procedurální šum a krajina
 
-Na konci lekce budete mít generátor krajiny: ostrovy s plážemi, lesy, skalami a sněhem, osvětlené sluncem, které jde posouvat. Nevzniká z žádného obrázku, každý pixel se spočítá jen ze své polohy. Cestou napíšete hodnotový šum, fraktální šum a Voroného šum, ze kterých se skládá většina procedurálních textur.
+Na konci lekce budete mít generátor krajiny: ostrovy s plážemi, lesy, skalami a sněhem, osvětlené sluncem, které jde posouvat. Nevzniká z žádného obrázku, každý pixel se spočítá jen ze své polohy. Cestou napíšete value noise, fraktální šum a Voroného šum, ze kterých se skládá většina procedurálních textur.
 
 Spusťte buňku. Otevře nový dokument, jehož jediná vrstva je bílá `Base` přes celé plátno.
 
@@ -498,7 +498,7 @@ Funguje to, ale kopec široký sto pixelů potřebuje rozmazání přes stovky p
 
 <details><summary>Náhodná čísla jen v některých bodech a mezi nimi přechod</summary>
 
-Přesně tak. To je hodnotový šum, sekce 1. Kopce mají zatím jednu velikost, menší přidá fraktální šum v sekci 2.
+Přesně tak. To je value noise, sekce 1. Kopce mají zatím jednu velikost, menší přidá fraktální šum v sekci 2.
 
 @img(idea_lattice.png, 780, Mřížka s náhodnými čísly jen na křižovatkách, plynulý přechod mezi nimi a krajina z něj)
 
@@ -522,7 +522,7 @@ Dá ostrovy, ale každý pixel by musel projít všechny kopce. Když dostane ka
 
 <details><summary>Perlinův šum</summary>
 
-Ano, to je gradientní šum. Napíšeme jednodušší hodnotový šum, Perlinův je v části Co jsme vynechali.
+Ano, to je gradientní šum. Napíšeme jednodušší value noise, Perlinův je v části Co jsme vynechali.
 
 @img(idea_perlin.png, 520, Jedna oktáva Perlinova šumu jako výšková mapa a krajina z ní)
 
@@ -577,14 +577,14 @@ Svah natočený ke slunci je světlejší. Normálu dá sklon výškové mapy a 
 
 # --- 1. Value noise -------------------------------------------------------------
 md(r"""
-## 1. Hodnotový šum
+## 1. Value noise
 
 <details><summary>📖 Náhodná čísla dává hash jako v úvodní lekci</summary>
 
 `cell_hash` v kernelu níže promíchá bity celých souřadnic buňky mřížky, `random1` z nich udělá číslo od 0 do 1 a `random2` dvě. Počítá jen s celými čísly, takže NumPy v sekci 5 dostane bit po bitu stejná čísla.
 </details>
 
-Volba `Cells` rozdělí plátno na čtverce o straně `scale` pixelů a každému dá číslo z hashe, se `scale = 1` je to bílý šum. **Hodnotový šum** (*value noise*) dá náhodná čísla jen do rohů buněk a mezi nimi plynule přechází:
+Volba `Cells` rozdělí plátno na čtverce o straně `scale` pixelů a každému dá číslo z hashe, se `scale = 1` je to bílý šum. **Value noise** dá náhodná čísla jen do rohů buněk a mezi nimi plynule přechází:
 
 @img(value_noise.png, 900, Náhodná čísla v rozích buněk: čtverce, lineární přechod a hladký přechod, nahoře v řezu a dole na ploše)
 
@@ -606,7 +606,7 @@ Smoothstep má na koncích nulovou směrnici, ale ne nulovou druhou derivaci: $6
 
 </details>
 
-### 🎯 Úkol 1: hodnotový šum
+### 🎯 Úkol 1: value noise
 
 Napište `value_noise(p, smoothed)` podle vzorců výše, se `smoothed` hladký přechod, jinak lineární.
 
@@ -659,13 +659,13 @@ S volbou `Linear` jsou vidět zlomy podél mřížky, se `Smooth` je šum měkk�
 md(r"""
 ## 2. Fraktální šum
 
-Hodnotový šum má útvary jedné velikosti, krajina má hory, kopce i kameny najednou. **Fraktální šum** (*fractional Brownian motion*, fBm) sečte několik vrstev šumu, oktáv. Každá další je `lacunarity`krát jemnější a `gain`krát slabší:
+Value noise má útvary jedné velikosti, krajina má hory, kopce i kameny najednou. **Fraktální šum** (*fractional Brownian motion*, fBm) sečte několik vrstev šumu, oktáv. Každá další je `lacunarity`krát jemnější a `gain`krát slabší:
 
 $$\mathrm{fbm}(p) = \frac{\sum_{i=0}^{n-1} g^i \,\mathrm{noise}(l^i p)}{\sum_{i=0}^{n-1} g^i}$$
 
 Dělení součtem vah drží výsledek mezi 0 a 1.
 
-@img(fbm.png, 900, Čtyři oktávy hodnotového šumu, každá dvakrát jemnější a o polovinu slabší, a jejich součet)
+@img(fbm.png, 900, Čtyři oktávy value noise, každá dvakrát jemnější a o polovinu slabší, a jejich součet)
 
 ### 🎯 Úkol 2: fBm
 
@@ -711,7 +711,7 @@ def pixel(ivec2 at) -> vec4:
 """, solve=[(FBM_STUB, SOLUTION_FBM)])
 
 md(r"""
-S jednou oktávou je obraz stejný jako hladký hodnotový šum, se `gain` kolem 0.8 je šum drsný, kolem 0.3 skoro hladký.
+S jednou oktávou je obraz stejný jako hladký value noise, se `gain` kolem 0.8 je šum drsný, kolem 0.3 skoro hladký.
 """)
 
 # --- 3. Voronoi -----------------------------------------------------------------
@@ -908,7 +908,7 @@ Barvy zarážek jsou v sRGB. Dokument Krity s lineárním profilem (obvykle 32bi
 md(r"""
 ## Shrnutí
 
-- Hodnotový šum míchá náhodná čísla z rohů buněk, smoothstep schová zlomy.
+- Value noise míchá náhodná čísla z rohů buněk, smoothstep schová zlomy.
 - fBm sčítá oktávy a dá útvary všech velikostí.
 - Voroného šum měří vzdálenost k rozházeným bodům, $F_2 - F_1$ kreslí hranice oblastí.
 - Výšková mapa s gradientní mapou je krajina, normála z jejího sklonu a Lambertův zákon jí dají reliéf.
