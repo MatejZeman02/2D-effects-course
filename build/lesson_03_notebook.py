@@ -3,7 +3,8 @@
 The notebook is generated: edit this file and run it again, never the .ipynb
 by hand, or the next build overwrites the edit. The pictures and the test photo
 coffee.png come from lesson_03_diagrams.py, which enlarges scikit-image's
-coffee photo (CC0) twice, as imgs/3/SOURCES.md says.
+coffee photo (CC0) twice and draws three objects in place of its wood on the
+right, as imgs/3/SOURCES.md says.
 
 Markdown cells are raw strings, so LaTeX keeps single backslashes and braces.
 A picture from imgs/3 is written as @img(file, width, alt text).
@@ -272,16 +273,9 @@ def pixel(ivec2 at) -> vec4:
 {{CONV_STUB}}"""
 CONV = CONV.replace("{CONV_STUB}", CONV_STUB)
 
-# Section 2's question of the colour space, on a saturated yellow sun in a blue sky.
-SUN_NP = f"""\
-yy, xx = np.mgrid[0:{HEIGHT}, 0:{WIDTH}]
-inside = np.clip(200.5 - np.hypot(xx - {WIDTH // 2}, yy - {HEIGHT // 2}), 0, 1)[..., None]  # 1 in the sun, 0 in the sky
-sun = np.array([1.0, 0.8, 0.05, 1.0])                # saturated yellow
-sky = np.array([0.05, 0.3, 0.95, 1.0])               # saturated blue
-doc.new_layer("Sun", (inside * sun + (1 - inside) * sky).astype(np.float32))"""
-
+# Section 2's question of the colour space, on the photo's saturated yellow sun in a blue sky.
 SPACES = """\
-%%gmacs "Sun" -> "Spaces" halo=8
+%%gmacs "coffee" -> "Spaces" halo=8
 import linear_srgb_color_space
 import oklab_color_space
 uniform int effect: hint_enum("Blur", "Sharpen") = 1
@@ -711,7 +705,7 @@ md(r"""
 
 Lekce odpovídá na tři otázky: jak fotku rozmazat, jak v ní najít hrany a jak z ní odstranit šum, aby hrany zůstaly ostré. Cestou napíšete konvoluci a Gaussovo rozmazání ve dvou průchodech a vyzkoušíte Sobelův detektor hran. Doma přepíšete rozmazání a zaostření do filtru pro Kritu. Lekce je krátká, hned za ní ve stejném bloku následuje lekce 4 o frekvencích. Rozmazání, které nechá hrany, a pravidla okraje jsou nepovinné.
 
-Spusťte buňku. Otevře nový dokument a vloží do něj fotku jako vrstvu `coffee`.
+Spusťte buňku. Otevře nový dokument a vloží do něj fotku jako vrstvu `coffee`. Vpravo má místo dřeva tři nakreslené předměty, na kterých se filtry liší nejvíc: žluté slunce na modré obloze, černou čáru pod úhlem 45° na bílé a drobná světla v noci.
 
 <details><summary>📖 K čemu je plátno 1200 × 800</summary>
 
@@ -911,13 +905,13 @@ Přesně tak. Soused za hranou má jinou barvu, a dostane proto malou váhu. To 
 md(r"""
 ## 1. Rozmazání
 
-Rozmazaná fotka vypadá jako z nezaostřeného objektivu: světlo každého bodu se rozlije do kruhové skvrny a skvrny sousedních bodů se sečtou. K takovému výsledku se chceme přiblížit. Odlesky na lžičce se rozlijí do kulatých jasných kruhů. Krita má tenhle filtr pod jménem Lens Blur.
+Rozmazaná fotka vypadá jako z nezaostřeného objektivu: světlo každého bodu se rozlije do kruhové skvrny a skvrny sousedních bodů se sečtou. K takovému výsledku se chceme přiblížit. Světla vpravo dole i odlesky na lžičce se rozlijí do kulatých jasných kruhů s ostrým okrajem. Krita má tenhle filtr pod jménem Lens Blur.
 
-@img(lens_blur.png, 680, Výřez fotky se lžičkou a tentýž výřez rozmazaný jako objektivem: odlesky jsou kulaté jasné kruhy)
+@img(lens_blur.png, 600, Pravá část fotky se lžičkou, sluncem, šikmou čárou a světly, a tatáž část rozmazaná jako objektivem: světla a odlesky jsou kulaté jasné kruhy s ostrým okrajem)
 
 <details><summary>📖 Jak vznikl obrázek objektivu</summary>
 
-Každý pixel je průměr kruhu o poloměru 12 pixelů kolem sebe, spočítaný v lineárním světle. Odlesky jsou ve fotce oříznuté na bílou, ve skutečnosti byly mnohem jasnější. Obrázek je proto před rozmazáním zjasní, jinak by se rozlily do slabých skvrn.
+Každý pixel je průměr kruhu o poloměru 12 pixelů kolem sebe, spočítaný v lineárním světle. Odlesky jsou ve fotce oříznuté na bílou, ve skutečnosti byly mnohem jasnější. Obrázek je proto před rozmazáním zjasní, stejně jako světla v noci, jinak by se rozlily do slabých skvrn. Slunce a bílou za čárou nechá, jak jsou.
 </details>
 
 Nejjednodušší rozmazání je **průměr okolí** (*box blur*). Pixel dostane průměr čtverce o straně $2r + 1$ se sebou uprostřed:
@@ -928,7 +922,7 @@ $$g(x, y) = \frac{1}{(2r + 1)^2} \sum_{j=-r}^{r} \sum_{i=-r}^{r} f(x + i,\, y + 
 
 Okno se posune na každý pixel a pixel dostane průměr svého okna. Na šikmé hraně je vidět, co čtverec dělá jinak než objektiv. Přes rovnou hranu by z okna 3 × 3 vyšly tři mezistupně, přes šikmou jich vyjde pět, protože čtverec sahá po úhlopříčce dál než do strany. Šikmá hrana se tak rozmaže víc než rovná a jasný bod se rozmaže do čtverce:
 
-@img(box_vs_lens.png, 680, Lžička rozmazaná průměrem čtverce 25 krát 25 s hranatými odlesky a objektivem s kulatými)
+@img(box_vs_lens.png, 600, Pravá část fotky rozmazaná průměrem čtverce 25 krát 25 se čtvercovými světly a objektivem s kulatými)
 
 Průměr okolí napíšete v sekci 2 jako jedno z jader konvoluce.
 """)
@@ -1011,7 +1005,7 @@ Konvoluce zatím vážila čísla sRGB, ta ale nejsou množství světla. **Rozm
 
 <details><summary>📖 V jakém prostoru počítat</summary>
 
-Na sytých barvách je rozdíl vidět nejlíp. Obrázek ukazuje žluté slunce na modré obloze, rozmazané a zaostřené stejným průměrem okolí ve třech prostorech. Zaostření v OKLabu mění jen světlost L.
+Na sytých barvách je rozdíl vidět nejlíp. Obrázek ukazuje slunce z pravého horního rohu fotky, rozmazané a zaostřené stejným průměrem okolí ve třech prostorech. Zaostření v OKLabu mění jen světlost L.
 
 @img(spaces.png, 640, Žluté slunce na modré obloze rozmazané a zaostřené v sRGB, v lineárním RGB a v OKLabu)
 
@@ -1023,9 +1017,9 @@ Zaostření přičte k pixelu jeho rozdíl od průměru okolí. V sRGB i v line�
 
 Zaostření v sRGB zvedlo sytost v pruhu podél okraje, zaostření L v OKLabu ji nechalo skoro stejnou a změnilo jen světlost. Tenká tmavá čára přímo na okraji je už v původním obrázku: pixel na rozhraní je směs žluté a modré, a ta je skoro šedá.
 
-Chcete to vidět v Sáře? V nové buňce vytvořte vrstvu `Sun`, do další vložte kernel a přepínejte `space`:
+Chcete to vidět v Sáře? Vložte kernel do nové buňky, přepínejte `space` a dívejte se na slunce vpravo nahoře:
 
-""" + answer(SUN_NP) + "\n\n" + answer(SPACES, "") + r"""
+""" + answer(SPACES, "") + r"""
 </details>
 """)
 
@@ -1057,9 +1051,9 @@ Kernel sčítá sousedy do poloměru $r$ s vahami $w(i, j)$ a součet dělí sou
 code(GAUSS_2D)
 
 md(r"""
-Gauss rozmaže odlesky do měkkých kulatých skvrn, blíž objektivu než průměr čtverce:
+Gauss rozmaže světla do měkkých kulatých skvrn, blíž objektivu než průměr čtverce. Objektiv ale dělá kruhy s ostrým okrajem, stejně jasné od středu až k okraji. Gauss má jas nejvyšší uprostřed a k okraji ho plynule ztrácí:
 
-@img(blur_shapes.png, 900, Lžička rozmazaná průměrem čtverce s hranatými odlesky, Gaussem s měkkými kulatými a objektivem s ostrými kulatými)
+@img(blur_shapes.png, 900, Pravá část fotky rozmazaná průměrem čtverce se čtvercovými světly, Gaussem s měkkými kulatými a objektivem s kulatými s ostrým okrajem)
 
 <details><summary>❓ Otázka: proč Gauss nepočítá v OKLabu?</summary>
 
@@ -1176,11 +1170,11 @@ code(SOBEL)
 md(r"""
 <details><summary>❓ Otázka: proč mají dvě strany čáry opačné barvy?</summary>
 
-Zapněte `direction`. Proč mají dvě strany tenké čáry, třeba okraje lžičky, opačné barvy?
+Zapněte `direction`. Proč mají dvě strany tenké čáry, třeba šikmé čáry vpravo, opačné barvy?
 
 <details><summary>🔑 Odpověď</summary>
 
-Barva je směr gradientu, od tmavší strany ke světlejší. Tenká světlá čára má tmavé okolí na obou stranách: na jedné straně světlost roste, na druhé klesá, a gradienty míří proti sobě. Opačné směry dostanou na barevném kole opačné barvy. Cannyho detektor hran to využívá: hranu ztenčí na jeden pixel tak, že nechá jen místa, kde je síla největší ve směru gradientu.
+Barva je směr gradientu, od tmavší strany ke světlejší. Tenká černá čára má světlé okolí na obou stranách: přes jednu její stranu světlost klesá, přes druhou roste, a gradienty obou stran míří od čáry, proti sobě. Opačné směry dostanou na barevném kole opačné barvy. Cannyho detektor hran to využívá: hranu ztenčí na jeden pixel tak, že nechá jen místa, kde je síla největší ve směru gradientu.
 </details>
 
 </details>

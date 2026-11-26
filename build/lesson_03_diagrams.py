@@ -1,7 +1,10 @@
 """Draws the lesson 3 diagrams into imgs/3 of the lecture folder, and the test photo.
 
 coffee.png is scikit-image's coffee photo (CC0) enlarged twice with Lanczos,
-so the canvas is big enough for the timing cells to tell the kernels apart.
+so the canvas is big enough for the timing cells to tell the kernels apart. Its
+wood on the right is cut off and three drawn objects take its place, on which
+the filters differ most: a yellow sun in a blue sky, a black line at 45 degrees
+on white and small lights at night.
 The arithmetic is the notebook's own where it can be: the colour conversions,
 gaussian_1d and the solved blur come from the NumPy cells of
 lesson_03_notebook.py.
@@ -37,12 +40,57 @@ GALLERY = {"Disc 25 x 25": "kruh 25 × 25", "Motion 25 x 1": "pohyb 25 × 1", "S
            "Edges 5 x 5": "hrany 5 × 5", "Emboss 5 x 5": "reliéf 5 × 5"}
 
 
+# The photo keeps the columns of the enlarged coffee from 130 to 975, the whole saucer, and the
+# drawn objects fill the rest of the canvas on the right, one tile above another.
+PHOTO_X = (130, 975)
+PANEL_X = PHOTO_X[1] - PHOTO_X[0]                 # the panel's first column on the canvas
+TOPS = (0, 267, 533, nb.HEIGHT)                   # the tiles' first rows, and the canvas's end
+SUN_TILE, LINE_TILE, LIGHTS_TILE = ((slice(a, b), slice(PANEL_X, nb.WIDTH)) for a, b in zip(TOPS, TOPS[1:]))
+SUN, SKY = np.array([1.0, 0.8, 0.05]), np.array([0.05, 0.3, 0.95])
+SUN_R = 90.5
+NIGHT = np.array([0.02, 0.03, 0.08])
+# The lights, (row, column, radius, colour) in their tile: a few far apart, two close enough for
+# their blurred discs to overlap.
+LIGHTS = [(55, 60, 3.0, (1.0, 1.0, 1.0)), (75, 165, 2.5, (1.0, 0.8, 0.45)), (50, 280, 3.5, (1.0, 0.25, 0.15)),
+          (140, 80, 2.0, (0.35, 0.85, 1.0)), (125, 195, 3.5, (1.0, 1.0, 1.0)), (145, 215, 3.0, (1.0, 0.8, 0.45)),
+          (135, 300, 2.5, (0.5, 1.0, 0.4)), (210, 55, 3.0, (1.0, 0.8, 0.45)), (205, 160, 2.5, (1.0, 0.25, 0.15)),
+          (215, 280, 3.5, (1.0, 1.0, 1.0))]
+
+
+def disc(h, w, cy, cx, r):
+    """How much of each pixel of an h x w picture a disc covers, anti-aliased over one pixel."""
+    yy, xx = np.mgrid[0:h, 0:w]
+    return np.clip(r - np.hypot(xx - cx, yy - cy), 0, 1)
+
+
+def panel():
+    """The three drawn objects, one tile each, as (height, width, 3) sRGB."""
+    w = nb.WIDTH - PANEL_X
+    out = np.zeros((nb.HEIGHT, w, 3))
+    h = TOPS[1] - TOPS[0]
+    inside = disc(h, w, (h - 1) / 2, (w - 1) / 2, SUN_R)[..., None]
+    out[TOPS[0]:TOPS[1]] = inside * SUN + (1 - inside) * SKY
+    h = TOPS[2] - TOPS[1]
+    yy, xx = np.mgrid[0:h, 0:w]
+    away = np.abs((xx - (w - 1) / 2) + (yy - (h - 1) / 2)) / np.sqrt(2)   # from the line rising to the right
+    out[TOPS[1]:TOPS[2]] = np.clip(away - 2.5, 0, 1)[..., None]           # black, 7 pixels wide
+    h = TOPS[3] - TOPS[2]
+    night = np.zeros((h, w, 3)) + NIGHT
+    for cy, cx, r, colour in LIGHTS:
+        lit = disc(h, w, cy, cx, r)[..., None]
+        night = lit * np.array(colour) + (1 - lit) * night
+    out[TOPS[2]:TOPS[3]] = night
+    return out
+
+
 def make_photo():
-    """coffee.png: scikit-image's coffee, 600 x 400, enlarged to the lesson's canvas."""
+    """coffee.png: scikit-image's coffee, 600 x 400, enlarged twice, its right side the panel."""
     import skimage.data
     small = Image.fromarray(skimage.data.coffee())
-    big = small.resize((nb.WIDTH, nb.HEIGHT), Image.LANCZOS)
-    big.save(OUT / "coffee.png", optimize=True)
+    big = np.asarray(small.resize((2 * small.width, 2 * small.height), Image.LANCZOS), np.float64) / 255
+    canvas = np.concatenate([big[:, PHOTO_X[0]:PHOTO_X[1]], panel()], axis=1)
+    assert canvas.shape == (nb.HEIGHT, nb.WIDTH, 3)
+    Image.fromarray(np.round(canvas * 255).astype(np.uint8)).save(OUT / "coffee.png", optimize=True)
 
 
 def load(name):
@@ -75,7 +123,7 @@ def numbers(ax, values, fmt, colours=None):
 def convolution_window():
     """A 7 x 7 patch of grey values, the 3 x 3 window, its weights and the pixel it writes."""
     L = lightness(load("coffee.png"))
-    patch = np.round(L[590:597, 653:660], 2)   # a clean edge found by eye, rounded as the labels print it
+    patch = np.round(L[590:597, 523:530], 2)   # a clean edge found by eye, rounded as the labels print it
     w = SHARPEN
     out = np.zeros((7, 7))
     pad = np.pad(patch, 1, mode="edge")
@@ -122,7 +170,7 @@ def convolve(img, w):
 
 def kernel_gallery():
     """The photo's spoon after the presets of section 2."""
-    img = load("coffee.png")[300:620, 520:840]
+    img = load("coffee.png")[300:620, 390:710]
     fig, axes = plt.subplots(1, 1 + len(GALLERY), figsize=(16, 3.0), gridspec_kw={"wspace": 0.05})
     axes[0].imshow(img[..., :3])
     axes[0].set_title("původní", fontsize=12)
@@ -258,7 +306,7 @@ def sobel():
         numbers(ax, w, lambda v: f"{v:g}", [["black"] * 3] * 3)
         ax.set_title(name, fontsize=13)
         bare(ax)
-    L = lightness(load("coffee.png"))[380:460, 600:700]
+    L = lightness(load("coffee.png"))[380:460, 470:570]
     p = np.pad(L, 1, mode="edge")
     h, w = L.shape
     g = np.zeros((h, w, 2))
@@ -357,7 +405,7 @@ def lightness(img):
     return to_oklab(srgb_to_linear(img[..., :3]))[..., 0]
 
 
-BILATERAL_AT = (600, 421)     # a pixel of the cup's red side, just below the edge to its white rim
+BILATERAL_AT = (470, 421)     # a pixel of the cup's red side, just below the edge to its white rim
 
 
 def bilateral():
@@ -382,16 +430,16 @@ def bilateral():
 
 
 # --- The brainstorm's ideas, each a few panels of the photo's cup and spoon. ----------
-CROP = (slice(330, 570), slice(560, 800))     # the spoon and the cup's rim, 240 x 240
+CROP = (slice(330, 570), slice(430, 670))     # the spoon and the cup's rim, 240 x 240
 
 
 def crop():
     return load("coffee.png")[CROP][..., :3]
 
 
-def idea(name, panels, width=3.0):
+def idea(name, panels, width=3.0, height=2.45):
     """One row of (title, picture) panels, a grey picture drawn as lightness."""
-    fig, axes = plt.subplots(1, len(panels), figsize=(width * len(panels), 2.45), gridspec_kw={"wspace": 0.05})
+    fig, axes = plt.subplots(1, len(panels), figsize=(width * len(panels), height), gridspec_kw={"wspace": 0.05})
     for ax, (title, img) in zip(axes, panels):
         ax.imshow(np.clip(img, 0, 1), cmap="gray" if img.ndim == 2 else None, vmin=0, vmax=1, interpolation="nearest")
         ax.set_title(title, fontsize=11)
@@ -437,8 +485,8 @@ def ideas():
     idea("idea_dog.png", [("světlost", L), ("rozmazaná, $\\sigma = 3$", Ls), ("rozdíl, zesílený 4krát", 4 * np.abs(L - Ls))])
 
 
-# --- Lens, box and Gauss on the spoon's highlights --------------------------------
-SPOON = (slice(420, 720), slice(560, 900))    # the spoon and the saucer's rim, 300 x 340
+# --- Lens, box and Gauss on the spoon's highlights and the drawn objects -------------
+SPOON = (slice(0, nb.HEIGHT), slice(500, nb.WIDTH))   # the spoon, the saucer's rim and the three objects
 LENS_R = 12                                    # the lens's disc and the box's radius
 
 
@@ -455,8 +503,11 @@ def fft_convolve(a, k):
 
 
 def highlights(img):
-    """The photo in linear light with its clipped highlights eleven times brighter, as the scene was."""
+    """The photo in linear light with its clipped highlights and the lights eleven times brighter,
+    as the scene was. The sun and the white behind the line stay as bright as they are drawn."""
     near_white = np.clip((img.max(axis=-1, keepdims=True) - 0.92) / 0.08, 0, 1)
+    near_white[SUN_TILE] = 0
+    near_white[LINE_TILE] = 0
     return srgb_to_linear(img) * (1 + 10 * near_white)
 
 
@@ -474,10 +525,10 @@ def blurred(kind):
 def lens_pictures():
     original = load("coffee.png")[..., :3][SPOON]
     lens, box, gauss = blurred("lens"), blurred("box"), blurred("gauss")
-    idea("lens_blur.png", [("původní", original), ("objektiv (lens blur)", lens)], width=3.4)
+    idea("lens_blur.png", [("původní", original), ("objektiv (lens blur)", lens)], width=3.0, height=3.6)
     idea("box_vs_lens.png", [(f"průměr čtverce {2 * LENS_R + 1} × {2 * LENS_R + 1}", box),
-                             ("objektiv", lens)], width=3.4)
-    idea("blur_shapes.png", [("průměr čtverce", box), ("Gauss", gauss), ("objektiv", lens)], width=3.4)
+                             ("objektiv", lens)], width=3.0, height=3.6)
+    idea("blur_shapes.png", [("průměr čtverce", box), ("Gauss", gauss), ("objektiv", lens)], width=3.0, height=3.6)
 
 
 def box_window():
@@ -596,14 +647,14 @@ def more_ideas():
     idea("idea_similar.png", [("zašuměná", grainy), ("jen sousedé podobné barvy", bilateral_np(grainy, 3.0, 0.1))])
 
 
-# --- Section 2's colour spaces, on a yellow sun in a blue sky --------------------------
-SUN, SKY = np.array([1.0, 0.8, 0.05]), np.array([0.05, 0.3, 0.95])
+# --- Section 2's colour spaces, on the photo's yellow sun in a blue sky -------------------
 
 
-def sun_picture(side=200, radius=70.5):
-    yy, xx = np.mgrid[0:side, 0:side]
-    inside = np.clip(radius - np.hypot(xx - side / 2, yy - side / 2), 0, 1)[..., None]
-    return inside * SUN + (1 - inside) * SKY
+def sun_picture():
+    """The sun's tile of the photo, cut to a square around the sun."""
+    tile = load("coffee.png")[SUN_TILE][..., :3].astype(np.float64)
+    h, w = tile.shape[:2]
+    return tile[:, (w - h) // 2:(w - h) // 2 + h]
 
 
 SPACES = {"sRGB": (lambda c: c, lambda c: np.clip(c, 0, 1)),
@@ -643,7 +694,7 @@ def spaces():
 def spaces_split():
     """The sun's edge before and after sharpening, split into OKLab lightness L and chroma C."""
     img = sun_picture()
-    window = (slice(60, 140), slice(120, 200))       # the sun's right edge and the sky beside it
+    window = (slice(93, 173), slice(184, 264))       # the sun's right edge and the sky beside it
     columns = [("původní", img), ("zaostření v sRGB", sharpened(img, "sRGB")),
                ("zaostření L v OKLabu", sharpened(img, "OKLab"))]
     fig, axes = plt.subplots(3, 3, figsize=(8.4, 8.6), gridspec_kw={"wspace": 0.05, "hspace": 0.12})
