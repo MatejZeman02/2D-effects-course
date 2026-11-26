@@ -8,7 +8,8 @@ photo, with PARAMS read by the Krita template's own parser. The kernels'
 arithmetic is redone in NumPy where a test needs it: the 2D Gaussian with its
 edges clamped, the edge rules' index formulas and Sobel's weights.
 Sobel is a finished kernel, the lesson's tasks are the convolution, the first Gaussian
-pass and the Krita copy, and the bilateral filter is a bonus.
+pass and the Krita copy, and the bilateral filter is a bonus. The goal is one fast kernel
+with the three effects of the brainstorm, not the NumPy filter.
 """
 import re
 import sys
@@ -56,7 +57,7 @@ def solved():
 
 
 def test_the_template_reads_params(defaults):
-    assert defaults == {"mode": "Blur", "sigma": nb.SIGMA, "amount": 1.0}
+    assert defaults == {"mode": "Blur", "sigma": nb.SIGMA, "sharpen_amount": 1.0}
 
 
 def test_the_photo_is_the_canvas_size():
@@ -65,9 +66,27 @@ def test_the_photo_is_the_canvas_size():
     assert f"const ivec2 SIZE = ivec2({W}, {H})" in nb.EDGES
 
 
-def test_the_matrix_starts_as_sharpen():
-    numbers = re.search(r"weights\[9\] = \{([^}]*)\}", nb.CONV)[1]
-    assert [float(n) for n in numbers.split(",")] == nb.SHARPEN
+def test_the_own_grid_starts_as_sharpen_mirrored():
+    numbers = re.search(r"own\[4\] = \{([^}]*)\}", nb.CONV)[1]
+    assert [float(n) for n in numbers.split(",")] == nb.OWN
+    assert np.array_equal(nb.preset_weights("Own 3 x 3"), [[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
+    assert np.allclose(nb.preset_weights("Own 3 x 3", [1, 1, 1, 1]), np.full((3, 3), 1 / 9))
+    assert "own[(1 - abs(j)) * 2 + (1 - abs(i))]" in nb.CONV
+
+
+def test_the_presets_are_the_kernels_constants():
+    """Every preset sums to 1 but the edges, which sum to 0, and the kernel divides by the same sums."""
+    for name, r in nb.PRESETS.items():
+        w = nb.preset_weights(name)
+        assert w.shape == (2 * r + 1, 2 * r + 1), name
+        assert abs(w.sum() - (0.0 if name.startswith("Edges") else 1.0)) < 1e-9, name
+        assert r <= 16, name                   # within the 16 pixels Sara reads past the edge unasked
+        assert f"case {name.split()[0].upper()}:\n            return {r}" in nb.CONV, name
+    disc = (nb.preset_weights("Disc 25 x 25") > 0).sum()
+    assert f"return 1.0 / {disc}.0" in nb.CONV and "return 1.0 / 225.0" in nb.CONV
+    gauss = nb.preset_weights("Gauss 25 x 25")
+    assert abs(gauss[12, 12] - 1 / float(re.search(r"/ 32\.0\) / ([\d.]+)", nb.CONV)[1])) < 1e-6
+    assert "hint_enum(" + ", ".join(f'"{n}"' for n in nb.PRESETS) + ")" in nb.CONV
 
 
 def test_every_layer_is_made_before_it_is_read():
@@ -126,10 +145,11 @@ def test_sobels_weights_are_the_matrices():
 
 
 def test_the_kernels_reach_as_far_as_they_read():
-    """A square of the grid at the far edge reads up to twice the largest radius past it, and the
-    bilateral filter reads out to 3 sigma at its largest sigma."""
-    radius = int(re.search(r"radius: hint_range\(0, (\d+)\)", nb.MEAN)[1])
-    assert f"halo={2 * radius}" in nb.MEAN.splitlines()[0]
+    """The goal reads out to 2.5 blur_size, within Sara's 16 pixels, and the bilateral filter out to
+    3 sigma at its largest sigma."""
+    size = float(re.search(r"blur_size: hint_range\(0.5, (\d+)\)", nb.GOAL)[1])
+    assert "int(ceil(2.5 * blur_size))" in nb.GOAL and int(np.ceil(2.5 * size)) <= 16
+    assert f"R_MAX = {int(np.ceil(2.5 * size))} " in nb.GOAL     # the shared rows reach the largest blur
     sigma = float(re.search(r"sigma: hint_range\(0.5, (\d+)\)", nb.BILATERAL)[1])
     assert int(np.ceil(3 * sigma)) <= int(re.search(r"halo=(\d+)", nb.BILATERAL)[1])
     radius = int(re.search(r"radius: hint_range\(1, (\d+)\)", nb.SPACES)[1])
@@ -137,12 +157,13 @@ def test_the_kernels_reach_as_far_as_they_read():
 
 
 def test_the_enums_are_matched_by_name():
-    for kernel, names in ((nb.MEAN, ["BLOCKS", "AROUND"]), (nb.EDGES, ["ZERO", "CLAMP", "MIRROR", "WRAP"])):
+    presets = [name.split()[0].upper() for name in nb.PRESETS]
+    for kernel, names in ((nb.CONV, presets), (nb.GOAL, ["BLUR", "EDGES", "DENOISE"]),
+                          (nb.EDGES, ["ZERO", "CLAMP", "MIRROR", "WRAP"])):
         for i, name in enumerate(names):
             assert f"const int {name} = {i}" in kernel
+            assert f"case {name}:" in kernel, name          # every choice has its own case
         assert "match " in kernel and " == 1" not in kernel
-    for name in ("BLOCKS", "AROUND"):                   # every choice has its own case
-        assert f"case {name}:" in nb.MEAN, name
     for name in ("BLUR", "SHARPEN", "SRGB", "LINEAR", "OKLAB"):
         assert f"case {name}:" in nb.SPACES, name
     for name in ("ZERO", "CLAMP", "MIRROR", "WRAP"):
@@ -160,7 +181,7 @@ def test_the_solution_runs(photo, defaults, solved):
         out = solved["apply"](img, **{**defaults, "mode": mode})
         assert out.shape == img.shape and out.dtype == np.float32, mode
         assert np.isfinite(out).all() and np.array_equal(out[..., 3], img[..., 3]), mode
-    same = solved["apply"](img, **{**defaults, "mode": "Sharpen", "amount": 0.0})
+    same = solved["apply"](img, **{**defaults, "mode": "Sharpen", "sharpen_amount": 0.0})
     assert np.abs(same - img).max() < 1e-5
     soft = solved["apply"](img, **defaults)
     sharp = solved["apply"](img, **{**defaults, "mode": "Sharpen"})
@@ -168,22 +189,21 @@ def test_the_solution_runs(photo, defaults, solved):
     assert np.abs(np.diff(soft[..., 1], axis=1)).mean() < detail < np.abs(np.diff(sharp[..., 1], axis=1)).mean()
 
 
-def test_the_goal_is_the_solution(photo, solved):
-    """The hidden Goal cell runs the same filter, PARAMS and source as section 5."""
-    called = {}
-
-    class Sara:
-        @staticmethod
-        def live(apply, params, source, target):
-            called.update(apply=apply, params=params, source=source, target=target)
-
-    exec(nb.GOAL, {"np": np, "sara": Sara})
-    assert called["source"] == "coffee" and called["target"] == "Goal"
-    assert called["params"] == solved["PARAMS"]
-    img = photo[:100, :140]
-    for mode in ("Blur", "Sharpen"):
-        values = {"mode": mode, "sigma": 2.5, "amount": 1.5}
-        assert np.array_equal(called["apply"](img, **values), solved["apply"](img, **values)), mode
+def test_the_goal_is_one_kernel_with_the_three_effects():
+    """The hidden Goal cell is a kernel on the photo, one effect per question of the brainstorm,
+    and every control it shows is used."""
+    lines = nb.GOAL.splitlines()
+    assert lines[0].startswith('%%gmacs "coffee" -> "Goal" ')
+    assert 'hint_enum("Blur", "Edges", "Denoise")' in nb.GOAL and "sara.live" not in nb.GOAL
+    body = nb.GOAL.split("const int BLUR")[1]
+    names = re.findall(r"^    (?:int|float|bool) (\w+)", nb.GOAL.split("params:")[1].split("const int")[0], flags=re.M)
+    assert names == ["effect", "blur_size", "denoise_tolerance", "noisy_photo"]
+    for name in names:
+        assert re.search(rf"\b{name}\b", body), name
+        assert f" {name}=" in lines[0], name          # the line gives each its opening value
+    text = markdown_text().split("## Jak byste")[0].split("## Cíl lekce")[1]
+    for name in ("effect", "blur_size", "denoise_tolerance", "noisy_photo"):
+        assert f"`{name}`" in text, name
 
 
 def test_the_pictures_exist():
@@ -245,8 +265,10 @@ def test_the_tasks_come_in_order_and_sobel_is_not_one():
 def test_the_lesson_opens_with_a_brainstorm_after_the_goal():
     text = markdown_text()
     assert text.index("## Cíl lekce") < text.index("## Jak byste to udělali?") < text.index("## 1. Rozmazání")
-    assert "A jak ve fotce najít hrany?" in text and "A jak rozmazat, aby hrany zůstaly?" in text
-    assert text.index("❓ Další otázky: hrany a rozmazání") < text.index("A jak ve fotce najít hrany?")
+    brainstorm = text.split("## Jak byste to udělali?")[1].split("## 1. Rozmazání")[0]
+    heads = re.findall(r"^### (.*)$", brainstorm, flags=re.M)
+    assert heads == ["Rozmazání", "Hrany", "Rozmazání, které nechá hrany"]
+    assert brainstorm.count("<details><summary>💭 Nápady</summary>") == 3
     assert text.count("<details><summary>💭 Nápady</summary>") == 3
     assert "```" not in markdown_text().split("## 1. Rozmazání")[0]
 
@@ -277,8 +299,3 @@ def test_the_prose_has_no_semicolon_or_long_dash():
             text = re.sub(r"\$[^$]*\$", "", text)
         assert "\u2014" not in text and "\u2013" not in text, text[:60]
         assert ";" not in text.replace("&nbsp;", ""), text[:60]
-
-
-def test_the_goal_holds_no_unused_helper():
-    assert "def srgb_to_linear" in nb.GOAL and "M2_INV" in nb.GOAL
-    assert "def gaussian_1d" in nb.GOAL and "TODO" not in nb.GOAL

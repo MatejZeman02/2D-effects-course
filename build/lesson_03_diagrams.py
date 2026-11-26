@@ -32,12 +32,9 @@ for source in (nb.HELPERS_NP, nb.SOLUTION_BLUR_NP):
 srgb_to_linear, linear_to_srgb = space["srgb_to_linear"], space["linear_to_srgb"]
 gaussian_1d, blur = space["gaussian_1d"], space["blur"]
 
-KERNELS = {
-    "průměr": np.full((3, 3), 1 / 9),
-    "zaostření": np.array(nb.SHARPEN, float).reshape(3, 3),
-    "hrany": np.array([[-1, -1, -1], [-1, 8, -1], [-1, -1, -1]], float),
-    "reliéf": np.array([[-2, -1, 0], [-1, 1, 1], [0, 1, 2]], float),
-}
+SHARPEN = nb.preset_weights("Own 3 x 3")      # the own grid's opening values, mirrored
+GALLERY = {"Disc 25 x 25": "kruh 25 × 25", "Motion 25 x 1": "pohyb 25 × 1", "Sharpen 9 x 9": "zaostření 9 × 9",
+           "Edges 5 x 5": "hrany 5 × 5", "Emboss 5 x 5": "reliéf 5 × 5"}
 
 
 def make_photo():
@@ -66,13 +63,6 @@ def bare(ax):
         s.set_visible(False)
 
 
-def convolve3(img, w):
-    """The 3 x 3 convolution of the notebook's check, edges clamped, colour only."""
-    h, wd = img.shape[:2]
-    p = np.pad(img[..., :3], ((1, 1), (1, 1), (0, 0)), mode="edge")
-    return sum(w[j, i] * p[j:j + h, i:i + wd] for j in range(3) for i in range(3))
-
-
 def numbers(ax, values, fmt, colours=None):
     """A grid of values with each number written in its cell."""
     n_rows, n_cols = values.shape
@@ -86,7 +76,7 @@ def convolution_window():
     """A 7 x 7 patch of grey values, the 3 x 3 window, its weights and the pixel it writes."""
     L = lightness(load("coffee.png"))
     patch = np.round(L[590:597, 653:660], 2)   # a clean edge found by eye, rounded as the labels print it
-    w = KERNELS["zaostření"]
+    w = SHARPEN
     out = np.zeros((7, 7))
     pad = np.pad(patch, 1, mode="edge")
     for j in range(7):
@@ -117,15 +107,28 @@ def convolution_window():
     save(fig, "convolution_window.png")
 
 
+def convolve(img, w):
+    """The convolution of section 2, f(x - i, y - j) times w(i, j), edges clamped, colour only."""
+    r = w.shape[0] // 2
+    h, wd = img.shape[:2]
+    p = np.pad(img[..., :3], ((r, r), (r, r), (0, 0)), mode="edge")
+    out = np.zeros((h, wd, 3))
+    for j in range(-r, r + 1):
+        for i in range(-r, r + 1):
+            if w[j + r, i + r] != 0:
+                out += w[j + r, i + r] * p[r - j:r - j + h, r - i:r - i + wd]
+    return out
+
+
 def kernel_gallery():
-    """The photo's spoon after each kernel of the notebook's table."""
+    """The photo's spoon after the presets of section 2."""
     img = load("coffee.png")[300:620, 520:840]
-    fig, axes = plt.subplots(1, 5, figsize=(14, 3.2), gridspec_kw={"wspace": 0.05})
+    fig, axes = plt.subplots(1, 1 + len(GALLERY), figsize=(16, 3.0), gridspec_kw={"wspace": 0.05})
     axes[0].imshow(img[..., :3])
     axes[0].set_title("původní", fontsize=12)
-    for ax, (name, w) in zip(axes[1:], KERNELS.items()):
-        ax.imshow(np.clip(convolve3(img, w), 0, 1))
-        ax.set_title(name, fontsize=12)
+    for ax, (name, title) in zip(axes[1:], GALLERY.items()):
+        ax.imshow(np.clip(convolve(img, nb.preset_weights(name)), 0, 1))
+        ax.set_title(title, fontsize=12)
     for ax in axes:
         bare(ax)
     save(fig, "kernel_gallery.png")
@@ -408,12 +411,12 @@ def box_mean(img, radius):
 def ideas():
     img = crop()
     whole = np.zeros_like(img) + load("coffee.png")[..., :3].mean(axis=(0, 1))
-    idea("idea_mean_all.png", [("původní", img), ("průměr celé fotky", whole)])
+    idea("idea_mean_all.png", [("původní", img), ("průměr", whole)])
     side = 17
     h, w = img.shape[:2]
     cut = img[:h // side * side, :w // side * side]
     blocks = cut.reshape(h // side, side, w // side, side, 3).mean(axis=(1, 3)).repeat(side, 0).repeat(side, 1)
-    idea("idea_blocks.png", [("původní", cut), ("průměr čtverců mřížky", blocks)])
+    idea("idea_blocks.png", [("původní", cut), ("průměr po blocích", blocks)])
     rng = np.random.default_rng(3)
     ys, xs = np.mgrid[0:h, 0:w]
     ys = np.clip(ys + rng.integers(-8, 9, (h, w)), 0, h - 1)
@@ -434,22 +437,199 @@ def ideas():
     idea("idea_dog.png", [("světlost", L), ("rozmazaná, $\\sigma = 3$", Ls), ("rozdíl, zesílený 4krát", 4 * np.abs(L - Ls))])
 
 
+# --- Lens, box and Gauss on the spoon's highlights --------------------------------
+SPOON = (slice(420, 720), slice(560, 900))    # the spoon and the saucer's rim, 300 x 340
+LENS_R = 12                                    # the lens's disc and the box's radius
+
+
+def fft_convolve(a, k):
+    """a, (h, w, 3), convolved with the small kernel k, edges clamped, through the FFT."""
+    h, w = a.shape[:2]
+    kh, kw = k.shape
+    pad = np.pad(a, ((kh, kh), (kw, kw), (0, 0)), mode="edge")
+    big = np.zeros(pad.shape[:2])
+    big[:kh, :kw] = k
+    big = np.roll(big, (-(kh // 2), -(kw // 2)), (0, 1))
+    out = np.fft.irfft2(np.fft.rfft2(pad, axes=(0, 1)) * np.fft.rfft2(big)[..., None], s=pad.shape[:2], axes=(0, 1))
+    return out[kh:kh + h, kw:kw + w]
+
+
+def highlights(img):
+    """The photo in linear light with its clipped highlights eleven times brighter, as the scene was."""
+    near_white = np.clip((img.max(axis=-1, keepdims=True) - 0.92) / 0.08, 0, 1)
+    return srgb_to_linear(img) * (1 + 10 * near_white)
+
+
+def blurred(kind):
+    """The spoon blurred by a disc (the lens), a square or a Gaussian of about the same size."""
+    img = load("coffee.png")[..., :3].astype(np.float64)
+    j, i = np.mgrid[-LENS_R:LENS_R + 1, -LENS_R:LENS_R + 1]
+    k = {"lens": (i * i + j * j <= LENS_R * LENS_R).astype(float),
+         "box": np.ones(i.shape),
+         "gauss": np.exp(-(i * i + j * j) / (2 * (LENS_R / 2.5) ** 2))}[kind]
+    out = fft_convolve(highlights(img), k / k.sum())
+    return linear_to_srgb(np.clip(out, 0, 1))[SPOON]
+
+
+def lens_pictures():
+    original = load("coffee.png")[..., :3][SPOON]
+    lens, box, gauss = blurred("lens"), blurred("box"), blurred("gauss")
+    idea("lens_blur.png", [("původní", original), ("objektiv (lens blur)", lens)], width=3.4)
+    idea("box_vs_lens.png", [(f"průměr čtverce {2 * LENS_R + 1} × {2 * LENS_R + 1}", box),
+                             ("objektiv", lens)], width=3.4)
+    idea("blur_shapes.png", [("průměr čtverce", box), ("Gauss", gauss), ("objektiv", lens)], width=3.4)
+
+
+def box_window():
+    """A 9 x 9 patch with a 45 degree edge, the 3 x 3 window of equal weights and the box mean it gives."""
+    n = 9
+    j, i = np.mgrid[0:n, 0:n]
+    patch = np.where(i + j > n - 1, 0.9, np.where(i + j < n - 1, 0.1, 0.5))
+    pad = np.pad(patch, 1, mode="edge")
+    out = np.array([[pad[y:y + 3, x:x + 3].mean() for x in range(n)] for y in range(n)])
+    at = (4, 3)                                       # the pixel whose window is drawn, row and column
+    fig, axes = plt.subplots(1, 3, figsize=(12, 4.3), gridspec_kw={"width_ratios": [9, 3, 9], "wspace": 0.3})
+    ax = axes[0]
+    ax.imshow(patch, cmap="gray", vmin=0, vmax=1)
+    numbers(ax, patch, lambda v: f"{v:.1f}")
+    ax.add_patch(Rectangle((at[1] - 1.5, at[0] - 1.5), 3, 3, fill=False, ec=ORANGE, lw=3))
+    ax.set_title("okolí pixelu $f$, šikmá hrana", fontsize=12)
+    ax = axes[1]
+    ax.imshow(np.full((3, 3), 0.75), cmap="Blues", vmin=0, vmax=1)
+    for y in range(3):
+        for x in range(3):
+            ax.text(x, y, "1/9", ha="center", va="center", fontsize=10)
+    ax.add_patch(Rectangle((-0.5, -0.5), 3, 3, fill=False, ec=ORANGE, lw=3))
+    ax.set_title("váhy, všechny stejné", fontsize=12)
+    ax = axes[2]
+    ax.imshow(out, cmap="gray", vmin=0, vmax=1)
+    numbers(ax, out, lambda v: f"{v:.2f}")
+    ax.add_patch(Rectangle((at[1] - 0.5, at[0] - 0.5), 1, 1, fill=False, ec=ORANGE, lw=3))
+    ax.set_title("výsledek $g$, průměr okna", fontsize=12)
+    for ax in axes:
+        bare(ax)
+    axes[1].text(-0.45, 0.5, "×", fontsize=26, ha="center", va="center", transform=axes[1].transAxes)
+    axes[1].text(1.45, 0.5, "=", fontsize=26, ha="center", va="center", transform=axes[1].transAxes)
+    fig.text(0.5, 0.02, "okno se posune na každý pixel, přes šikmou hranu vyjdou čtyři mezistupně, přes rovnou by vyšly dva",
+             ha="center", fontsize=11, color=GREY)
+    save(fig, "box_window.png")
+
+
+# --- The brainstorm's new ideas --------------------------------------------------------
+def shifted_copies(img, step, reach):
+    """The mean of img's copies shifted by every (dx, dy) on a grid of step out to reach, edges clamped."""
+    h, w = img.shape[:2]
+    p = np.pad(img, ((reach, reach), (reach, reach), (0, 0)), mode="edge")
+    shifts = range(-reach, reach + 1, step)
+    return np.mean([p[reach + dy:reach + dy + h, reach + dx:reach + dx + w] for dy in shifts for dx in shifts], axis=0)
+
+
+def noisy(img):
+    """img with the goal's grain: each channel moved by up to 0.15 either way."""
+    rng = np.random.default_rng(5)
+    return np.clip(img + 0.3 * (rng.random(img.shape) - 0.5), 0, 1)
+
+
+def oklab_of(img):
+    return to_oklab(srgb_to_linear(img.astype(np.float64)))
+
+
+def bilateral_np(img, sigma, sigma_color):
+    """Section 6's filter in NumPy, the colour weight from OKLab, the mean in linear light."""
+    r = int(np.ceil(3 * sigma))
+    h, w = img.shape[:2]
+    lab = np.pad(oklab_of(img), ((r, r), (r, r), (0, 0)), mode="edge")
+    lin = np.pad(srgb_to_linear(img.astype(np.float64)), ((r, r), (r, r), (0, 0)), mode="edge")
+    centre = lab[r:r + h, r:r + w]
+    total, weight = np.zeros((h, w, 3)), np.zeros((h, w, 1))
+    for dy in range(-r, r + 1):
+        for dx in range(-r, r + 1):
+            d = lab[r + dy:r + dy + h, r + dx:r + dx + w] - centre
+            k = np.exp(-(dx * dx + dy * dy) / (2 * sigma ** 2)) * np.exp(-(d * d).sum(-1, keepdims=True) / (2 * sigma_color ** 2))
+            total += k * lin[r + dy:r + dy + h, r + dx:r + dx + w]
+            weight += k
+    return linear_to_srgb(total / weight)
+
+
+def sobel_strength(L):
+    p = np.pad(L, 1, mode="edge")
+    h, w = L.shape
+    gx = sum(i * (2 - abs(j)) * p[1 + j:1 + j + h, 1 + i:1 + i + w] for j in (-1, 0, 1) for i in (-1, 0, 1))
+    gy = sum(j * (2 - abs(i)) * p[1 + j:1 + j + h, 1 + i:1 + i + w] for j in (-1, 0, 1) for i in (-1, 0, 1))
+    return np.hypot(gx, gy)
+
+
+def more_ideas():
+    img = crop()
+    h, w = img.shape[:2]
+    idea("idea_shifted.png", [("původní", img), ("9 kopií po 12 pixelech", shifted_copies(img, 12, 12)),
+                              ("kopie po 1 pixelu do 8", shifted_copies(img, 1, 8))])
+    fig, axes = plt.subplots(1, 2, figsize=(6.0, 2.75), gridspec_kw={"wspace": 0.08})
+    y, x = 62, 150                                    # pixel A on the edge of the cup's white rim, B is its right neighbour
+    zoom = img[y - 9:y + 10, x - 9:x + 11]
+    axes[0].imshow(zoom, interpolation="nearest", extent=(-9.5, 10.5, 9.5, -9.5))
+    for dx, colour, label, at, align in ((0, ORANGE, "A", -4.5, "left"), (1, "#00e0ff", "B", 5.5, "right")):
+        axes[0].add_patch(Rectangle((dx - 4.5, -4.5), 9, 9, fill=False, ec=colour, lw=2.2))
+        axes[0].add_patch(Rectangle((dx - 0.5, -0.5), 1, 1, fc=colour, ec="none"))
+        axes[0].text(at, -5.0, label, color=colour, ha=align, va="bottom", fontsize=12, fontweight="bold")
+    axes[0].set_title("čtverce 9 × 9 sousedů A a B", fontsize=11)
+    axes[1].imshow(np.clip(box_mean(img, 8), 0, 1))
+    axes[1].set_title("průměr čtverce 17 × 17", fontsize=11)
+    for ax in axes:
+        bare(ax)
+    save(fig, "idea_box.png")
+    L = lightness(np.dstack([img, np.ones((h, w), np.float32)]))
+    p = np.pad(L, 1, mode="edge")
+    around = (sum(p[1 + j:1 + j + h, 1 + i:1 + i + w] for j in (-1, 0, 1) for i in (-1, 0, 1)) - L) / 8
+    idea("idea_neighbours.png", [("světlost", L), ("rozdíl od průměru sousedů, zesílený 20krát", 20 * np.abs(L - around))],
+         width=3.4)
+    grainy = noisy(img)
+    strength = sobel_strength(oklab_of(box_mean(grainy, 2))[..., 0])
+    mask = np.clip(4 * strength, 0, 1)[..., None]
+    smooth = linear_to_srgb(box_mean(srgb_to_linear(grainy.astype(np.float64)), 4))
+    idea("idea_mask.png", [("zašuměná", grainy), ("hrany jako maska", mask[..., 0]),
+                           ("rozmazaná mimo hrany", mask * grainy + (1 - mask) * smooth)])
+    r = 3
+    pad = np.pad(grainy, ((r, r), (r, r), (0, 0)), mode="edge")
+    stack = np.stack([pad[r + dy:r + dy + h, r + dx:r + dx + w] for dy in range(-r, r + 1) for dx in range(-r, r + 1)])
+    idea("idea_median.png", [("zašuměná", grainy), ("medián okolí 7 × 7", np.median(stack, axis=0))])
+    idea("idea_similar.png", [("zašuměná", grainy), ("jen sousedé podobné barvy", bilateral_np(grainy, 3.0, 0.1))])
+
+
+# --- Section 2's colour spaces, on a yellow sun in a blue sky --------------------------
+SUN, SKY = np.array([1.0, 0.8, 0.05]), np.array([0.05, 0.3, 0.95])
+
+
+def sun_picture(side=200, radius=70.5):
+    yy, xx = np.mgrid[0:side, 0:side]
+    inside = np.clip(radius - np.hypot(xx - side / 2, yy - side / 2), 0, 1)[..., None]
+    return inside * SUN + (1 - inside) * SKY
+
+
+SPACES = {"sRGB": (lambda c: c, lambda c: np.clip(c, 0, 1)),
+          "lineární RGB": (srgb_to_linear, lambda c: linear_to_srgb(np.clip(c, 0, 1))),
+          "OKLab": (lambda c: to_oklab(srgb_to_linear(c)), lambda c: linear_to_srgb(np.clip(oklab_to_linear(c), 0, 1)))}
+
+
+def sharpened(img, name, radius=4, amount=2.0):
+    """The SPACES kernel's sharpen: in OKLab only L, elsewhere every channel."""
+    into, back = SPACES[name]
+    c = into(img)
+    sharp = c + amount * (c - box_mean(c, radius))
+    if name == "OKLab":
+        sharp = np.dstack([sharp[..., 0], c[..., 1:]])
+    return back(sharp)
+
+
 def spaces():
-    """Blur and sharpen of the spoon in sRGB, linear RGB and OKLab, the same mean and the same amount."""
-    img = load("coffee.png")[330:480, 640:790, :3].astype(np.float64)
-    lin = srgb_to_linear(img)
-    to_space = {"sRGB": (lambda c: c, lambda c: c),
-                "lineární RGB": (srgb_to_linear, lambda c: linear_to_srgb(np.maximum(c, 0))),
-                "OKLab": (lambda c: to_oklab(srgb_to_linear(c)),
-                          lambda c: linear_to_srgb(np.maximum(oklab_to_linear(c), 0)))}
+    """The sun blurred and sharpened by the same mean in sRGB, linear RGB and OKLab, sharpen in OKLab on L only."""
+    img = sun_picture()
     fig, axes = plt.subplots(2, 3, figsize=(9.6, 6.6), gridspec_kw={"wspace": 0.04, "hspace": 0.12})
-    for col, (name, (into, back)) in enumerate(to_space.items()):
-        c = into(img)
-        mean = box_mean(c, 8)
-        fine = box_mean(c, 2)
-        axes[0, col].imshow(np.clip(back(mean), 0, 1))
+    for col, (name, (into, back)) in enumerate(SPACES.items()):
+        axes[0, col].imshow(back(box_mean(into(img), 8)))
         axes[0, col].set_title(name, fontsize=12)
-        axes[1, col].imshow(np.clip(back(c + 2.0 * (c - fine)), 0, 1))
+        axes[1, col].imshow(sharpened(img, name))
+    axes[1, 2].set_title("jen světlost L", fontsize=10, color=GREY)
     axes[0, 0].set_ylabel("rozmazání", fontsize=12)
     axes[1, 0].set_ylabel("zaostření", fontsize=12)
     for ax in axes.flat:
@@ -458,6 +638,29 @@ def spaces():
         for s in ax.spines.values():
             s.set_visible(False)
     save(fig, "spaces.png")
+
+
+def spaces_split():
+    """The sun's edge before and after sharpening, split into OKLab lightness L and chroma C."""
+    img = sun_picture()
+    window = (slice(60, 140), slice(120, 200))       # the sun's right edge and the sky beside it
+    columns = [("původní", img), ("zaostření v sRGB", sharpened(img, "sRGB")),
+               ("zaostření L v OKLabu", sharpened(img, "OKLab"))]
+    fig, axes = plt.subplots(3, 3, figsize=(8.4, 8.6), gridspec_kw={"wspace": 0.05, "hspace": 0.12})
+    for col, (title, picture) in enumerate(columns):
+        lab = to_oklab(srgb_to_linear(picture))
+        axes[0, col].imshow(picture[window])
+        axes[0, col].set_title(title, fontsize=12)
+        axes[1, col].imshow(lab[..., 0][window], cmap="gray", vmin=0.3, vmax=1.0)
+        axes[2, col].imshow(np.hypot(lab[..., 1], lab[..., 2])[window], cmap="gray", vmin=0, vmax=0.35)
+    for ax, label in zip(axes[:, 0], ("obrázek", "světlost L", "sytost C")):
+        ax.set_ylabel(label, fontsize=12)
+    for ax in axes.flat:
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for s in ax.spines.values():
+            s.set_visible(False)
+    save(fig, "spaces_split.png")
 
 
 def main():
@@ -473,7 +676,11 @@ def main():
     second_derivative()
     numpy_shifts()
     ideas()
+    more_ideas()
+    lens_pictures()
+    box_window()
     spaces()
+    spaces_split()
     print("wrote", sorted(p.name for p in OUT.glob("*.png")))
 
 
