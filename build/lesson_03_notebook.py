@@ -348,11 +348,7 @@ def pixel(ivec2 at) -> vec4:
             weight += k
     return vec4(linear_srgb_to_srgb(total / weight), 1.0)"""
 
-BLUR_X_STUB = """\
-    # TODO: the Gaussian sum along the row, divided by the sum of the weights
-    return vec4(srgb_to_linear_srgb(src[at].rgb), 1.0)"""
-
-SOLUTION_BLUR_X = """\
+BLUR_X_BODY = """\
     int r = int(ceil(3.0 * sigma))
     vec3 total = vec3(0.0)
     float weight = 0.0
@@ -372,7 +368,14 @@ uniform float sigma: hint_range(0.5, 8) = 3.0
 # The first pass, along the row. It keeps linear light in the layer, which the
 # second pass reads as it is.
 def pixel(ivec2 at) -> vec4:
-{BLUR_X_STUB}"""
+{BLUR_X_BODY}"""
+
+BENCH = """\
+two_d = sara.bench("Gauss 2D", runs=10)
+rows = sara.bench("Blur X", runs=10)
+columns = sara.bench("Blur Y", runs=10)
+print(f"one pass, 2D:  {two_d.gpu_ms:8.2f} ms")
+print(f"two passes:    {rows.gpu_ms + columns.gpu_ms:8.2f} ms")"""
 
 BLUR_Y = """\
 %%gmacs "Blur X" -> "Blur Y" halo=32
@@ -703,7 +706,7 @@ explore(gauss_2d)'''
 md(r"""
 # Lekce 3: Konvoluce, rozmazání a hrany
 
-Lekce odpovídá na tři otázky: jak fotku rozmazat, jak v ní najít hrany a jak z ní odstranit šum, aby hrany zůstaly ostré. Cestou napíšete konvoluci a Gaussovo rozmazání ve dvou průchodech a vyzkoušíte Sobelův detektor hran. Doma přepíšete rozmazání a zaostření do filtru pro Kritu. Lekce je krátká, hned za ní ve stejném bloku následuje lekce 4 o frekvencích. Rozmazání, které nechá hrany, a pravidla okraje jsou nepovinné.
+Lekce odpovídá na tři otázky: jak fotku rozmazat, jak v ní najít hrany a jak z ní odstranit šum, aby hrany zůstaly ostré. Cestou napíšete konvoluci, spustíte Gaussovo rozmazání ve dvou průchodech a vyzkoušíte Sobelův detektor hran. Doma přepíšete rozmazání a zaostření do filtru pro Kritu. Lekce je krátká, hned za ní ve stejném bloku následuje lekce 4 o frekvencích. Rozmazání, které nechá hrany, a pravidla okraje jsou nepovinné.
 
 Spusťte buňku. Otevře nový dokument a vloží do něj fotku jako vrstvu `coffee`. Vpravo má místo dřeva tři nakreslené předměty, na kterých se filtry liší nejvíc: žluté slunce na modré obloze, černou čáru pod úhlem 45° na bílé a drobná světla v noci.
 
@@ -1100,47 +1103,31 @@ Průměr ano, je to sloupec $(1\;1\;1)^{\mathsf T} / 3$ s řádkem $(1\;1\;1) / 
 
 </details>
 
-### 🎯 Úkol 2: první průchod
+### První průchod
 
-Napište první průchod, rozmazání po řádku. Pro řádek $y$ a $k(i) = e^{-i^2 / 2\sigma^2}$ je
+Gaussovo jádro je oddělitelné, $w(i, j) = k(i)\, k(j)$ s $k(i) = e^{-i^2 / 2\sigma^2}$. První průchod proto rozmaže každý řádek, druhý pak každý sloupec toho, co napsal první. Pro řádek $y$:
 
 $$g(x, y) = \frac{\sum_{i=-r}^{r} k(i)\, f(x + i, y)}{\sum_{i=-r}^{r} k(i)}$$
 
-Výsledek nechte v lineárním RGB, druhý průchod ho čte tak, jak je, a do sRGB převede až výsledek. V Sáře proto vrstva vypadá tmavší. Nedokončený kernel jen převede pixel do lineárního RGB.
-
-<details><summary>💡 Nápověda</summary>
-
-1. Vezměte kernel `Gauss 2D` a nechte jen vnitřní cyklus, přes `dx`.
-2. Váha závisí jen na `dx`.
-3. Na konci vraťte součet dělený součtem vah.
-</details>
-
-<details><summary>🔑 Řešení</summary>
-
-""" + answer(SOLUTION_BLUR_X) + r"""
-</details>
+Je to tatáž smyčka jako v úkolu 1, jen přes jednu souřadnici. Kernel je hotový. Výsledek nechá v lineárním RGB, druhý průchod ho čte tak, jak je, a do sRGB převede až výsledek. V Sáře proto vrstva `Blur X` vypadá tmavší.
 """)
 
-code(BLUR_X, solve=[(BLUR_X_STUB, SOLUTION_BLUR_X)])
+code(BLUR_X)
 
 md(r"""
-Druhý průchod je hotový a čte vrstvu `Blur X`. Po změně `sigma` v prvním průchodu nastavte stejnou hodnotu i ve druhém, sám se nespustí. Vrstva `Blur Y` má vypadat stejně jako `Gauss 2D`.
+Druhý průchod čte vrstvu `Blur X`. Po změně `sigma` v prvním průchodu nastavte stejnou hodnotu i ve druhém, sám se nespustí. Vrstva `Blur Y` má vypadat stejně jako `Gauss 2D`.
 """)
 
 code(BLUR_Y)
 
 md(r"""
-<details><summary>📖 Kolik to ušetří</summary>
+Kolik času dva průchody ušetří, změří `sara.bench`. Nechte všude `sigma` na 3 a spusťte buňku:
+""")
 
-Kolik času dva průchody ušetří, změří `sara.bench`. Nechte všude `sigma` na 3 a spusťte v nové buňce:
+code(BENCH)
 
-```python
-two_d = sara.bench("Gauss 2D", runs=10)
-rows = sara.bench("Blur X", runs=10)
-columns = sara.bench("Blur Y", runs=10)
-print(f"one pass, 2D:  {two_d.gpu_ms:8.2f} ms")
-print(f"two passes:    {rows.gpu_ms + columns.gpu_ms:8.2f} ms")
-```
+md(r"""
+<details><summary>📖 Větší poloměr</summary>
 
 Nastavte `sigma` ve všech třech kernelech na 8 a buňku spusťte znovu. Poloměr vzrostl z 9 na 24. Jeden průchod čte $49^2 / 19^2$, asi 6.7krát víc sousedů, dva průchody $98 / 38$, asi 2.6krát víc. Naměřené poměry tomu odpovídají jen zhruba. GPU čte sousedy z rychlé vyrovnávací paměti (*cache*), a u malého poloměru tvoří většinu času spuštění a zápis vrstvy. Dva průchody navíc celou vrstvu `Blur X` jednou zapíšou a znovu přečtou, takže při malém poloměru nemusí vyhrát. Nakonec vraťte `sigma` všude na 3.
 </details>
@@ -1245,7 +1232,7 @@ Kernel počítá jeden pixel, NumPy celé pole najednou. Tím se liší hlavně 
 
 </details>
 
-### 🎯 Úkol 3: filtr v Kritě
+### 🎯 Úkol 2: filtr v Kritě
 
 V `krita/pga_filter/effect.py` nahraďte všechno pod řádkem `import numpy as np` obsahem obou buněk s kódem výše a nastavte `TITLE = "Blur and sharpen"`. Vyzkoušejte filtr v Kritě na vlastní fotce a porovnejte rychlost s Gaussovým rozmazáním, které má Krita vestavěné.
 

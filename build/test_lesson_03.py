@@ -228,9 +228,9 @@ def test_the_krita_port_is_given_and_one_task_copies_it():
     cells = code_cells()
     assert not [c for c in cells if "TODO" in c and "def apply" in c]
     text = markdown_text()
-    assert text.count("### 🎯 Úkol") == 3
+    assert text.count("### 🎯 Úkol") == 2
     assert text.count("### 🎯 Bonus: bilaterální filtr") == 1
-    assert "## 5. Doma: do Krity" in text and "Úkol 3: filtr v Kritě" in text
+    assert "## 5. Doma: do Krity" in text and "Úkol 2: filtr v Kritě" in text
     assert "TITLE = \"Blur and sharpen\"" in text
     assert "def apply" in nb.SOLUTION_APPLY and "def blur" in nb.SOLUTION_BLUR_NP
     assert any("sara.live(apply, PARAMS" in c for c in cells)
@@ -245,7 +245,7 @@ def test_every_task_is_preceded_by_its_formula():
         text = "".join(cell["source"])
         if text.startswith("## "):
             seen = ""
-        if text.startswith("### 🎯") and "Úkol 3" not in text:
+        if text.startswith("### 🎯") and "filtr v Kritě" not in text:
             assert "$$" in seen + text.split("<details>")[0], text.splitlines()[0]
         seen += text
 
@@ -253,12 +253,14 @@ def test_every_task_is_preceded_by_its_formula():
 def test_the_tasks_come_in_order_and_sobel_is_not_one():
     text = markdown_text()
     heads = re.findall(r"^### 🎯 (.*?):", text, flags=re.M)
-    assert heads == ["Úkol 1", "Úkol 2", "Úkol 3", "Bonus"]
+    assert heads == ["Úkol 1", "Úkol 2", "Bonus"]
     sections = re.findall(r"^## (.*)$", text, flags=re.M)
     assert sections[:7] == ["Cíl lekce", "Jak byste to udělali?", "1. Rozmazání", "2. Konvoluce",
                             "3. Gauss ve dvou průchodech", "4. Hrany", "5. Doma: do Krity"]
     assert sections[7].startswith("6. ") and "(nepovinné)" in sections[7] and "7. " in sections[8]
-    assert "Úkol 4" not in text and "Úkol 5" not in text and not hasattr(nb, "SOLUTION_SOBEL")
+    assert "Úkol 3" not in text and "Úkol 4" not in text and not hasattr(nb, "SOLUTION_SOBEL")
+    assert "TODO" not in nb.BLUR_X and not hasattr(nb, "SOLUTION_BLUR_X")   # the first pass is given
+    assert any(c.startswith("two_d = sara.bench") for c in code_cells())    # and the class times both
     assert "lekce 4" in text.split("## Shrnutí")[1]
 
 
