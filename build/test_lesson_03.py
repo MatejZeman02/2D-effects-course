@@ -57,7 +57,7 @@ def solved():
 
 
 def test_the_template_reads_params(defaults):
-    assert defaults == {"mode": "Blur", "sigma": nb.SIGMA, "sharpen_amount": 1.0}
+    assert defaults == {"mode": "Blur", "sigma": nb.SIGMA, "sharpen": 1.0}
 
 
 def test_the_photo_is_the_canvas_size():
@@ -181,7 +181,7 @@ def test_the_solution_runs(photo, defaults, solved):
         out = solved["apply"](img, **{**defaults, "mode": mode})
         assert out.shape == img.shape and out.dtype == np.float32, mode
         assert np.isfinite(out).all() and np.array_equal(out[..., 3], img[..., 3]), mode
-    same = solved["apply"](img, **{**defaults, "mode": "Sharpen", "sharpen_amount": 0.0})
+    same = solved["apply"](img, **{**defaults, "mode": "Sharpen", "sharpen": 0.0})
     assert np.abs(same - img).max() < 1e-5
     soft = solved["apply"](img, **defaults)
     sharp = solved["apply"](img, **{**defaults, "mode": "Sharpen"})
@@ -197,12 +197,12 @@ def test_the_goal_is_one_kernel_with_the_three_effects():
     assert 'hint_enum("Blur", "Edges", "Denoise")' in nb.GOAL and "sara.live" not in nb.GOAL
     body = nb.GOAL.split("const int BLUR")[1]
     names = re.findall(r"^    (?:int|float|bool) (\w+)", nb.GOAL.split("params:")[1].split("const int")[0], flags=re.M)
-    assert names == ["effect", "blur_size", "denoise_tolerance", "noisy_photo"]
+    assert names == ["effect", "blur_size", "tolerance", "noisy_photo"]
     for name in names:
         assert re.search(rf"\b{name}\b", body), name
         assert f" {name}=" in lines[0], name          # the line gives each its opening value
     text = markdown_text().split("## Jak byste")[0].split("## Cíl lekce")[1]
-    for name in ("effect", "blur_size", "denoise_tolerance", "noisy_photo"):
+    for name in ("effect", "blur_size", "tolerance", "noisy_photo"):
         assert f"`{name}`" in text, name
 
 

@@ -59,7 +59,7 @@ def code(text, hidden=False, solve=()):
 # the lesson writes: one kernel instead of the NumPy filter, its blur in two passes through
 # shared memory as in section 3, so its sliders move smoothly.
 GOAL = """\
-%%gmacs "coffee" -> "Goal" effect=0 blur_size=3 denoise_tolerance=0.1 noisy_photo=false
+%%gmacs "coffee" -> "Goal" effect=0 blur_size=3 tolerance=0.1 noisy_photo=false
 kernel goal
 
 import linear_srgb_color_space
@@ -72,7 +72,7 @@ image dst
 params:
     int effect: hint_enum("Blur", "Edges", "Denoise")
     float blur_size: hint_range(0.5, 6)
-    float denoise_tolerance: hint_range(0.02, 0.3)
+    float tolerance: hint_range(0.02, 0.3)
     bool noisy_photo
 
 const int BLUR = 0
@@ -98,9 +98,9 @@ def photo(ivec2 p) -> vec3:
 
 
 def alike(vec3 a, vec3 b) -> float:
-    \"\"\"How alike two OKLab colours are, 1 for the same and towards 0 past denoise_tolerance.\"\"\"
+    \"\"\"How alike two OKLab colours are, 1 for the same and towards 0 past tolerance.\"\"\"
     vec3 d = a - b
-    return exp(-dot(d, d) / (2.0 * denoise_tolerance * denoise_tolerance))
+    return exp(-dot(d, d) / (2.0 * tolerance * tolerance))
 
 
 def blur(ivec2 at, ivec2 me, bool keep_edges) -> vec3:
@@ -281,7 +281,7 @@ import oklab_color_space
 uniform int effect: hint_enum("Blur", "Sharpen") = 1
 uniform int space: hint_enum("sRGB", "Linear RGB", "OKLab") = 0
 uniform int radius: hint_range(1, 8) = 4
-uniform float sharpen_amount: hint_range(0, 4) = 2.0
+uniform float sharpen: hint_range(0, 4) = 2.0
 
 const int BLUR = 0
 const int SHARPEN = 1
@@ -320,7 +320,7 @@ def pixel(ivec2 at) -> vec4:
             mean += into(src[at + ivec2(dx - radius, dy - radius)].rgb)
     mean /= float(side * side)
     vec3 c = into(src[at].rgb)
-    vec3 sharp = c + sharpen_amount * (c - mean)
+    vec3 sharp = c + sharpen * (c - mean)
     if space == OKLAB:
         sharp = vec3(sharp.x, c.yz)              # in OKLab only the lightness L, the colour stays
     match effect:
@@ -398,7 +398,7 @@ BILATERAL_STUB = """\
 
 SOLUTION_BILATERAL = """\
             vec3 d = lab(p) - centre
-            k *= exp(-dot(d, d) / (2.0 * sigma_color * sigma_color))"""
+            k *= exp(-dot(d, d) / (2.0 * sigma_c * sigma_c))"""
 
 BILATERAL = f"""\
 %%gmacs "coffee" -> "Bilateral" halo=16
@@ -406,7 +406,7 @@ import linear_srgb_color_space
 import oklab_color_space
 
 uniform float sigma: hint_range(0.5, 4) = 3.0
-uniform float sigma_color: hint_range(0.01, 0.5) = 0.05
+uniform float sigma_c: hint_range(0.01, 0.5) = 0.05
 
 
 def lab(ivec2 p) -> vec3:
@@ -593,11 +593,11 @@ PARAMS_NP = '''\
 PARAMS = {
     "mode": ["Blur", "Sharpen"],
     "sigma": (3.0, 0.5, 16.0),
-    "sharpen_amount": (1.0, 0.0, 4.0),
+    "sharpen": (1.0, 0.0, 4.0),
 }'''
 
 SOLUTION_APPLY = '''\
-def apply(img, mode, sigma, sharpen_amount):
+def apply(img, mode, sigma, sharpen):
     out = img.copy()
     lin = srgb_to_linear(img[..., :3])
     if mode == "Blur":
@@ -605,7 +605,7 @@ def apply(img, mode, sigma, sharpen_amount):
     else:
         lab = linear_to_oklab(lin)
         light = lab[..., :1]                         # OKLab L, the colour stays
-        lab[..., :1] = light + sharpen_amount * (light - blur(light, sigma))
+        lab[..., :1] = light + sharpen * (light - blur(light, sigma))
         lin = np.maximum(oklab_to_linear(lab), 0.0)
     out[..., :3] = linear_to_srgb(lin)
     return out'''
@@ -749,7 +749,7 @@ md(r"""
 md(r"""
 ## Cíl lekce
 
-Cíl je jeden hotový kernel. Počítá jinak a rychleji než kód, který v lekci napíšete, aby se posuvníky hýbaly plynule. `effect` vybírá jeden ze tří efektů lekce. `blur_size` říká, jak daleko rozmazání sahá, a platí pro `Blur` i `Denoise`. `denoise_tolerance` platí jen pro `Denoise`: jak moc se smí barva souseda lišit, aby se ještě přimíchal. `noisy_photo` přidá do fotky zrno, na kterém je vidět, co `Denoise` umí.
+Cíl je jeden hotový kernel. Počítá jinak a rychleji než kód, který v lekci napíšete, aby se posuvníky hýbaly plynule. `effect` vybírá jeden ze tří efektů lekce. `blur_size` říká, jak daleko rozmazání sahá, a platí pro `Blur` i `Denoise`. `tolerance` platí jen pro `Denoise`: jak moc se smí barva souseda lišit, aby se ještě přimíchal. `noisy_photo` přidá do fotky zrno, na kterém je vidět, co `Denoise` umí.
 """)
 
 code(GOAL, hidden=True)
@@ -1150,7 +1150,30 @@ Nastavte `sigma` ve všech třech kernelech na 8 a buňku spusťte znovu. Polom�
 md(r"""
 ## 4. Hrany
 
-Hrana je místo, kde se rychle mění světlost. Změnu měří derivace a na pixelech je to rozdíl sousedů: jádro $(-1\;\,0\;\,1)$ odečte levého souseda od pravého. Jeden řádek ale zachytí i šum. **Sobelův operátor** proto rozdíl zprůměruje přes tři řádky s vahami $(1\;\,2\;\,1)$. Podle sekce 3 je to konvoluce sloupce s řádkem, oddělitelné jádro:
+Hrana je místo, kde se rychle mění světlost. Jak rychle se mění, měří derivace. Pro světlost $f$ podél řádku je to sklon sečny přes krok $h$, když se krok zmenšuje k nule:
+
+$$f'(x) = \lim_{h \to 0} \frac{f(x + h) - f(x)}{h}$$
+
+Pixely ale mají krok nejméně jeden pixel, menší $h$ nemáme. Limitu proto vynecháme a dosadíme $h = 1$. Vyjde **dopředná diference**:
+
+$$f'(x) \approx \frac{f(x + 1) - f(x)}{1} = f(x + 1) - f(x)$$
+
+Je to jádro $(-1\;\,1)$ na pixelech $x$ a $x + 1$. Měří ale sklon mezi nimi, o půl pixelu vpravo od $x$. Zpětná diference $f(x) - f(x - 1)$ měří sklon o půl pixelu vlevo. Jejich průměr leží přesně na $x$ a je to **centrální diference**:
+
+$$f'(x) \approx \frac{\big(f(x + 1) - f(x)\big) + \big(f(x) - f(x - 1)\big)}{2} = \frac{f(x + 1) - f(x - 1)}{2}$$
+
+Totéž dá limita se sečnou souměrnou kolem $x$, $f'(x) = \lim_{h \to 0} \frac{f(x + h) - f(x - h)}{2h}$, s $h = 1$. Váhy sousedů $x - 1$, $x$, $x + 1$ jsou $\frac{1}{2}(-1\;\,0\;\,1)$. Polovinu vynecháme, hranu najde i dvojnásobek a sílu stejně nastaví posuvník `gain`. Zbude jádro $(-1\;\,0\;\,1)$: pravý soused minus levý.
+
+<details><summary>📖 Proč je centrální diference přesnější</summary>
+
+Taylorův rozvoj pro souseda ve vzdálenosti $h$ na obě strany:
+
+$$f(x \pm h) = f(x) \pm h\,f'(x) + \frac{h^2}{2}\,f''(x) \pm \frac{h^3}{6}\,f'''(x) + O(h^4)$$
+
+Dopředná diference z něj dá $\frac{f(x + h) - f(x)}{h} = f'(x) + \frac{h}{2}\,f''(x) + O(h^2)$, chybu úměrnou $h$. Po odečtení obou řádků se členy se sudou mocninou $h$ odečtou, a centrální diference dá $\frac{f(x + h) - f(x - h)}{2h} = f'(x) + \frac{h^2}{6}\,f'''(x) + O(h^4)$, chybu úměrnou $h^2$. Na pixelech je $h = 1$ a chyba závisí na tom, jak rychle se fotka mění. Na pomalých změnách je centrální diference přesnější a hlavně nemá posun o půl pixelu.
+</details>
+
+Ve 2D má světlost $f(x, y)$ dvě **parciální derivace**, $\frac{\partial f}{\partial x}$ podél řádku a $\frac{\partial f}{\partial y}$ podél sloupce. Obě se spočítají stejně: jádro $(-1\;\,0\;\,1)$ v řádku a totéž jádro postavené do sloupce. Jeden řádek ale zachytí i šum. **Sobelův operátor** proto rozdíl zprůměruje přes tři řádky s vahami $(1\;\,2\;\,1)$. Podle sekce 3 je to konvoluce sloupce s řádkem, oddělitelné jádro:
 
 $$G_x = \begin{pmatrix} 1 \\ 2 \\ 1 \end{pmatrix} * \begin{pmatrix} -1 & 0 & 1 \end{pmatrix} = \begin{pmatrix} -1 & 0 & 1 \\ -2 & 0 & 2 \\ -1 & 0 & 1 \end{pmatrix} \qquad G_y = G_x^{\mathsf T}$$
 
@@ -1190,7 +1213,7 @@ Krita kernely nespouští a NumPy nemá vlákno na pixel, umí ale celé pole na
 
 Filtr je níže přepsaný do NumPy hotový, doma ho spustíte a vložíte do Krity. Spusťte obě buňky s kódem a pak třetí. První obsahuje převody barev, váhy Gaussova jádra `gaussian_1d` a `PARAMS`, druhá `blur` a `apply`.
 
-**Zaostření** (*unsharp mask*) přičte k obrázku jeho rozdíl od rozmazaného obrázku. Rozdíl jsou detaily menší než $\sigma$ a `sharpen_amount` $a$ říká, kolikrát je zesílit:
+**Zaostření** (*unsharp mask*) přičte k obrázku jeho rozdíl od rozmazaného obrázku. Rozdíl jsou detaily menší než $\sigma$ a `sharpen` $a$ říká, kolikrát je zesílit:
 
 $$g = f + a\,\bigl(f - \text{blur}(f)\bigr)$$
 
@@ -1260,7 +1283,7 @@ Výsledek se jako u Gausse dělí součtem vah.
 
 ### 🎯 Bonus: bilaterální filtr
 
-Doplňte barevnou váhu, druhý činitel vzorce výše. Funkce `lab(p)` vrátí barvu pixelu `p` v OKLabu, `centre` je barva pixelu uprostřed a `sigma_color` je $\sigma_c$. Nedokončený kernel je Gauss 2D.
+Doplňte barevnou váhu, druhý činitel vzorce výše. Funkce `lab(p)` vrátí barvu pixelu `p` v OKLabu, `centre` je barva pixelu uprostřed a `sigma_c` je $\sigma_c$. Nedokončený kernel je Gauss 2D.
 
 <details><summary>💡 Nápověda</summary>
 
@@ -1277,7 +1300,7 @@ Doplňte barevnou váhu, druhý činitel vzorce výše. Funkce `lab(p)` vrátí 
 code(BILATERAL, solve=[(BILATERAL_STUB, SOLUTION_BILATERAL)])
 
 md(r"""
-Porovnejte vrstvy `Bilateral` a `Gauss 2D`. S `sigma_color` 0.05 zůstanou okraj hrnku i lžička ostré, podšálek a dřevo se vyhladí. S velkou `sigma_color` se výsledek blíží `Gauss 2D`.
+Porovnejte vrstvy `Bilateral` a `Gauss 2D`. S `sigma_c` 0.05 zůstanou okraj hrnku i lžička ostré, podšálek a dřevo se vyhladí. S velkou `sigma_c` se výsledek blíží `Gauss 2D`.
 
 <details><summary>❓ Otázka: proč to nejde ve dvou průchodech?</summary>
 
