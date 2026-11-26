@@ -226,23 +226,32 @@ def test_the_solution_runs(photo, defaults, solved):
     assert np.array_equal(lines[..., 0], lines[..., 2])
 
 
-def test_the_goal_is_the_solution(photo, solved):
-    """The hidden Goal cell runs the same filter, PARAMS and source as section 9."""
-    called = {}
+def test_the_goal_is_a_gmacs_kernel_with_the_same_styles(solved):
+    """The hidden Goal cell is one fast kernel, not the NumPy filter, and offers the NumPy styles."""
+    lines = nb.GOAL.splitlines()
+    assert lines[0] == '%%gmacs "chelsea" -> "Goal"'
+    assert "sara.live" not in nb.GOAL and "import numpy" not in nb.GOAL
+    drop = re.search(r'uniform int style: hint_enum\(([^)]*)\) = 0', nb.GOAL)
+    assert drop, "the styles are a drop-down that opens on the first"
+    styles = re.findall(r'"([^"]+)"', drop[1])
+    assert styles == solved["PARAMS"]["style"] == STYLES
+    consts = re.findall(r"^const int (\w+) = (\d+)$", nb.GOAL, re.M)
+    names = [name for name, _ in consts if name not in ("LUMA",)]
+    assert names == [s.upper() for s in styles]
+    assert [int(v) for _, v in consts[:len(styles)]] == list(range(len(styles)))
+    cases = re.findall(r"^\s+case (\w+):$", nb.GOAL, re.M)
+    assert cases == names, "every style has a case, in the order of the drop-down"
 
-    class Sara:
-        @staticmethod
-        def live(apply, params, source, target):
-            called.update(apply=apply, params=params, source=source, target=target)
 
-    exec(nb.GOAL, {"np": np, "sara": Sara})
-    assert called["source"] == "chelsea" and called["target"] == "Goal"
-    assert called["params"] == solved["PARAMS"]
-    img = photo[:100, :140]
-    for style in STYLES:
-        values = {"style": style, "sigma": 2.0, "p": 30.0, "epsilon": 0.4, "phi": 20.0, "levels": 4,
-                  "spacing": 5.0, "angle": 20.0, "on_photo": style == "Hatching", "cell": 7.0, "inks": "Black only"}
-        assert np.array_equal(called["apply"](img, **values), solved["apply"](img, **values)), style
+def test_the_goal_parameters_name_their_styles():
+    """A parameter used by one style or two says so in its name, and every one is used."""
+    uniforms = re.findall(r"^uniform \w+ (\w+)", nb.GOAL, re.M)
+    prefixes = ("line_", "toon_", "hatching_", "halftone_")
+    assert uniforms[0] == "style"
+    for name in uniforms[1:]:
+        assert name.startswith(prefixes), name
+        assert len(re.findall(rf"\b{name}\b", nb.GOAL)) > 1, f"{name} is never used"
+    assert len(uniforms) <= 10
 
 
 def test_the_pictures_exist():

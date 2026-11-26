@@ -678,13 +678,176 @@ def apply(img, style, sigma, p, epsilon, phi, levels, spacing, angle, on_photo, 
         out[..., :3] = halftone(img, cell, inks)
     return out'''
 
-GOAL = ("# The filter of section 9, hidden because the lesson hands it over.\n"
-        "def _goal():\n"
-        + textwrap.indent(lesson_writer.used_only("\n\n".join(piece.replace("\n\n\n", "\n\n") for piece in
-                                        [CONSTANTS_NP, HELPERS_NP, STYLES_NP, APPLY_NP]), keep=("apply",)), "    ")
-        + "\n\n    return apply\n\n\n"
-        + PARAMS_NP
-        + '\n\nsara.live(_goal(), PARAMS, source="chelsea", target="Goal")')
+# The goal, one kernel with all four styles. It is not the code the lesson teaches: the blurs and the
+# halftone's colour average sample a few points instead of every pixel, so a slider move stays fast.
+GOAL = f"""\
+%%gmacs "chelsea" -> "Goal"
+import linear_srgb_color_space
+import oklab_color_space
+
+uniform int style: hint_enum("Toon", "Ink", "Hatching", "Halftone") = 0
+uniform float line_detail: hint_range(0.5, 3) = {SIGMA}
+uniform float line_threshold: hint_range(0, 1) = {EPSILON}
+uniform float line_softness: hint_range(0, 100) = {PHI}
+uniform int toon_levels: hint_range(2, 12) = {LEVELS}
+uniform float hatching_spacing: hint_range(3, 16) = {SPACING}
+uniform float hatching_angle: hint_range(0, 180) = {ANGLE}
+uniform bool hatching_on_photo = false
+uniform float halftone_cell: hint_range(4, 24) = {CELL}
+uniform bool halftone_black_only = false
+
+const int TOON = 0
+const int INK = 1
+const int HATCHING = 2
+const int HALFTONE = 3
+const int LUMA = 4
+const ivec2 SIZE = ivec2({WIDTH}, {HEIGHT})
+const float K = {K}
+const float P = {P}
+const float THICK = {THICK}
+const float LIGHTEST = {LIGHTEST}
+const float BAND = {BAND}
+const float TURN[4] = float[4](0.0, 90.0, -45.0, 45.0)
+const float SCREEN[4] = float[4](15.0, 75.0, 0.0, 45.0)
+
+
+def light(ivec2 p) -> float:
+    ivec2 q = clamp(p, ivec2(0), SIZE - 1)
+    return linear_srgb_to_oklab(srgb_to_linear_srgb(src[q].rgb)).x
+
+
+# The XDoG drawing, 0 for ink and 1 for paper. Two Gaussian blurs of the lightness at once, k times
+# apart. A wide blur reads every second or third pixel only, so a pixel costs about 300 reads.
+def lines(ivec2 at) -> float:
+    float wide = K * line_detail
+    int reach = int(ceil(3.0 * wide))
+    int step = max(1, (reach + 8) / 9)
+    int n = reach / step
+    float near = 3.0 * line_detail
+    vec2 total = vec2(0.0)
+    vec2 weight = vec2(0.0)
+    for j in range_inclusive(-n, n):
+        for i in range_inclusive(-n, n):
+            vec2 d = vec2(float(i * step), float(j * step))
+            float d2 = dot(d, d)
+            vec2 w = exp(-d2 / (2.0 * vec2(line_detail * line_detail, wide * wide)))
+            if abs(d.x) > near or abs(d.y) > near:
+                w.x = 0.0
+            total += w * light(at + ivec2(i * step, j * step))
+            weight += w
+    vec2 g = total / weight
+    float s = (1.0 + P) * g.x - P * g.y
+    if s >= line_threshold:
+        return 1.0
+    return 1.0 + tanh(line_softness * (s - line_threshold))
+
+
+# The photo with its lightness rounded to toon_levels steps and darkened by the lines.
+def toon(ivec2 at) -> vec3:
+    vec3 lab = linear_srgb_to_oklab(srgb_to_linear_srgb(src[at].rgb))
+    float n = float(toon_levels - 1)
+    lab.x = floor(clamp(lab.x, 0.0, 1.0) * n + 0.5) / n
+    lab *= lines(at)
+    vec3 rgb = clamp(oklab_to_linear_srgb(lab), vec3(0.0), vec3(1.0))
+    return linear_srgb_to_srgb(rgb)
+
+
+# The lightness around a pixel, a Gaussian of 2 pixels.
+def tone(ivec2 at) -> float:
+    float total = 0.0
+    float weight = 0.0
+    for dy in range_inclusive(-6, 6):
+        for dx in range_inclusive(-6, 6):
+            float w = exp(-float(dx * dx + dy * dy) / 8.0)
+            total += w * light(at + ivec2(dx, dy))
+            weight += w
+    return total / weight
+
+
+# How much of the pixel at p one family of stripes covers.
+def stripes(vec2 p, float degrees, float width) -> float:
+    float a = radians(degrees)
+    float across = dot(p, vec2(-sin(a), cos(a))) / hatching_spacing
+    float distance = abs(fract(across) - 0.5) * hatching_spacing
+    return clamp(0.5 * width + 0.5 - distance, 0.0, 1.0) * min(width, 1.0)
+
+
+# Four layers of stripes, each turned and each starting at a darker lightness.
+def hatching(ivec2 at) -> vec3:
+    vec2 p = vec2(at) + 0.5
+    float t = tone(at)
+    float open = 1.0
+    for i in range(4):
+        float s = clamp((LIGHTEST - BAND * float(i) - t) / BAND, 0.0, 1.0)
+        open *= 1.0 - stripes(p, hatching_angle + TURN[i], THICK * hatching_spacing * s)
+    if hatching_on_photo:
+        return mix(vec3(1.0), src[at].rgb, 0.5) * open
+    return vec3(open)
+
+
+def rotate(vec2 p, float degrees) -> vec2:
+    float a = radians(degrees)
+    return vec2(cos(a) * p.x + sin(a) * p.y, -sin(a) * p.x + cos(a) * p.y)
+
+
+# The linear colour around a point, a Gaussian of a quarter cell sampled on a grid of 5 by 5 points.
+def around(vec2 centre) -> vec3:
+    float sigma = 0.25 * halftone_cell
+    vec3 total = vec3(0.0)
+    float weight = 0.0
+    for j in range_inclusive(-2, 2):
+        for i in range_inclusive(-2, 2):
+            float w = exp(-float(i * i + j * j) / 2.0)
+            ivec2 q = clamp(ivec2(floor(centre + sigma * vec2(float(i), float(j)))), ivec2(0), SIZE - 1)
+            total += w * srgb_to_linear_srgb(src[q].rgb)
+            weight += w
+    return total / weight
+
+
+# How much of the paper an ink has to cover. Channels 0 to 2 are cyan, magenta and yellow with the
+# black taken out, 3 is the black, LUMA is the one ink of a black and white print.
+def coverage_of(vec3 lin, int channel) -> float:
+    float m = max(lin.r, max(lin.g, lin.b))
+    if channel == LUMA:
+        return 1.0 - dot(lin, vec3(0.2126, 0.7152, 0.0722))
+    if channel == 3:
+        return 1.0 - m
+    if m <= 0.0:
+        return 0.0
+    return 1.0 - lin[channel] / m
+
+
+# One dot of a screen, 1 inside the disc whose area is coverage of the cell, soft by a pixel.
+def screen_dot(vec2 offset, float coverage) -> float:
+    float r = sqrt(coverage / 3.14159265) * halftone_cell
+    return clamp(r - length(offset) * halftone_cell + 0.5, 0.0, 1.0) * min(2.0 * r, 1.0)
+
+
+def ink(vec2 p, float degrees, int channel) -> float:
+    vec2 q = rotate(p, degrees) / halftone_cell
+    vec2 centre = rotate((floor(q) + 0.5) * halftone_cell, -degrees)
+    return screen_dot(fract(q) - 0.5, clamp(coverage_of(around(centre), channel), 0.0, 1.0))
+
+
+def halftone(ivec2 at) -> vec3:
+    vec2 p = vec2(at) + 0.5
+    if halftone_black_only:
+        return vec3(linear_srgb_to_srgb(vec3(1.0 - ink(p, 45.0, LUMA))))
+    vec3 dots = vec3(ink(p, SCREEN[0], 0), ink(p, SCREEN[1], 1), ink(p, SCREEN[2], 2))
+    return linear_srgb_to_srgb((1.0 - dots) * (1.0 - ink(p, SCREEN[3], 3)))
+
+
+def pixel(ivec2 at) -> vec4:
+    float a = src[at].a
+    match style:
+        case TOON:
+            return vec4(toon(at), a)
+        case INK:
+            return vec4(vec3(lines(at)), a)
+        case HATCHING:
+            return vec4(hatching(at), a)
+        case HALFTONE:
+            return vec4(halftone(at), a)"""
 
 
 def answer(snippet, lang="python"):
@@ -745,6 +908,8 @@ md(r"""
 
 md(r"""
 ## Cíl lekce
+
+Cíl je jeden kernel se čtyřmi styly. Předpona parametru říká, kterého stylu se týká: `line_` platí pro `Toon` a `Ink`, `toon_` jen pro `Toon`, `hatching_` pro `Hatching` a `halftone_` pro `Halftone`. Aby se posuvníky hýbaly plynule, počítá cíl rozmazání a průměrování barvy z méně bodů, než budete číst vy, takže vypadá skoro stejně jako filtr z lekce, ale kód je jiný.
 """)
 
 code(GOAL, hidden=True)
@@ -1226,7 +1391,7 @@ sara.live(apply, PARAMS, source="chelsea", target="Filter NumPy")
 """)
 
 md(r"""
-Vrstva `Filter NumPy` vypadá stejně jako `Goal` a jako vrstvy kernelů. Rozdíly jsou jen v zaokrouhlení.
+Vrstva `Filter NumPy` vypadá skoro stejně jako `Goal` a jako vrstvy kernelů. Rozdíly jsou jen v zaokrouhlení a v tom, že `Goal` počítá rozmazání z méně bodů.
 
 <details><summary>📖 Co se v NumPy mění oproti kernelu</summary>
 
