@@ -145,6 +145,7 @@ class Live:
         for name, control in self.controls.items():
             for widget in control.inputs():
                 widget.observe(lambda change, name=name: self.moved(name, change), names="value")
+        sara_notebook.fit_labels([widget for control in self.controls.values() for widget in (getattr(control, "main", None), control.alpha) if widget is not None])
         self.box = ipywidgets.VBox([*[control.box for control in self.controls.values()], self.status, self.picture])
 
     def run(self, values: dict[str, Any], history: bool = True) -> sara.Layer:

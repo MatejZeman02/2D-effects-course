@@ -341,6 +341,24 @@ def choices(source: str) -> dict[str, list[str]]:
     return found
 
 
+
+LABEL_CHARACTERS = 9            # what ipywidgets' 80 px description column shows before an ellipsis
+
+
+def fit_labels(widgets: list) -> None:
+    """Widens the description column of *widgets* to their longest name, so no name is cut short.
+
+    ipywidgets gives every description the same 80 px column, about nine
+    characters, and ends a longer name in an ellipsis. The widgets of one cell
+    share the widened column, so their sliders still start in line. A cell whose
+    names all fit keeps the usual column.
+    """
+    described = [widget for widget in widgets if getattr(widget, "description", "")]
+    longest = max((len(widget.description) for widget in described), default=0)
+    if longest > LABEL_CHARACTERS:
+        for widget in described:
+            widget.style.description_width = f"{longest + 2}ch"
+
 class Debounce:
     """Runs the latest values at most once a frame, on a worker thread of its own, and never queues a stale one.
 
@@ -536,6 +554,7 @@ class Cell:
                 slider = ipywidgets.FloatSlider(value=float(value), min=low, max=high, step=fine, description=name)
             self._add(name, slider)
         shown = [self.sliders.get(p["name"]) or self.colours.get(p["name"]) for p in params]
+        fit_labels([*self.sliders.values(), *self.pickers.values(), *self.alphas.values()])
         return ipywidgets.VBox([*[w for w in shown if w is not None], self.timing, self.picture])
 
     def _colour(self, name: str, kind: str, default: Any) -> ipywidgets.Widget:
