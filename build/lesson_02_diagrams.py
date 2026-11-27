@@ -265,6 +265,159 @@ fig.legend(*axes[0].get_legend_handles_labels(), fontsize=10, frameon=False, nco
 save(fig, "smoothstep.png")
 
 
+# value_noise(p) of task 1 step by step, for one point p in the lesson's own cell (1, 1):
+# floor and fract, the four corners, the two mixes along x and the one along y,
+# the bend of smoothed, and the same cells mixed straight and bent.
+BLUE, GREEN, RED = "#4C78A8", "#54A24B", "#D62728"
+STEP_P = (1.7, 1.4)
+STEP_C = (1, 1)
+STEP_F = (STEP_P[0] - STEP_C[0], STEP_P[1] - STEP_C[1])
+
+
+def one(cx, cy):
+    return float(random1(np.array([cx]), np.array([cy]))[0])
+
+
+SA, SB = one(STEP_C[0], STEP_C[1]), one(STEP_C[0] + 1, STEP_C[1])
+SC, SD = one(STEP_C[0], STEP_C[1] + 1), one(STEP_C[0] + 1, STEP_C[1] + 1)
+STEP_TOP, STEP_BOTTOM = mix(SA, SB, STEP_F[0]), mix(SC, SD, STEP_F[0])
+STEP_VALUE = mix(STEP_TOP, STEP_BOTTOM, STEP_F[1])
+
+
+def corner(ax, at, v, label=None, size=360, offset=(0, 0)):
+    ax.scatter([at[0]], [at[1]], s=size, c=[[v, v, v]], edgecolors="#222", linewidths=1.3, zorder=5)
+    if label:
+        ax.annotate(label, at, xytext=offset, textcoords="offset points",
+                    ha="center", va="center", fontsize=11, zorder=6)
+
+
+def blend(weight, x0, y0, w, h, n=160):
+    """value_noise over w x h cells from (x0, y0), its f bent by weight."""
+    gx, gy = np.meshgrid(x0 + (np.arange(n * w) + 0.5) / n, y0 + (np.arange(n * h) + 0.5) / n)
+    cx, cy = np.floor(gx).astype(np.int64), np.floor(gy).astype(np.int64)
+    fx, fy = weight(gx - cx), weight(gy - cy)
+    a, b = random1(cx, cy), random1(cx + 1, cy)
+    c, d = random1(cx, cy + 1), random1(cx + 1, cy + 1)
+    return mix(mix(a, b, fx), mix(c, d, fx), fy)
+
+
+def zoom(ax, title):
+    """One cell, (1, 1), with some room around it, y down as in a picture."""
+    ax.set_xlim(STEP_C[0] - 0.34, STEP_C[0] + 1.34)
+    ax.set_ylim(STEP_C[1] + 1.34, STEP_C[1] - 0.34)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    ax.set_title(title, fontsize=12, loc="left")
+    ax.add_patch(plt.Rectangle(STEP_C, 1, 1, fill=False, ec="#222", lw=1.1))
+
+
+fig, axes = plt.subplots(2, 3, figsize=(12.5, 8.4), gridspec_kw={"hspace": 0.18, "wspace": 0.2})
+(cx, cy), (fx, fy), p = STEP_C, STEP_F, STEP_P
+
+# 1. the cell and the position inside it
+ax = axes[0, 0]
+ax.add_patch(plt.Rectangle(STEP_C, 1, 1, color="#FDE7CF", zorder=0))
+for k in range(4):
+    ax.plot([k, k], [0, 3], color="#BBB", lw=0.9)
+    ax.plot([0, 3], [k, k], color="#BBB", lw=0.9)
+    ax.text(k, -0.15, str(k), ha="center", fontsize=9, color=GREY)
+    ax.text(-0.15, k, str(k), va="center", ha="right", fontsize=9, color=GREY)
+gx, gy = np.meshgrid(np.arange(4), np.arange(4))
+ax.scatter(gx.ravel(), gy.ravel(), s=22, color="#999", zorder=3)
+ax.text(1.5, -0.38, "x", ha="center", fontsize=10, color=GREY)
+ax.text(-0.42, 1.5, "y", va="center", fontsize=10, color=GREY)
+ax.scatter([cx], [cy], s=70, color=ORANGE, zorder=5)
+ax.annotate(f"cell = ({cx}, {cy})", (cx, cy), xytext=(-9, -9), textcoords="offset points",
+            ha="right", va="top", fontsize=10, color=ORANGE,
+            bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none"))
+ax.annotate("", (p[0], cy), (cx, cy), arrowprops=dict(arrowstyle="->", color=BLUE, lw=1.8))
+ax.annotate("", p, (p[0], cy), arrowprops=dict(arrowstyle="->", color=GREEN, lw=1.8))
+ax.text(cx + fx / 2, cy - 0.07, f"f.x = {fx:.1f}", color=BLUE, ha="center", va="bottom", fontsize=10)
+ax.text(p[0] + 0.07, cy + fy / 2, f"f.y = {fy:.1f}", color=GREEN, va="center", fontsize=10)
+ax.scatter([p[0]], [p[1]], s=80, color=RED, zorder=6)
+ax.annotate(f"p = ({p[0]}, {p[1]})", p, xytext=(7, -12), textcoords="offset points", fontsize=10, color=RED)
+ax.text(0, 3.22, "Celá část p vybere buňku, desetinná\nčást řekne, kde v ní p leží, od 0 do 1.",
+        fontsize=10, color=GREY, va="top")
+ax.set_xlim(-0.5, 3.4)
+ax.set_ylim(3.75, -0.5)
+ax.set_aspect("equal")
+ax.axis("off")
+ax.set_title("1. cell = floor(p), f = fract(p)", fontsize=12, loc="left")
+
+# 2. the four corners
+ax = axes[0, 1]
+zoom(ax, "2. random1 ve čtyřech rozích")
+for (dx, dy), v, name in (((0, 0), SA, "a"), ((1, 0), SB, "b"), ((0, 1), SC, "c"), ((1, 1), SD, "d")):
+    corner(ax, (cx + dx, cy + dy), v)
+    ax.annotate(f"{name} = {v:.2f}\nrandom1(cell + ({dx}, {dy}))" if dy == 0 else
+                f"random1(cell + ({dx}, {dy}))\n{name} = {v:.2f}",
+                (cx + dx, cy + dy), xytext=(0, 30 if dy == 0 else -30), textcoords="offset points",
+                ha="center", va="center", fontsize=9.5, linespacing=1.4)
+ax.text(cx + 0.5, cy + 0.5, "Každý roh mřížky\nmá své pevné číslo,\nsousední buňky\nrohy sdílejí.",
+        ha="center", va="center", fontsize=9.5, color=GREY)
+
+# 3. two mixes along x, one along y
+ax = axes[0, 2]
+zoom(ax, "3. dvakrát mix po x, jednou po y")
+ax.imshow(blend(lambda f: f, cx, cy, 1, 1), cmap="gray", vmin=0, vmax=1,
+          extent=(cx, cx + 1, cy + 1, cy), zorder=0)
+ax.plot([cx, cx + 1], [cy, cy], color=BLUE, lw=2.6, zorder=2)
+ax.plot([cx, cx + 1], [cy + 1, cy + 1], color=BLUE, lw=2.6, zorder=2)
+ax.plot([p[0], p[0]], [cy, cy + 1], color=GREEN, lw=2.6, zorder=2)
+corner(ax, (cx, cy), SA, "a", size=200, offset=(-17, 0))
+corner(ax, (cx + 1, cy), SB, "b", size=200, offset=(17, 0))
+corner(ax, (cx, cy + 1), SC, "c", size=200, offset=(-17, 0))
+corner(ax, (cx + 1, cy + 1), SD, "d", size=200, offset=(17, 0))
+corner(ax, (p[0], cy), STEP_TOP, size=170)
+corner(ax, (p[0], cy + 1), STEP_BOTTOM, size=170)
+ax.text(p[0], cy - 0.09, f"mix(a, b, f.x) = {STEP_TOP:.2f}", color=BLUE, ha="center", va="bottom", fontsize=10)
+ax.text(p[0], cy + 1.09, f"mix(c, d, f.x) = {STEP_BOTTOM:.2f}", color=BLUE, ha="center", va="top", fontsize=10)
+corner(ax, p, STEP_VALUE, size=260)
+ax.scatter([p[0]], [p[1]], s=260, facecolors="none", edgecolors=RED, linewidths=2, zorder=7)
+ax.annotate(f"mix({STEP_TOP:.2f}, {STEP_BOTTOM:.2f}, f.y)\n= {STEP_VALUE:.2f}", p, xytext=(-14, 0),
+            textcoords="offset points", ha="right", va="center", fontsize=10, color=GREEN,
+            bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="none", alpha=0.88), zorder=8)
+
+# 4. the bend of smoothed
+ax = axes[1, 0]
+t = np.linspace(0, 1, 200)
+ax.plot(t, t, color="#AAA", lw=1.4, ls="--", label="f, bez smoothed")
+ax.plot(t, smooth(t), color="#222", lw=2, label="f * f * (3 - 2 f)")
+for f, colour, name in ((fx, BLUE, "f.x"), (fy, GREEN, "f.y")):
+    s = smooth(f)
+    ax.plot([f, f], [0, s], color=colour, lw=1.1, ls=":")
+    ax.plot([0, f], [s, s], color=colour, lw=1.1, ls=":")
+    ax.scatter([f], [s], color=colour, s=40, zorder=5)
+    ax.text(f + 0.02, s - 0.075, f"{name}: {f:.1f} → {s:.2f}", color=colour, fontsize=10)
+ax.text(0.03, 0.5, "u kraje buňky\nse f mění pomalu,\nsměrnice je tam 0", fontsize=9, color=GREY)
+ax.set_xlim(0, 1)
+ax.set_ylim(0, 1)
+ax.set_aspect("equal")
+ax.set_xticks([0, 0.5, 1])
+ax.set_yticks([0, 0.5, 1])
+ax.tick_params(labelsize=9)
+ax.set_xlabel("f před ohnutím", fontsize=10)
+ax.set_ylabel("f po ohnutí", fontsize=10)
+ax.legend(loc="upper left", fontsize=9, frameon=False)
+for s in ("top", "right"):
+    ax.spines[s].set_visible(False)
+ax.set_title("4. if smoothed: ohnout f", fontsize=12, loc="left")
+
+# 5 and 6. the same 3 x 2 cells, mixed straight and bent
+for ax, weight, title in ((axes[1, 1], lambda f: f, "5. bez smoothed: zlomy na hranách"),
+                          (axes[1, 2], smooth, "6. se smoothed: hladce")):
+    ax.imshow(blend(weight, 0, 0, 3, 2), cmap="gray", vmin=0, vmax=1, extent=(0, 3, 2, 0))
+    for kx in range(4):
+        for ky in range(3):
+            corner(ax, (kx, ky), one(kx, ky), size=70)
+    ax.set_xlim(-0.1, 3.1)
+    ax.set_ylim(2.1, -0.1)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    ax.set_title(title, fontsize=12, loc="left")
+save(fig, "value_noise_steps.png")
+
+
 # 2. fBm: four octaves and their sum --------------------------------------------
 H, W, SCALE = 160, 256, 96.0
 x = (np.arange(W)[None, :] + 0.5) / SCALE
@@ -283,6 +436,41 @@ bare(axes[4])
 for k in range(4):
     axes[k].text(1.04, 0.5, "+" if k < 3 else "=", transform=axes[k].transAxes, fontsize=16, ha="center", va="center")
 save(fig, "fbm.png")
+
+# Why fBm moves each octave by half a cell: the mean slope across x, column by
+# column, of five octaves at lacunarity 2. Without the shift every corner of an
+# octave-1 cell is a corner of all finer octaves too, smoothstep is flat there in
+# all of them at once, and the slope across each grid line falls to zero.
+def octaves_sum(x, y, shift, count=5):
+    total, weight, amplitude = 0.0, 0.0, 1.0
+    for _ in range(count):
+        total = total + amplitude * value_noise(x, y)
+        weight += amplitude
+        amplitude *= 0.5
+        x, y = x * 2.0 + shift, y * 2.0 + shift
+    return total / weight
+
+
+xs = np.arange(0.0005, 2.0, 0.001)[None, :]
+ys = np.linspace(0.013, 40.0, 2000)[:, None]
+EPS = 1e-4
+fig, ax = plt.subplots(figsize=(9, 2.9))
+for shift, label, colour in ((0.0, "bez posunu,  p = p * 2", "#D62728"),
+                             (0.5, "s posunem,  p = p * 2 + 0.5", "#4C78A8")):
+    slope = np.abs(octaves_sum(xs + EPS, ys, shift) - octaves_sum(xs - EPS, ys, shift)) / (2 * EPS)
+    ax.plot(xs[0], slope.mean(axis=0), color=colour, lw=1.3, label=label)
+for k in (1, 2):
+    ax.axvline(k, color="#BBB", lw=0.8, ls=":", zorder=0)
+ax.set_xlim(0, 2)
+ax.set_ylim(0, None)
+ax.set_xticks([0, 0.5, 1, 1.5, 2])
+ax.set_xlabel("x v buňkách první oktávy", fontsize=10)
+ax.set_ylabel("průměrná strmost po x", fontsize=10)
+ax.tick_params(labelsize=9)
+for s in ("top", "right"):
+    ax.spines[s].set_visible(False)
+ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.25), ncol=2, fontsize=10, frameon=False)
+save(fig, "fbm_shift.png")
 
 
 # 3. Voronoi step by step: the grid, the jittered points, one pixel's 3 x 3 cells,

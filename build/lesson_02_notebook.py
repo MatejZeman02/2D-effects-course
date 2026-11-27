@@ -606,6 +606,10 @@ Smoothstep má na koncích nulovou směrnici, ale ne nulovou druhou derivaci: $6
 
 </details>
 
+Celý výpočet pro jeden bod $p$, s čísly z `random1` této lekce:
+
+@img(value_noise_steps.png, 900, Value noise krok za krokem pro bod p = (1.7, 1.4): floor a fract vyberou buňku a polohu v ní, random1 dá čísla čtyřem rohům, dva mixy po x a jeden po y dají hodnotu 0.56, smoothstep ohne f a tytéž buňky smíchané rovně mají zlomy na hranách, ohnuté jsou hladké)
+
 ### 🎯 Úkol 1: value noise
 
 Napište `value_noise(p, smoothed)` podle vzorců výše, se `smoothed` hladký přechod, jinak lineární.
@@ -673,7 +677,11 @@ Napište `fbm(p)` s `octaves` oktávami. Mezi oktávami polohu kromě zjemnění
 
 <details><summary>📖 Proč posun o půl buňky</summary>
 
-Jinak by se mřížky všech oktáv sešly v levém horním rohu ve stejné buňce se stejným číslem.
+Při `lacunarity` 2 leží každý roh buňky první oktávy i v rohu buněk všech jemnějších oktáv, protože dvojnásobek celého čísla je zase celé číslo. Smoothstep má v rohu nulovou směrnici, takže by tam byly ploché všechny oktávy zároveň a terén by napříč čarami mřížky první oktávy neměl žádný sklon. Posun o půl buňky přesune rohy každé jemnější oktávy doprostřed buněk té hrubší:
+
+@img(fbm_shift.png, 680, Průměrná strmost fBm po x napříč svislými čarami mřížky: bez posunu padá na každé čáře první oktávy na nulu, s posunem nikde)
+
+Bez posunu by se navíc všechny oktávy v levém horním rohu sešly ve stejné buňce se stejným číslem.
 </details>
 
 <details><summary>💡 Nápověda</summary>
