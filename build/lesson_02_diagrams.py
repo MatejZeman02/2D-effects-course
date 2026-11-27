@@ -568,6 +568,105 @@ panel(axes[5], "6. F2 - F1 v každém pixelu", grey=f2 - f1)
 save(fig, "voronoi.png")
 
 
+def voronoi(px, py, jitter=1.0):
+    """F1, F2 and the nearest point's cell at positions px, py in cells, as the kernel finds them."""
+    hx, hy = np.floor(px).astype(np.int64), np.floor(py).astype(np.int64)
+    f1 = np.full(px.shape, 8.0)
+    f2 = np.full(px.shape, 8.0)
+    ox, oy = hx.copy(), hy.copy()
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            cx, cy = hx + dx, hy + dy
+            jx, jy = random2(cx, cy)
+            d = np.hypot(px - (cx + 0.5 + (jx - 0.5) * jitter), py - (cy + 0.5 + (jy - 0.5) * jitter))
+            nearer = d < f1
+            f2 = np.where(nearer, f1, np.minimum(f2, d))
+            f1 = np.where(nearer, d, f1)
+            ox, oy = np.where(nearer, cx, ox), np.where(nearer, cy, oy)
+    return f1, f2, ox, oy
+
+
+def colours(*hexes):
+    return [np.array([int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]) for h in hexes]
+
+
+def ramp(t, a, b):
+    t = np.clip(t, 0, 1)[..., None]
+    return a + (b - a) * t
+
+
+# Voronoi in nature: four photos and the lesson's Voronoi noise made to look like each.
+# The photos come from Wikimedia Commons, as imgs/2/SOURCES.md says. Jitter stays below 1,
+# because two points of neighbouring cells that nearly meet keep F2 - F1 small all around
+# them and draw a pale wedge, and each panel starts at a cell picked for points well apart.
+N = 240
+ny, nx = np.mgrid[0:N, 0:N]
+NATURE = []
+
+f1, f2, ox, oy = voronoi((nx + 0.5) / 62 + 9, (ny + 0.5) / 62 + 30, jitter=0.85)      # giraffe: Cell darker inside, cream edges
+dark, brown, cream = colours("#3B2414", "#8A5A33", "#E4D3B4")
+patch = ramp(f1 * 1.3 + 0.3 * random1(ox, oy) - 0.1, dark, brown)
+NATURE.append(("giraffe.jpg", "flowcomm, CC BY 2.0", "žirafa\nCell, světlý okraj z F2 - F1",
+               ramp(((f2 - f1) - 0.05) / 0.06, cream, patch)))
+
+f1, f2, ox, oy = voronoi((nx + 0.5) / 34 + 6, (ny + 0.5) / 34 + 26, jitter=0.85)     # dragonfly wing: thin dark F2 - F1 lines
+pale, vein = colours("#C9C6B4", "#2B2A22")
+NATURE.append(("dragonfly_wing.jpg", "Patilssp, CC BY 4.0", "křídlo vážky\nF2 - F1 jako tenké žilky",
+               ramp(((f2 - f1) - 0.015) / 0.03, vein, pale)))
+
+f1, f2, ox, oy = voronoi((nx + 0.5) / 70 + 48, (ny + 0.5) / 70 + 6, jitter=0.85)     # dried mud: wide dark cracks
+mud, crack = colours("#7E776C", "#1E1A16")
+plate = mud * (0.85 + 0.3 * random1(ox, oy)[..., None])
+NATURE.append(("dried_mud.jpg", "Novoklimov, CC0", "vyschlé bahno\nF2 - F1 jako praskliny",
+               ramp(((f2 - f1) - 0.05) / 0.05, crack, plate)))
+
+f1, f2, ox, oy = voronoi((nx + 0.5) / 48 + 39, (ny + 0.5) / 48 + 39, jitter=0.6)   # basalt: Cell, less jitter
+rock, gap = colours("#A7A195", "#2C2A27")
+top = rock * (0.72 + 0.45 * random1(ox, oy)[..., None])
+NATURE.append(("basalt.jpg", "David Singleton, CC BY 2.0", "čedičové sloupy\nCell s jitter 0.6",
+               ramp(((f2 - f1) - 0.04) / 0.05, gap, top)))
+
+fig, axes = plt.subplots(2, 4, figsize=(12, 6.6), gridspec_kw={"hspace": 0.16, "wspace": 0.06})
+for col, (photo, credit, title, imitation) in enumerate(NATURE):
+    axes[0, col].imshow(plt.imread(os.path.join(OUT, photo)))
+    axes[0, col].set_title(credit, fontsize=8, color=GREY, y=-0.09)
+    axes[1, col].imshow(np.clip(imitation, 0, 1), interpolation="bilinear")
+    axes[1, col].set_title(title, fontsize=10, y=-0.2)
+    bare(axes[0, col])
+    bare(axes[1, col])
+fig.savefig(os.path.join(OUT, "voronoi_nature.jpg"), dpi=150, bbox_inches="tight", facecolor="white",
+            pil_kwargs={"quality": 88})                    # photos, so JPEG
+plt.close(fig)
+
+
+# Fractal Voronoi, picture only: octaves of F1 and of F2 - F1, each twice as fine
+# and half as strong, as fBm sums value noise.
+def fractal(px, py, octaves, edges):
+    total, weight, amplitude = 0.0, 0.0, 1.0
+    for _ in range(octaves):
+        f1, f2, _, _ = voronoi(px, py)
+        total = total + amplitude * (f2 - f1 if edges else f1)
+        weight += amplitude
+        amplitude *= 0.5
+        px, py = px * 2.0 + 0.5, py * 2.0 + 0.5
+    return total / weight
+
+
+FH, FW = 200, 300
+fy, fx = np.mgrid[0:FH, 0:FW]
+fpx, fpy = (fx + 0.5) / 90 + 4, (fy + 0.5) / 90 + 4
+FRACTAL = [("F1, 1 oktáva", fractal(fpx, fpy, 1, False)),
+           ("F1, 5 oktáv", fractal(fpx, fpy, 5, False)),
+           ("F2 - F1, 1 oktáva", fractal(fpx, fpy, 1, True)),
+           ("F2 - F1, 5 oktáv", fractal(fpx, fpy, 5, True))]
+fig, axes = plt.subplots(1, 4, figsize=(13, 2.6), gridspec_kw={"wspace": 0.06})
+for ax, (title, img) in zip(axes, FRACTAL):
+    ax.imshow(img, cmap="gray", vmin=0, vmax=np.percentile(img, 99.5))
+    ax.set_title(title, fontsize=11)
+    bare(ax)
+save(fig, "voronoi_fractal.png")
+
+
 # 4. The terrain's colour stops ----------------------------------------------------
 t = np.linspace(-0.26, 0.3, 1200)
 lab = np.stack([np.interp(t, STOP_AT, STOP_LAB[:, k]) for k in range(3)], axis=-1)

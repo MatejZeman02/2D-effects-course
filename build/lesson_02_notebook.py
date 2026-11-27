@@ -2,7 +2,8 @@
 
 The notebook is generated: edit this file and run it again, never the .ipynb
 by hand, or the next build overwrites the edit. The pictures come from
-lesson_02_diagrams.py.
+lesson_02_diagrams.py. Four nature photos under the Voronoi section are from
+Wikimedia Commons, as imgs/2/SOURCES.md says.
 
 Markdown cells are raw strings, so LaTeX keeps single backslashes and braces.
 A picture from imgs/2 is written as @img(file, width, alt text).
@@ -22,8 +23,9 @@ cells = []
 
 
 def _pictures(text):
-    return re.sub(r"@img\(([^,]+), (\d+), ([^)]*)\)",
-                  lambda m: f'<img src="{IMG}/{m[1]}" width="{m[2]}" alt="{m[3]}">', text)
+    # an @img stands on its own line, so the alt text runs to the line's last bracket and may hold brackets
+    return re.sub(r"^@img\(([^,]+), (\d+), (.*)\)$",
+                  lambda m: f'<img src="{IMG}/{m[1]}" width="{m[2]}" alt="{m[3]}">', text, flags=re.M)
 
 
 def md(text):
@@ -608,7 +610,7 @@ Smoothstep má na koncích nulovou směrnici, ale ne nulovou druhou derivaci: $6
 
 Celý výpočet pro jeden bod $p$, s čísly z `random1` této lekce:
 
-@img(value_noise_steps.png, 900, Value noise krok za krokem pro bod p = (1.7, 1.4): floor a fract vyberou buňku a polohu v ní, random1 dá čísla čtyřem rohům, dva mixy po x a jeden po y dají hodnotu 0.56, smoothstep ohne f a tytéž buňky smíchané rovně mají zlomy na hranách, ohnuté jsou hladké)
+@img(value_noise_steps.png, 900, Value noise krok za krokem pro jeden bod p: floor a fract vyberou buňku a polohu v ní, random1 dá čísla čtyřem rohům, dva mixy po x a jeden po y dají hodnotu 0.56, smoothstep ohne f a tytéž buňky smíchané rovně mají zlomy na hranách, ohnuté jsou hladké)
 
 ### 🎯 Úkol 1: value noise
 
@@ -767,6 +769,10 @@ code(VORONOI.format(hash=HASH_GMACS, loop=VORONOI_LOOP_GIVEN), solve=[(VORONOI_L
 md(r"""
 `F2 - F1` kreslí tmavé čáry na hranicích buněk a `Cell` obarví každou buňku jednou barvou. S `jitter = 0` jsou buňky zase čtverce.
 
+Podobné sítě vznikají v přírodě všude, kde něco roste nebo se smršťuje z mnoha míst naráz a sousední oblasti se potkají na společné hranici:
+
+@img(voronoi_nature.jpg, 900, Nahoře srst žirafy, křídlo vážky, vyschlé bahno a čedičové sloupy Giant's Causeway, dole Voroného šum z této lekce nastavený tak, aby se jim podobal: Cell se světlým okrajem, tenké a široké čáry z F2 - F1 a Cell s menším jitter)
+
 <details><summary>❓ Otázka: proč si buňky při změně scale nechávají barvu?</summary>
 
 Přepněte na `Cell` a táhněte posuvníkem `scale`. Buňky rostou od levého horního rohu, ale každá si nechává svou barvu. Proč?
@@ -778,6 +784,12 @@ Barva je `random1` buňky mřížky, ke které patří nejbližší bod, tedy fu
 </details>
 
 </details>
+""")
+
+md(r"""
+Voroného šum jde sčítat v oktávách stejně jako value noise ve fBm. Součet `F2 - F1` má praskliny všech velikostí jako vyschlé bahno:
+
+@img(voronoi_fractal.png, 900, Fraktální Voroného šum: F1 a F2 - F1 s jednou oktávou a s pěti oktávami, každou dvakrát jemnější a o polovinu slabší)
 """)
 
 # --- 4. Terrain -----------------------------------------------------------------

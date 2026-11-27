@@ -182,3 +182,11 @@ def test_the_pictures_exist():
     assert shown, "no pictures found"
     for path in shown:
         assert (ROOT / path).is_file(), path
+
+
+def test_the_sources_name_the_photos():
+    """Every photo of imgs/2 has its author and licence in SOURCES.md."""
+    sources = (ROOT / nb.IMG / "SOURCES.md").read_text()
+    for photo in sorted((ROOT / nb.IMG).glob("*.jpg")):
+        if photo.name != "voronoi_nature.jpg":
+            assert f"`{photo.name}`" in sources, photo.name
