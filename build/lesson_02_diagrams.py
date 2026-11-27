@@ -437,39 +437,73 @@ for k in range(4):
     axes[k].text(1.04, 0.5, "+" if k < 3 else "=", transform=axes[k].transAxes, fontsize=16, ha="center", va="center")
 save(fig, "fbm.png")
 
-# Why fBm moves each octave by half a cell: the mean slope across x, column by
-# column, of five octaves at lacunarity 2. Without the shift every corner of an
-# octave-1 cell is a corner of all finer octaves too, smoothstep is flat there in
-# all of them at once, and the slope across each grid line falls to zero.
-def octaves_sum(x, y, shift, count=5):
-    total, weight, amplitude = 0.0, 0.0, 1.0
-    for _ in range(count):
-        total = total + amplitude * value_noise(x, y)
-        weight += amplitude
-        amplitude *= 0.5
+# Why fBm moves each octave by half a cell: one row of five octaves at lacunarity 2
+# around x = 1, a grid line of octave 1. Smoothstep is flat along x on every cell
+# edge. Without the shift x = 1 is an edge of all five octaves, so their sum is flat
+# there too, with the shift it is an edge of octave 1 only.
+SHIFT_ROW, SHIFT_EPS = 0.37, 1e-6
+
+
+def shifted_octave(x, k, shift):
+    """Octave k, 1 the coarsest, along the row SHIFT_ROW, x in cells of octave 1."""
+    y = np.full_like(x, SHIFT_ROW)
+    for _ in range(k - 1):
         x, y = x * 2.0 + shift, y * 2.0 + shift
-    return total / weight
+    return value_noise(x, y)
 
 
-xs = np.arange(0.0005, 2.0, 0.001)[None, :]
-ys = np.linspace(0.013, 40.0, 2000)[:, None]
-EPS = 1e-4
-fig, ax = plt.subplots(figsize=(9, 2.9))
-for shift, label, colour in ((0.0, "bez posunu,  p = p * 2", "#D62728"),
-                             (0.5, "s posunem,  p = p * 2 + 0.5", "#4C78A8")):
-    slope = np.abs(octaves_sum(xs + EPS, ys, shift) - octaves_sum(xs - EPS, ys, shift)) / (2 * EPS)
-    ax.plot(xs[0], slope.mean(axis=0), color=colour, lw=1.3, label=label)
-for k in (1, 2):
-    ax.axvline(k, color="#BBB", lw=0.8, ls=":", zorder=0)
-ax.set_xlim(0, 2)
-ax.set_ylim(0, None)
-ax.set_xticks([0, 0.5, 1, 1.5, 2])
-ax.set_xlabel("x v buňkách první oktávy", fontsize=10)
-ax.set_ylabel("průměrná strmost po x", fontsize=10)
-ax.tick_params(labelsize=9)
-for s in ("top", "right"):
-    ax.spines[s].set_visible(False)
-ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.25), ncol=2, fontsize=10, frameon=False)
+def shifted_sum(x, shift):
+    return sum(0.5 ** (k - 1) * shifted_octave(x, k, shift) for k in range(1, 6)) / (2 - 0.5 ** 4)
+
+
+def tangent_at_one(ax, f, half):
+    """Draws the tangent of f at x = 1 and gives its slope."""
+    at = np.array([1.0])                                 # arrays, as the hash wants them
+    h = float(f(at)[0])
+    s = float((f(at + SHIFT_EPS) - f(at - SHIFT_EPS))[0] / (2 * SHIFT_EPS))
+    ax.plot([1 - half, 1 + half], [h - s * half, h + s * half], color="black", lw=2.2, zorder=5)
+    ax.plot([1], [h], "o", color="black", ms=4, zorder=6)
+    return s
+
+
+xs = np.linspace(0.5, 1.5, 1500)
+fig, axes = plt.subplots(6, 2, figsize=(12, 9.5), sharex=True,
+                         gridspec_kw={"height_ratios": [1, 1, 1, 1, 1, 1.3], "hspace": 0.35, "wspace": 0.08})
+for col, shift, colour, title in ((0, 0.0, RED, "bez posunu,  p = p * 2"),
+                                  (1, 0.5, BLUE, "s posunem,  p = p * 2 + 0.5")):
+    for k in range(1, 6):
+        ax = axes[k - 1, col]
+        f = lambda x, k=k: shifted_octave(x, k, shift)
+        ax.plot(xs, f(xs), color=colour, lw=1.2)
+        size, offset = 2 ** (k - 1), (2 ** (k - 1) - 1) * shift    # octave k is at x * size + offset
+        edges = np.arange(np.ceil(0.5 * size + offset), np.floor(1.5 * size + offset) + 1)
+        for edge in (edges - offset) / size:
+            ax.axvline(edge, color="#CCC", lw=0.7, zorder=0)
+        s = tangent_at_one(ax, f, 0.035)
+        flat = abs(s) < 0.02
+        ax.text(1.0, 1.08, "plochá" if flat else f"sklon {s:+.1f}", transform=ax.get_xaxis_transform(),
+                ha="center", fontsize=9, fontweight="bold" if flat else "normal")
+        ax.set_ylim(-0.05, 1.05)
+        if col == 0:
+            ax.set_ylabel(f"oktáva {k}\nváha {0.5 ** (k - 1):g}", fontsize=9, rotation=0, ha="right", va="center")
+    ax = axes[5, col]
+    f = lambda x: shifted_sum(x, shift)
+    ax.plot(xs, f(xs), color=colour, lw=2)
+    s = tangent_at_one(ax, f, 0.05)
+    ax.text(1.0, 1.04, "součet plochý" if abs(s) < 0.02 else f"součet má sklon {s:+.2f}",
+            transform=ax.get_xaxis_transform(), ha="center", fontsize=10, fontweight="bold")
+    if col == 0:
+        ax.set_ylabel("součet", fontsize=10, rotation=0, ha="right", va="center")
+    ax.set_xticks([0.5, 0.75, 1, 1.25, 1.5])
+    ax.set_xlabel("x v buňkách první oktávy", fontsize=10)
+    axes[0, col].set_title(title + "\n", fontsize=11, color=colour)
+    for row in axes[:, col]:
+        row.axvspan(0.99, 1.01, color="#FFE9A8", zorder=-1)
+        row.set_yticks([])
+        for side in ("top", "right", "left"):
+            row.spines[side].set_visible(False)
+fig.text(0.5, 0.015, "šedé čáry jsou hrany buněk té oktávy, na nich je smoothstep po x plochý",
+         ha="center", fontsize=10, color=GREY)
 save(fig, "fbm_shift.png")
 
 

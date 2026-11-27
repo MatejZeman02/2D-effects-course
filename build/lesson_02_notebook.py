@@ -679,9 +679,9 @@ Napište `fbm(p)` s `octaves` oktávami. Mezi oktávami polohu kromě zjemnění
 
 <details><summary>📖 Proč posun o půl buňky</summary>
 
-Při `lacunarity` 2 leží každý roh buňky první oktávy i v rohu buněk všech jemnějších oktáv, protože dvojnásobek celého čísla je zase celé číslo. Smoothstep má v rohu nulovou směrnici, takže by tam byly ploché všechny oktávy zároveň a terén by napříč čarami mřížky první oktávy neměl žádný sklon. Posun o půl buňky přesune rohy každé jemnější oktávy doprostřed buněk té hrubší:
+Při `lacunarity` 2 je každá hrana buňky první oktávy zároveň hranou buněk všech jemnějších oktáv, protože dvojnásobek celého čísla je zase celé číslo. Smoothstep je na hraně buňky napříč ní plochý, takže na čarách mřížky první oktávy by byly ploché všechny oktávy zároveň a terén by je přecházel úplně bez sklonu. Posun o půl buňky přesune hrany každé jemnější oktávy doprostřed buněk té hrubší. Obrázek rozkládá jeden řádek terénu na oktávy kolem čáry $x = 1$:
 
-@img(fbm_shift.png, 680, Průměrná strmost fBm po x napříč svislými čarami mřížky: bez posunu padá na každé čáře první oktávy na nulu, s posunem nikde)
+@img(fbm_shift.png, 900, Jeden řádek fBm rozložený na pět oktáv kolem čáry mřížky x = 1. Bez posunu je x = 1 hranou všech oktáv, všechny jsou tam ploché a jejich součet také. S posunem je to hrana jen první oktávy, ostatní mají sklon a součet také)
 
 Bez posunu by se navíc všechny oktávy v levém horním rohu sešly ve stejné buňce se stejným číslem.
 </details>
