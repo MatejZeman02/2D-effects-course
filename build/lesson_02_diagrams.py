@@ -773,4 +773,153 @@ left, right = ax.get_position().x0, ax.get_position().x1     # the strip as wide
 strip_ax.set_position([left, 0.02, right - left, 0.09])
 save(fig, "normal.png")
 
+
+
+# light(at) of task 5 step by step, for one pixel on a slope of the goal's terrain:
+# the four neighbours' heights, the central differences, the normal, the sun, Lambert,
+# and the brightness of the land around the pixel.
+L_SEA, L_RELIEF, L_SUN = 0.5, 400.0, 135.0
+L_AT = (910, 381)                                          # x, y of a slope facing the sun
+L_H = np.maximum(_goal, L_SEA)                              # the water counts as flat, at sea
+L_DX = np.zeros_like(L_H)
+L_DY = np.zeros_like(L_H)
+L_DX[:, 1:-1] = (L_H[:, 2:] - L_H[:, :-2]) * 0.5
+L_DY[1:-1, :] = (L_H[2:, :] - L_H[:-2, :]) * 0.5
+L_N = np.dstack([-L_RELIEF * L_DX, -L_RELIEF * L_DY, np.ones_like(L_H)])
+L_N /= np.linalg.norm(L_N, axis=2, keepdims=True)
+L_L = np.array([np.cos(np.radians(L_SUN)), -np.sin(np.radians(L_SUN)), 1.0])
+L_L /= np.linalg.norm(L_L)
+L_BRIGHT = 0.25 + 0.75 * np.maximum(L_N @ L_L, 0.0)
+lx, ly = L_AT
+h_left, h_right = L_H[ly, lx - 1], L_H[ly, lx + 1]
+h_up, h_down = L_H[ly - 1, lx], L_H[ly + 1, lx]
+dx, dy = L_DX[ly, lx], L_DY[ly, lx]
+n_at = L_N[ly, lx]
+nl_at = float(n_at @ L_L)
+
+fig, axes = plt.subplots(2, 3, figsize=(12.5, 8.4), gridspec_kw={"hspace": 0.32, "wspace": 0.28})
+
+# 1. the heights of the four neighbours
+ax = axes[0, 0]
+R = 3
+patch = L_H[ly - R:ly + R + 1, lx - R:lx + R + 1]
+ax.imshow(patch, cmap="gray", extent=(-R - 0.5, R + 0.5, R + 0.5, -R - 0.5))
+for k in range(-R, R + 2):
+    ax.plot([k - 0.5, k - 0.5], [-R - 0.5, R + 0.5], color="white", lw=0.6, alpha=0.5)
+    ax.plot([-R - 0.5, R + 0.5], [k - 0.5, k - 0.5], color="white", lw=0.6, alpha=0.5)
+ax.add_patch(plt.Rectangle((-0.5, -0.5), 1, 1, fill=False, ec=ORANGE, lw=2.4))
+for (ox, oy), v, colour in (((1, 0), h_right, BLUE), ((-1, 0), h_left, BLUE), ((0, -1), h_up, GREEN), ((0, 1), h_down, GREEN)):
+    ax.add_patch(plt.Rectangle((ox - 0.5, oy - 0.5), 1, 1, fill=False, ec=colour, lw=2.2))
+    ax.text(ox * 1.95, oy * 1.95, f"{v:.4f}", ha="center", va="center", fontsize=9.5, color=colour,
+            bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.9))
+ax.set_xlim(-R - 0.5, R + 0.5)
+ax.set_ylim(R + 0.5, -R - 0.5)
+bare(ax)
+ax.set_title("1. height(at) čtyř sousedů", fontsize=12, loc="left")
+ax.text(-R - 0.5, R + 1.0, f"dx = ({h_right:.4f} - {h_left:.4f}) / 2 = {dx:.5f}\n"
+        f"dy = ({h_down:.4f} - {h_up:.4f}) / 2 = {dy:.5f}", fontsize=9.5, va="top", family="monospace")
+
+# 2. the slope along the row, a central difference
+ax = axes[0, 1]
+offsets = np.arange(-3, 4)
+row = L_H[ly, lx - 3:lx + 4]
+ax.plot(offsets, row, "o-", color="#999", lw=1, ms=5)
+ax.plot([-1, 1], [h_left, h_right], "o", color=BLUE, ms=8, zorder=4)
+ax.plot([0], [L_H[ly, lx]], "s", color=ORANGE, ms=9, zorder=4)
+ax.plot([-2.2, 2.2], [L_H[ly, lx] - 2.2 * dx, L_H[ly, lx] + 2.2 * dx], color=BLUE, lw=1.6, ls="--")
+ax.annotate("", (1, h_right), (1, h_left), arrowprops=dict(arrowstyle="<->", color=BLUE, lw=1.2))
+ax.text(1.12, (h_left + h_right) / 2, "vpravo - vlevo", color=BLUE, fontsize=9, va="center")
+ax.annotate("", (1, h_left), (-1, h_left), arrowprops=dict(arrowstyle="<->", color=GREY, lw=1.2))
+ax.text(0, h_left, "2 pixely", color=GREY, fontsize=9, ha="center", va="top")
+ax.set_xticks(offsets)
+ax.set_xticklabels([f"{k:+d}" if k else "at" for k in offsets], fontsize=9)
+ax.tick_params(axis="y", labelsize=8)
+ax.set_xlabel("pixely v řádku", fontsize=10)
+ax.set_ylabel("výška", fontsize=10)
+for s in ("top", "right"):
+    ax.spines[s].set_visible(False)
+ax.set_title("2. sklon z rozdílu sousedů", fontsize=12, loc="left")
+ax.text(0.02, 0.98, "(dx, dy) je gradient výšky,\nodkud se bere, odvodíme\nv lekci 3 u hran",
+        transform=ax.transAxes, fontsize=9.5, va="top", color="#333",
+        bbox=dict(boxstyle="round,pad=0.35", fc="#FDE7CF", ec="none"))
+
+# 3. the normal, perpendicular to the steepened slope
+ax = axes[0, 2]
+k = L_RELIEF * dx
+t = np.array([1.0, k]) / np.hypot(1.0, k)
+n2 = np.array([-k, 1.0]) / np.hypot(1.0, k)
+ax.fill_between([-1.4, 1.4], [-1.4 * k - 1, 1.4 * k - 1], [-1.4 * k, 1.4 * k], color="#70A040", alpha=0.35, lw=0)
+ax.plot([-1.4, 1.4], [-1.4 * k, 1.4 * k], color="#222", lw=1.6)
+ax.plot([-1.4, 1.4], [-1.4 * dx, 1.4 * dx], color=GREY, lw=1, ls=":")
+ax.text(1.42, 1.4 * dx, "bez převýšení", fontsize=9, color=GREY, va="center")
+for vec, colour, name, place in ((t, BLUE, "svah (1, r·dx)", (0.15, -0.16)), (n2, ORANGE, "n (-r·dx, 1)", (-0.05, 0.1))):
+    ax.annotate("", vec, (0, 0), arrowprops=dict(arrowstyle="-|>", color=colour, lw=2))
+    ax.text(vec[0] + place[0], vec[1] + place[1], name, color=colour, fontsize=10,
+            ha="left" if vec[0] > 0 else "right", va="center")
+c = 0.13
+ax.plot([c * t[0], c * (t[0] + n2[0]), c * n2[0]], [c * t[1], c * (t[1] + n2[1]), c * n2[1]], color="#222", lw=1)
+ax.text(-1.35, -1.25, f"r = relief = {L_RELIEF:.0f}\nr·dx = {k:.2f}\nsvah · n = 0, n je kolmá", fontsize=9.5, va="bottom")
+ax.set_xlim(-1.5, 2.1)
+ax.set_ylim(-1.3, 1.3)
+ax.set_aspect("equal")
+bare(ax)
+ax.set_title("3. normála v řezu x, z", fontsize=12, loc="left")
+
+# 4. the direction to the sun, seen from above
+ax = axes[1, 0]
+sx, sy = np.cos(np.radians(L_SUN)), -np.sin(np.radians(L_SUN))
+ax.add_patch(plt.Circle((0, 0), 1, fill=False, ec="#CCC", lw=1))
+ax.annotate("", (1.3, 0), (0, 0), arrowprops=dict(arrowstyle="-|>", color="#222", lw=1.2))
+ax.annotate("", (0, 1.3), (0, 0), arrowprops=dict(arrowstyle="-|>", color="#222", lw=1.2))
+ax.text(1.33, 0, "x", va="center", fontsize=11)
+ax.text(0, 1.36, "y", ha="center", va="top", fontsize=11)
+arc = np.radians(np.linspace(0, L_SUN, 60))
+ax.plot(0.35 * np.cos(arc), -0.35 * np.sin(arc), color=GREY, lw=1.2)
+ax.text(0.4, -0.3, f"s = {L_SUN:.0f}°", fontsize=10, color=GREY)
+ax.annotate("", (sx, sy), (0, 0), arrowprops=dict(arrowstyle="-|>", color=ORANGE, lw=2.2))
+ax.add_patch(plt.Circle((sx * 1.18, sy * 1.18), 0.09, color="#F5C04F"))
+ax.text(sx * 1.18, sy * 1.18 - 0.17, "slunce", ha="center", fontsize=10)
+ax.text(1.6, -0.95, "(cos s, -sin s):\ny míří dolů,\nproto -sin.\n\nTřetí složka 1\nzvedne slunce\n45° nad obzor.",
+        fontsize=9.5, va="top")
+ax.set_xlim(-1.45, 2.95)
+ax.set_ylim(1.45, -1.45)
+ax.set_aspect("equal")
+bare(ax)
+ax.set_title("4. směr ke slunci, pohled shora", fontsize=12, loc="left")
+
+# 5. Lambert: brightness from n · l
+ax = axes[1, 1]
+c = np.linspace(-1, 1, 400)
+ax.plot(c, 0.25 + 0.75 * np.maximum(c, 0), color="#222", lw=2)
+ax.axhline(0.25, color=GREY, lw=0.8, ls=":")
+flat = float(np.array([0, 0, 1.0]) @ L_L)
+for value, label, colour, dy_text in ((nl_at, "náš pixel", ORANGE, 0.04), (flat, "rovina a moře", BLUE, 0.03)):
+    b = 0.25 + 0.75 * value
+    ax.plot([value], [b], "o", color=colour, ms=7, zorder=4)
+    ax.text(value - 0.03, b + dy_text, f"{label}: n · l = {value:.2f}, jas {b:.2f}", color=colour,
+            fontsize=9, ha="right")
+ax.text(-0.95, 0.29, "odvrácený svah: 0.25", fontsize=9, color=GREY)
+ax.set_xlim(-1, 1)
+ax.set_ylim(0, 1.08)
+ax.set_xlabel("n · l, kosinus úhlu mezi n a l", fontsize=10)
+ax.set_ylabel("jas", fontsize=10)
+ax.tick_params(labelsize=9)
+for s in ("top", "right"):
+    ax.spines[s].set_visible(False)
+ax.set_title("5. 0.25 + 0.75 max(n · l, 0)", fontsize=12, loc="left")
+
+# 6. the brightness of the land around the pixel
+ax = axes[1, 2]
+W2, H2 = 180, 130
+crop = L_BRIGHT[ly - H2 // 2:ly + H2 // 2, lx - W2 // 2:lx + W2 // 2]
+ax.imshow(crop, cmap="gray", vmin=0.2, vmax=1, interpolation="nearest")
+ax.add_patch(plt.Rectangle((W2 // 2 - 3.5, H2 // 2 - 3.5), 7, 7, fill=False, ec=ORANGE, lw=2))
+ax.annotate("", (W2 - 40 + 22 * sx, 24 + 22 * sy), (W2 - 40, 24),
+            arrowprops=dict(arrowstyle="-|>", color=ORANGE, lw=2.2))
+ax.text(W2 - 40, 30, "ke slunci", color=ORANGE, fontsize=9, ha="center", va="top",
+        bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.85))
+bare(ax)
+ax.set_title("6. light(at) v okolí pixelu", fontsize=12, loc="left")
+save(fig, "light_steps.png")
+
 print("written to", OUT)

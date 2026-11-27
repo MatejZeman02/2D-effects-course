@@ -827,7 +827,9 @@ Reliéf dá krajině světlo podle Lambertova modelu, jak ho znáte z OpenGL. No
 
 $$n = \operatorname{normalize}\bigl(-r\,\partial_x h,\; -r\,\partial_y h,\; 1\bigr), \qquad \partial_x h \approx \frac{h(x+1, y) - h(x-1, y)}{2}$$
 
-a $\partial_y h$ stejně se sousedy dole a nahoře. $r$ je převýšení `relief` a $s$ směr slunce `sun`:
+a $\partial_y h$ stejně se sousedy dole a nahoře. Dvojice $(\partial_x h, \partial_y h)$ je **gradient** výšky, ukazuje, kudy terén nejvíc stoupá. Odkud se tenhle rozdíl sousedů bere a co dalšího gradient umí, odvodíme příště v lekci 3 u hran.
+
+$r$ je převýšení `relief` a $s$ směr slunce `sun`:
 
 $$l = \operatorname{normalize}(\cos s,\; -\sin s,\; 1)$$
 
@@ -837,6 +839,10 @@ Výška fBm je od 0 do 1 a plátno má stovky pixelů, takže bez převýšení 
 </details>
 
 @img(normal.png, 900, Lambertův model v řezu krajinou: normály n, směr ke slunci l a jas 0.25 + 0.75 max(n · l, 0), svah otočený ke slunci je světlejší a hladina je rovná)
+
+Celý výpočet pro jeden pixel svahu z cílové krajiny:
+
+@img(light_steps.png, 900, Světlo krok za krokem pro jeden pixel: výšky čtyř sousedů, sklon z rozdílu pravého a levého souseda, normála kolmá na svah zesílený převýšením, směr ke slunci shora, jas podle n · l a jas krajiny v okolí pixelu)
 
 ### 🎯 Úkol 5: světlo
 
